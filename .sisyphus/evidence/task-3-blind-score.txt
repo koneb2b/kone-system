@@ -1,0 +1,419 @@
+﻿[Probe-Auth] Search execute triggered, license status: {
+  status: 'no_claims',
+  plan: 'none',
+  expiresAt: 0,
+  featureCount: 0,
+  featurePreview: []
+}
+[Probe-Config] Search provider config: {
+  hasGoogleKey: true,
+  googleBaseUrl: 'https://serpapi.com',
+  hasLlmKey: true,
+  llmBaseUrl: 'https://mock-llm.example/v1',
+  providerCount: 2
+}
+[Probe-Config] Quality controls: {
+  priorityWebsite: false,
+  localDomainOnly: false,
+  highRelevanceOnly: false,
+  b2bRoleOnly: false
+}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 0 payload: {"local_results":[{"title":"Target Battery Co","website":"https://target.example","address":"Berlin, Germany","description":"Industrial battery distributor"}]}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 1 payload: {"local_results":[]}
+[Probe-Filter] Filter applied: Priority Website = false
+[Probe-Normalize] Candidate summary: {
+  organicCount: 0,
+  localCount: 1,
+  filteredLocalCount: 1,
+  candidateCount: 1,
+  discardedCount: 0,
+  firstCandidate: {
+    company: 'Target Battery Co',
+    website: 'https://target.example',
+    phone: '',
+    address: 'Berlin, Germany',
+    source: 'Google Maps',
+    reason: 'Industrial battery distributor',
+    snippet: 'Industrial battery distributor'
+  },
+  activeSearchMode: 'maps-keyword-fallback'
+}
+[Probe-IPC] Basic results emitted: { total: 1, activeSearchMode: 'maps-keyword-fallback' }
+[Probe-IPC] Scoring queue starting { candidateCount: 1, concurrency: 2 }
+[Probe-LLM] Scoring candidate: {
+  index: 0,
+  company: 'Target Battery Co',
+  website: 'https://target.example',
+  timeoutMs: 60000
+}
+[Probe-LLM] 璇锋眰鍙戣捣, URL: https://mock-llm.example/v1
+[Probe-LLM] Scoring candidate response: { index: 0, company: 'Target Battery Co', status: 200 }
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","totalScore":74,"matchReason":"鍒濇淇℃伅绗﹀悎宸ヤ笟鐢垫睜鍒嗛攢鐢诲儚","salesStrategy":"浼樺厛璇㈤棶閲囪喘棰戞涓庡搧鐗屽亸濂?,"riskFlags":[],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-IPC] Score stream complete emitted before enrichment phase
+[Probe-Fetch] Fetching website: https://target.example timeoutMs: 15000
+[Probe-Fetch] Website fetch failed: { url: 'https://target.example', message: 'network timeout' }
+[Probe-LLM] Deep probe candidate: Target Battery Co timeoutMs: 60000
+[Probe-LLM] Deep probe response status: 200 candidate: Target Battery Co
+馃搳 [Probe-403-Fallback] 浣跨敤 LinkedIn/Kompass/Europages 骞虫浛 for: Target Battery Co
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:linkedin.com/company "Target Battery Co" Germany',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:kompass.com "Target Battery Co"',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:europages.com "Target Battery Co"',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","totalScore":76,"matchReason":"绠€浠嬫樉绀哄伐涓氱數姹犲垎閿€瑙掕壊鏄庣‘","salesStrategy":"鍏堟矡閫氫氦浠樼ǔ瀹氭€т笌渚涜揣鑺傚","riskFlags":["瀹樼綉璁块棶鍙楅檺锛屽缓璁汉宸ュ鏍?],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-Auth] Search execute triggered, license status: {
+  status: 'no_claims',
+  plan: 'none',
+  expiresAt: 0,
+  featureCount: 0,
+  featurePreview: []
+}
+[Probe-Config] Search provider config: {
+  hasGoogleKey: true,
+  googleBaseUrl: 'https://serpapi.com',
+  hasLlmKey: true,
+  llmBaseUrl: 'https://mock-llm.example/v1',
+  providerCount: 2
+}
+[Probe-Config] Quality controls: {
+  priorityWebsite: false,
+  localDomainOnly: false,
+  highRelevanceOnly: false,
+  b2bRoleOnly: false
+}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 0 payload: {"local_results":[{"title":"Target Battery Co","website":"https://target.example","address":"Berlin, Germany","description":"Industrial battery distributor"}]}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 1 payload: {"local_results":[]}
+[Probe-Filter] Filter applied: Priority Website = false
+[Probe-Normalize] Candidate summary: {
+  organicCount: 0,
+  localCount: 1,
+  filteredLocalCount: 1,
+  candidateCount: 1,
+  discardedCount: 0,
+  firstCandidate: {
+    company: 'Target Battery Co',
+    website: 'https://target.example',
+    phone: '',
+    address: 'Berlin, Germany',
+    source: 'Google Maps',
+    reason: 'Industrial battery distributor',
+    snippet: 'Industrial battery distributor'
+  },
+  activeSearchMode: 'maps-keyword-fallback'
+}
+[Probe-IPC] Basic results emitted: { total: 1, activeSearchMode: 'maps-keyword-fallback' }
+[Probe-IPC] Scoring queue starting { candidateCount: 1, concurrency: 2 }
+[Probe-LLM] Scoring candidate: {
+  index: 0,
+  company: 'Target Battery Co',
+  website: 'https://target.example',
+  timeoutMs: 60000
+}
+[Probe-LLM] 璇锋眰鍙戣捣, URL: https://mock-llm.example/v1
+[Probe-LLM] Scoring candidate response: { index: 0, company: 'Target Battery Co', status: 200 }
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","totalScore":74,"matchReason":"鍒濇淇℃伅绗﹀悎宸ヤ笟鐢垫睜鍒嗛攢鐢诲儚","salesStrategy":"浼樺厛璇㈤棶閲囪喘棰戞涓庡搧鐗屽亸濂?,"riskFlags":[],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-IPC] Score stream complete emitted before enrichment phase
+[Probe-Fetch] Fetching website: https://target.example timeoutMs: 15000
+[Probe-Fetch] Website fetch failed: {
+  url: 'https://target.example',
+  message: 'getaddrinfo ENOTFOUND target.example'
+}
+[Probe-LLM] Deep probe candidate: Target Battery Co timeoutMs: 60000
+[Probe-LLM] Deep probe response status: 200 candidate: Target Battery Co
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","totalScore":76,"matchReason":"绠€浠嬫樉绀哄伐涓氱數姹犲垎閿€瑙掕壊鏄庣‘","salesStrategy":"鍏堟矡閫氫氦浠樼ǔ瀹氭€т笌渚涜揣鑺傚","riskFlags":["瀹樼綉璁块棶鍙楅檺锛屽缓璁汉宸ュ鏍?],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-Auth] Search execute triggered, license status: {
+  status: 'no_claims',
+  plan: 'none',
+  expiresAt: 0,
+  featureCount: 0,
+  featurePreview: []
+}
+[Probe-Config] Search provider config: {
+  hasGoogleKey: true,
+  googleBaseUrl: 'https://serpapi.com',
+  hasLlmKey: true,
+  llmBaseUrl: 'https://mock-llm.example/v1',
+  providerCount: 2
+}
+[Probe-Config] Quality controls: {
+  priorityWebsite: false,
+  localDomainOnly: false,
+  highRelevanceOnly: false,
+  b2bRoleOnly: false
+}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 0 payload: {"local_results":[{"title":"Target Battery Co","website":"https://target.example","address":"Berlin, Germany","description":"Industrial battery distributor"}]}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 1 payload: {"local_results":[]}
+[Probe-Filter] Filter applied: Priority Website = false
+[Probe-Normalize] Candidate summary: {
+  organicCount: 0,
+  localCount: 1,
+  filteredLocalCount: 1,
+  candidateCount: 1,
+  discardedCount: 0,
+  firstCandidate: {
+    company: 'Target Battery Co',
+    website: 'https://target.example',
+    phone: '',
+    address: 'Berlin, Germany',
+    source: 'Google Maps',
+    reason: 'Industrial battery distributor',
+    snippet: 'Industrial battery distributor'
+  },
+  activeSearchMode: 'maps-keyword-fallback'
+}
+[Probe-IPC] Basic results emitted: { total: 1, activeSearchMode: 'maps-keyword-fallback' }
+[Probe-IPC] Scoring queue starting { candidateCount: 1, concurrency: 2 }
+[Probe-LLM] Scoring candidate: {
+  index: 0,
+  company: 'Target Battery Co',
+  website: 'https://target.example',
+  timeoutMs: 60000
+}
+[Probe-LLM] 璇锋眰鍙戣捣, URL: https://mock-llm.example/v1
+[Probe-LLM] Scoring candidate response: { index: 0, company: 'Target Battery Co', status: 200 }
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","totalScore":74,"matchReason":"鍒濇淇℃伅绗﹀悎宸ヤ笟鐢垫睜鍒嗛攢鐢诲儚","salesStrategy":"浼樺厛璇㈤棶閲囪喘棰戞涓庡搧鐗屽亸濂?,"riskFlags":[],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-IPC] Score stream complete emitted before enrichment phase
+[Probe-Fetch] Fetching website: https://target.example timeoutMs: 15000
+[Probe-Fetch] Website response status: 200 url: https://target.example
+[Probe-Fetch] Fetching website: https://target.example/contact timeoutMs: 15000
+[Probe-Fetch] Fetching website: https://target.example/contact-us timeoutMs: 15000
+[Probe-Fetch] Website response status: 200 url: https://target.example/contact
+[Probe-Fetch] Website response status: 200 url: https://target.example/contact-us
+[Probe-LLM] Deep probe candidate: Target Battery Co timeoutMs: 60000
+[Probe-LLM] Deep probe response status: 200 candidate: Target Battery Co
+[Probe-Auth] Search execute triggered, license status: {
+  status: 'no_claims',
+  plan: 'none',
+  expiresAt: 0,
+  featureCount: 0,
+  featurePreview: []
+}
+[Probe-Config] Search provider config: {
+  hasGoogleKey: true,
+  googleBaseUrl: 'https://serpapi.com',
+  hasLlmKey: true,
+  llmBaseUrl: 'https://mock-llm.example/v1',
+  providerCount: 2
+}
+[Probe-Config] Quality controls: {
+  priorityWebsite: false,
+  localDomainOnly: false,
+  highRelevanceOnly: false,
+  b2bRoleOnly: false
+}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 0 payload: {"local_results":[{"title":"Target Battery Co","website":"https://target.example","address":"Berlin, Germany","description":""}]}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 1 payload: {"local_results":[]}
+[Probe-Filter] Filter applied: Priority Website = false
+[Probe-Normalize] Candidate summary: {
+  organicCount: 0,
+  localCount: 1,
+  filteredLocalCount: 1,
+  candidateCount: 1,
+  discardedCount: 0,
+  firstCandidate: {
+    company: 'Target Battery Co',
+    website: 'https://target.example',
+    phone: '',
+    address: 'Berlin, Germany',
+    source: 'Google Maps',
+    reason: 'Google Maps local business result',
+    snippet: 'Berlin, Germany'
+  },
+  activeSearchMode: 'maps-keyword-fallback'
+}
+[Probe-IPC] Basic results emitted: { total: 1, activeSearchMode: 'maps-keyword-fallback' }
+[Probe-IPC] Scoring queue starting { candidateCount: 1, concurrency: 2 }
+[Probe-LLM] Scoring candidate: {
+  index: 0,
+  company: 'Target Battery Co',
+  website: 'https://target.example',
+  timeoutMs: 60000
+}
+[Probe-LLM] 璇锋眰鍙戣捣, URL: https://mock-llm.example/v1
+[Probe-LLM] Scoring candidate response: { index: 0, company: 'Target Battery Co', status: 200 }
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","matchReason":"鍩虹淇℃伅涓嶈冻锛屾殏涓嶈緭鍑哄垎鏁?,"riskFlags":["瀹樼綉璁块棶鍙楅檺锛屽缓璁汉宸ュ鏍?],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-IPC] Score stream complete emitted before enrichment phase
+[Probe-Fetch] Fetching website: https://target.example timeoutMs: 15000
+[Probe-Fetch] Website fetch failed: { url: 'https://target.example', message: 'network timeout' }
+[Probe-LLM] Deep probe candidate: Target Battery Co timeoutMs: 60000
+[Probe-LLM] Deep probe response status: 200 candidate: Target Battery Co
+馃搳 [Probe-403-Fallback] 浣跨敤 LinkedIn/Kompass/Europages 骞虫浛 for: Target Battery Co
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:linkedin.com/company "Target Battery Co" Germany',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:kompass.com "Target Battery Co"',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:europages.com "Target Battery Co"',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Target Battery Co","website":"https://target.example","matchReason":"淇℃伅涓嶈冻锛屼繚鐣欎汉宸ュ垽鏂┖闂?,"riskFlags":["瀹樼綉璁块棶鍙楅檺锛屽缓璁汉宸ュ鏍?],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+[Probe-Auth] Search execute triggered, license status: {
+  status: 'no_claims',
+  plan: 'none',
+  expiresAt: 0,
+  featureCount: 0,
+  featurePreview: []
+}
+[Probe-Config] Search provider config: {
+  hasGoogleKey: true,
+  googleBaseUrl: 'https://serpapi.com',
+  hasLlmKey: true,
+  llmBaseUrl: 'https://mock-llm.example/v1',
+  providerCount: 2
+}
+[Probe-Config] Quality controls: {
+  priorityWebsite: false,
+  localDomainOnly: false,
+  highRelevanceOnly: false,
+  b2bRoleOnly: false
+}
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 0 payload: {"local_results":[{"title":"Good Power GmbH","website":"https://good.example","address":"Berlin, Germany","description":"Industrial battery wholesaler"},{"title":"Bad Battery Ltd","website":"https://bad.example","address":"Munich, Germany",
+[Probe-API] SerpApi status: 200 mode: maps-keyword page: 1 payload: {"local_results":[]}
+[Probe-Filter] Filter applied: Priority Website = false
+[Probe-Normalize] Candidate summary: {
+  organicCount: 0,
+  localCount: 2,
+  filteredLocalCount: 2,
+  candidateCount: 2,
+  discardedCount: 0,
+  firstCandidate: {
+    company: 'Good Power GmbH',
+    website: 'https://good.example',
+    phone: '',
+    address: 'Berlin, Germany',
+    source: 'Google Maps',
+    reason: 'Industrial battery wholesaler',
+    snippet: 'Industrial battery wholesaler'
+  },
+  activeSearchMode: 'maps-keyword-fallback'
+}
+[Probe-IPC] Basic results emitted: { total: 2, activeSearchMode: 'maps-keyword-fallback' }
+[Probe-IPC] Scoring queue starting { candidateCount: 2, concurrency: 2 }
+[Probe-LLM] Scoring candidate: {
+  index: 0,
+  company: 'Good Power GmbH',
+  website: 'https://good.example',
+  timeoutMs: 60000
+}
+[Probe-LLM] 璇锋眰鍙戣捣, URL: https://mock-llm.example/v1
+[Probe-LLM] Scoring candidate: {
+  index: 1,
+  company: 'Bad Battery Ltd',
+  website: 'https://bad.example',
+  timeoutMs: 60000
+}
+[Probe-LLM] 璇锋眰鍙戣捣, URL: https://mock-llm.example/v1
+[Probe-LLM] Scoring candidate response: { index: 0, company: 'Good Power GmbH', status: 200 }
+[Probe-LLM] Scoring candidate response: { index: 1, company: 'Bad Battery Ltd', status: 200 }
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Good Power GmbH","website":"https://good.example","totalScore":88,"matchReason":"瀹樼綉涓庣畝浠嬪潎鏄剧ず宸ヤ笟鐢垫睜 B2B 渚涜揣鑳藉姏","salesStrategy":"鍥寸粫 OEM 涓庝氦浠?SLA 鎺ㄨ繘棣栬疆娌熼€?,"riskFlags":[],"isB2B":true},{"company":"Bad Battery Ltd","website":"htt',
+  parsedType: 'object',
+  resultCount: 2,
+  keys: [ 'results' ]
+}
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Good Power GmbH","website":"https://good.example","totalScore":88,"matchReason":"瀹樼綉涓庣畝浠嬪潎鏄剧ず宸ヤ笟鐢垫睜 B2B 渚涜揣鑳藉姏","salesStrategy":"鍥寸粫 OEM 涓庝氦浠?SLA 鎺ㄨ繘棣栬疆娌熼€?,"riskFlags":[],"isB2B":true},{"company":"Bad Battery Ltd","website":"htt',
+  parsedType: 'object',
+  resultCount: 2,
+  keys: [ 'results' ]
+}
+[Probe-IPC] Score stream complete emitted before enrichment phase
+[Probe-Fetch] Fetching website: https://good.example timeoutMs: 15000
+[Probe-Fetch] Fetching website: https://bad.example timeoutMs: 15000
+[Probe-Fetch] Website response status: 200 url: https://good.example
+[Probe-Fetch] Website fetch failed: { url: 'https://bad.example', message: 'network timeout' }
+[Probe-Fetch] Fetching website: https://good.example/contact timeoutMs: 15000
+[Probe-Fetch] Fetching website: https://good.example/contact-us timeoutMs: 15000
+[Probe-LLM] Deep probe candidate: Bad Battery Ltd timeoutMs: 60000
+[Probe-Fetch] Website response status: 200 url: https://good.example/contact
+[Probe-Fetch] Website response status: 200 url: https://good.example/contact-us
+[Probe-LLM] Deep probe response status: 200 candidate: Bad Battery Ltd
+馃搳 [Probe-403-Fallback] 浣跨敤 LinkedIn/Kompass/Europages 骞虫浛 for: Bad Battery Ltd
+[Probe-LLM] Deep probe candidate: Good Power GmbH timeoutMs: 60000
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:linkedin.com/company "Bad Battery Ltd" Germany',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:kompass.com "Bad Battery Ltd"',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-403-Fallback] SerpApi social query status: {
+  query: 'site:europages.com "Bad Battery Ltd"',
+  status: 200,
+  payload: '{"organic_results":[]}'
+}
+[Probe-LLM] Deep probe response status: 200 candidate: Good Power GmbH
+[Probe-LLM-Parse] Extract results shape: {
+  contentPreview: '{"results":[{"company":"Bad Battery Ltd","website":"https://bad.example","totalScore":65,"matchReason":"浠呭熀浜庣畝浠嬭繘琛岃交閲忓垽鏂?,"salesStrategy":"鍏堝皬鏍锋祴璇曞悗鏀鹃噺","riskFlags":["瀹樼綉璁块棶鍙楅檺锛屽缓璁汉宸ュ鏍?],"isB2B":true}]}',
+  parsedType: 'object',
+  resultCount: 1,
+  keys: [ 'results' ]
+}
+鉁?Scenario A: 瀹樼綉瓒呮椂瑙﹀彂 snippet 鐩茶瘎骞跺畬鎴愭祦寮忛棴鐜?(111.6402ms)
+鉁?Scenario B: 瀹樼綉 DNS 澶辫触瑙﹀彂鐩茶瘎涓斿甫鏈夐闄╂彁绀?(1.8049ms)
+鉁?Scenario C: 瀹樼綉杩斿洖绌虹櫧 HTML 鏃剁郴缁熶笉宕╂簝涓旇兘瀹屾垚 (2.1874ms)
+鉁?Scenario D: snippet 涓虹┖涓斿畼缃戝け璐ユ椂涓嶅簲姝婚攣鎴栨姏鏈崟鑾峰紓甯?(1.7193ms)
+鉁?Scenario E: 姝ｅ父璇勫垎涓庣洸璇勫苟瀛樻椂涓ゆ潯鍊欓€夊潎搴旇繑鍥?(2.2623ms)
+鈩?tests 5
+鈩?suites 0
+鈩?pass 5
+鈩?fail 0
+鈩?cancelled 0
+鈩?skipped 0
+鈩?todo 0
+鈩?duration_ms 179.1738

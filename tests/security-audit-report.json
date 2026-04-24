@@ -1,0 +1,19 @@
+{
+  "firstTrial": {
+    "ok": true
+  },
+  "deleteConfig": {
+    "ok": true
+  },
+  "offlineFallback": {
+    "ok": true
+  },
+  "trialToPremium": {
+    "ok": true
+  },
+  "lockedScreen": {
+    "ok": true
+  },
+  "failedStep": null,
+  "failureReason": null
+}

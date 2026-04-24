@@ -1,0 +1,127 @@
+# KONE Core Constitution and Verify SOP
+
+## 1. Intent Gate and Anti-Blind-Edit Loop
+1. Any architectural, IPC, billing, search, Autopilot, scoring, or cloud-handoff change must start with a short change declaration before editing.
+2. The declaration must include:
+   - target files and target functions
+   - whether the change belongs to Basic local workflow or Premium cloud workflow
+   - risk to API quota, trial gating, stream lifecycle, and user data retention
+3. Unless the task is structurally complex, execution plans must stay within 3 steps.
+4. No claim of success is valid until there is observable evidence from code paths, probes, or build/test output.
+
+## 2. Non-Negotiable Commercial Law
+1. Kone uses a strict commercial ladder: `7-day Trial -> Paid Basic -> Paid Premium / Enterprise`.
+2. Trial is time-boxed local entitlement only. Trial duration must be treated as 7 days everywhere.
+3. Basic is the full local productivity tier. It includes:
+   - `search_basic`
+   - `search_deep`
+   - ICP scoring and streaming updates
+   - `analysis_advanced`
+   - local lead management and export
+   - companion-style background Autopilot
+4. Premium and Enterprise exclusively own cloud collaboration and cloud automation. Premium-only domains include:
+   - `cloud_send`
+   - `team_collaboration`
+   - n8n cloud mail automation
+   - team collision detection and dashboard views
+5. Any paid-feature uncertainty must resolve to deny, never allow. This is Fail-Closed by default.
+
+## 3. Renderer / Main / Preload Boundary
+1. `src/` is renderer-only. It may orchestrate UI state and call `window.electronAPI`, but it must not perform privileged IO, secret access, direct network calls to paid backends, or authorization bypasses.
+2. `electron/` owns privileged operations:
+   - API calls
+   - license enforcement
+   - cloud webhook delivery
+   - search normalization
+   - ICP scoring
+   - website enrichment
+3. `preload/` is a minimal bridge only. It must not absorb business logic.
+
+## 4. ICP Streaming and Store Law
+1. Scout and Brain are progressive, not blocking:
+   - skeleton/basic lead information arrives first
+   - LLM score and reasons arrive later by stream
+   - UI must never wait for full scoring before showing the candidate list
+2. `src/store/leads-store.ts` is the single source of truth for search results and saved leads.
+3. `matchScore` semantics are strict:
+   - `undefined` means not yet evaluated or no valid numeric score returned
+   - numeric values mean scored
+   - unscored leads must never be silently coerced to `0` during persistence
+4. Any UI math derived from scores must filter out non-number values first. Never allow `undefined`, `null`, or invalid values to produce `0NaN%`, broken averages, or fake low-score states.
+5. When stream updates merge into existing search results, only valid numeric `matchScore` values may overwrite prior state.
+6. Between Scout and Brain, Kone must execute a mandatory weighted relevance pre-filter before Brain scoring.
+7. The pre-filter must use positive roots, negative roots, keyword context, and commercial role signals to discard obviously泛化 or off-target候选 before they consume ICP resources.
+8. Typical noise such as auto repair shops, body shop, mechanic, tire, car wash, and similar automotive-service candidates must be silently removed at Scout stage.
+9. Pre-filter output must remain observable through probes that preserve kept count, discarded count, and main reason categories.
+10. If官网抓取失败 but snippet/title remains available, Snippet 盲评 is an approved fallback. It may still output a numeric `matchScore`, but the reason must explicitly state that the score is based on lightweight snippet judgment.
+
+## 5. Error Bridge and User Asset Protection
+1. Silent failure is forbidden.
+2. Any main-process async failure must return structured error payloads and, for stream flows, must emit error and completion signals so the renderer can unlock loading state.
+3. Search resilience is governed by the mandatory `三级弹性搜索协议`:
+   - level 1: Google Maps with independent `location` parameter
+   - level 2: on location-related `400`, retry immediately with empty `location` and geography folded into `q`
+   - level 3: if level 2 yields `localCount === 0`, switch silently to Google Organic and normalize results for Scout
+4. Every search stream must end with an explicit `complete` or `error + complete` closure. Silent termination that leaves UI loading state unresolved is forbidden.
+5. Missing AI key is a recoverable degraded state and must be returned through dedicated IPC semantics or fields so renderer can show a non-blocking notice.
+6. On `429`, quota exhaustion, timeout, or network interruption:
+    - preserve current `searchResults`
+    - preserve current saved leads
+    - surface toast/banner guidance
+    - never clear user-visible results just because AI enhancement failed
+7. Trial expiration must block execution cleanly without wiping prior user work.
+
+## 6. Autopilot Constitution
+1. Autopilot is a local companion workflow, not a cloud daemon.
+2. It belongs to Basic and above, and runs on local machine resources only.
+3. It must be documented and implemented as:
+   - batch job queue input: country + keyword + target count
+   - quiet background execution
+   - low-concurrency scheduling
+   - threshold-based Gold Filter before saving
+4. Physical execution boundary is mandatory:
+   - computer must stay powered on
+   - app must stay running
+   - system must not sleep
+   - network must remain available
+5. Autopilot is never allowed to impersonate Premium cloud automation in copy, architecture, or UX.
+
+## 7. Cloud Handoff and Gold Filter
+1. Kone decides locally; n8n executes remotely.
+2. Only selected, filtered, compact payloads may be sent to cloud systems.
+3. Never bulk-sync raw, unfiltered local leads to cloud storage.
+4. Team-collaboration state and collision state are cloud-side SSOT; renderer holds projections only.
+
+## 8. Probe and Verification Discipline
+1. For backend or IPC changes, use structured probes such as:
+   - `[Probe-API]`
+   - `[Probe-Payload]`
+   - `[Probe-Store]`
+2. Do not announce a fix before observing actual data movement or a successful build/test path.
+3. When a task says search is broken, diagnose service-side request building, response parsing, and IPC flow before touching UI.
+
+## 9. Performance Guard
+1. Kone must remain stable on common office hardware with `4G-8G RAM`, low-power CPU, and integrated graphics.
+2. Any change that causes obvious long-duration CPU saturation, memory spikes, or queue amplification on this baseline environment is invalid by default.
+3. Search, scoring, enrichment, and Autopilot changes must prefer practical throttling over aggressive throughput.
+4. Search scoring and website enrichment concurrency must remain fixed at a maximum of `2`; any higher ceiling is invalid by default.
+5. HTML and website text sent into LLM must be aggressively slimmed, stripped of HTML/script/style noise, and strictly truncated to no more than `3000` characters before prompt assembly.
+6. Any implementation that exceeds the `2` concurrency ceiling or the `3000`-character website-text ceiling is an architecture violation.
+7. If a feature is only smooth on high-end hardware, it does not meet the Kone production standard.
+
+## 10. Packaging and Production Hygiene
+1. Never ship private keys, `.opencode` cache, or `tests/` artifacts.
+2. Clean `release/` and `dist-electron/` before packaging.
+3. Production logging must remain minimal; only irrecoverable `console.error` is acceptable.
+
+## 11. Mandatory AI Routing & Document Chain
+Before analyzing, planning, or executing ANY task, the AI Agent MUST proactively read and strictly obey the following document chain in this exact order. Skipping any of these files is a critical violation of the Kone architecture:
+
+1. `PROJECT-PRD.md` (Root Business Logic, 7-Day Trial, ICP Scoring, and Autopilot boundaries)
+2. `ARCH-STANDARDS.md` (Root Architecture, Local Edge vs. Cloud boundaries, Fail-Closed Security)
+3. `.opencode/agents/ui-agent.md` (UI/UX constraints, Z-index guards, and the strict **Simplified Chinese Localization Law**)
+4. `.opencode/agents/ipc-agent.md` (Backend Proxy, Stream Flow, and Error Bridge)
+5. `.opencode/agents/system-blueprint.md` (Lead Pipelines, Gold Filter, and Autopilot flow)
+6. `.opencode/agents/build-agent.md` (Packaging, Security, and Build hygiene)
+
+The AI must explicitly acknowledge parsing this chain in its thoughts before proposing any code changes.

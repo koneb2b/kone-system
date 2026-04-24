@@ -1,0 +1,10 @@
+{
+  "booted": true,
+  "activationScreenVisible": true,
+  "preloadBridgeVisible": true,
+  "dashboardNavVisible": false,
+  "screenshotPath": "C:\\Users\\Administrator\\Kone-System\\tests\\packaged-smoke.png",
+  "executablePath": "C:\\Users\\Administrator\\Kone-System\\release\\win-unpacked\\KoneAI.exe",
+  "stdout": "\r\n✅ preload path: C:\\Users\\Administrator\\Kone-System\\release\\win-unpacked\\resources\\app.asar\\dist-electron\\preload\\index.js\n",
+  "stderr": "\r\nDevTools listening on ws://127.0.0.1:9222/devtools/browser/cd4c03ad-ce7d-45ec-9990-99893c865199\r\n[16000:0324/222806.622:INFO:CONSOLE:5] \"✅ Kone B2B Preload Loaded - 硬件通信桥梁已就绪\", source: C:\\Users\\Administrator\\Kone-System\\release\\win-unpacked\\resources\\app.asar\\dist-electron\\preload\\index.js (5)\r\n"
+}

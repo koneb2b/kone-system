@@ -1,0 +1,52 @@
+{
+  "electronBridgeState": {
+    "hasElectronApi": true,
+    "hasLicenseApi": true,
+    "hasSearchApi": true,
+    "hasAutopilotApi": true
+  },
+  "modules": [
+    {
+      "module": "智能获客",
+      "navId": "search",
+      "status": "passed",
+      "matched": "text:海外客户智能搜索"
+    },
+    {
+      "module": "数据中心",
+      "navId": "data",
+      "status": "passed",
+      "matched": "text:数据中心"
+    },
+    {
+      "module": "线索管理",
+      "navId": "leads",
+      "status": "passed",
+      "matched": "text:线索管理"
+    },
+    {
+      "module": "知识库",
+      "navId": "knowledge",
+      "status": "passed",
+      "matched": "text:企业知识库"
+    },
+    {
+      "module": "系统设置",
+      "navId": "settings",
+      "status": "passed",
+      "matched": "text:API 密钥、搜索配置与账户管理"
+    },
+    {
+      "module": "团队协作",
+      "navId": "team-dashboard",
+      "status": "passed",
+      "matched": "text:团队协作看板"
+    },
+    {
+      "module": "自动化序列",
+      "navId": "automation",
+      "status": "passed",
+      "matched": "text:智能触达工作流"
+    }
+  ]
+}

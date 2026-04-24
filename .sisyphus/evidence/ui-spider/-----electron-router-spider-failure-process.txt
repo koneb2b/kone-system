@@ -1,0 +1,94 @@
+
+> kone-system@1.1.0 dev
+> taskkill /f /im electron.exe /t 2>nul & concurrently "vite --host 127.0.0.1 --port 5173 --strictPort" "wait-on http://127.0.0.1:5173 && ping -n 3 127.0.0.1 >nul && npm run build:electron:dev && npx electron ."
+
+�ɹ�: ����ֹ PID 2272 (���� PID 13260 �ӽ���)�Ľ��̡�
+�ɹ�: ����ֹ PID 9880 (���� PID 13260 �ӽ���)�Ľ��̡�
+�ɹ�: ����ֹ PID 15376 (���� PID 13260 �ӽ���)�Ľ��̡�
+�ɹ�: ����ֹ PID 13260 (���� PID 8080 �ӽ���)�Ľ��̡�
+[0] [31merror when starting dev server:
+[0] Error: Port 5173 is already in use
+[0]     at Server.onError$1 (file:///C:/Users/Administrator/Kone-System/node_modules/vite/dist/node/chunks/config.js:14933:28)
+[0]     at Server.emit (node:events:508:28)
+[0]     at emitErrorNT (node:net:1976:8)
+[0]     at process.processTicksAndRejections (node:internal/process/task_queues:89:21)[39m
+[0] vite --host 127.0.0.1 --port 5173 --strictPort exited with code 1
+[1] 
+[1] > kone-system@1.1.0 build:electron:dev
+[1] > tsc -p tsconfig.electron.json
+[1] 
+[1] 
+[1] 
+[1] DevTools listening on ws://127.0.0.1:9222/devtools/browser/f76b972e-a802-474c-a06c-286653fca560
+[1] [License] Failed to write file anchor in development, skipped EPERM: Error: EPERM: operation not permitted, open 'C:\Users\Administrator\AppData\Roaming\KoneAI\.kone-anchor\anchor.bin'
+[1]     at Object.writeFileSync (node:fs:2413:20)
+[1]     at writeFileAnchorBlob (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:180:12)
+[1]     at persistAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:245:5)
+[1]     at syncTrialAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:334:5)
+[1]     at async C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:550:43
+[1]     at async Session.<anonymous> (node:electron/js2c/browser_init:2:116659) {
+[1]   errno: -4048,
+[1]   code: 'EPERM',
+[1]   syscall: 'open',
+[1]   path: 'C:\\Users\\Administrator\\AppData\\Roaming\\KoneAI\\.kone-anchor\\anchor.bin'
+[1] }
+[1] [License] Failed to write file anchor in development, skipped EPERM: Error: EPERM: operation not permitted, open 'C:\Users\Administrator\AppData\Roaming\KoneAI\.kone-anchor\anchor.bin'
+[1]     at Object.writeFileSync (node:fs:2413:20)
+[1]     at writeFileAnchorBlob (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:180:12)
+[1]     at persistAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:245:5)
+[1]     at syncTrialAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:334:5)
+[1]     at async C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:550:43
+[1]     at async Session.<anonymous> (node:electron/js2c/browser_init:2:116659) {
+[1]   errno: -4048,
+[1]   code: 'EPERM',
+[1]   syscall: 'open',
+[1]   path: 'C:\\Users\\Administrator\\AppData\\Roaming\\KoneAI\\.kone-anchor\\anchor.bin'
+[1] }
+[1] [License] Failed to write file anchor in development, skipped EPERM: Error: EPERM: operation not permitted, open 'C:\Users\Administrator\AppData\Roaming\KoneAI\.kone-anchor\anchor.bin'
+[1]     at Object.writeFileSync (node:fs:2413:20)
+[1]     at writeFileAnchorBlob (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:180:12)
+[1]     at persistAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:245:5)
+[1]     at syncTrialAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:334:5)
+[1]     at async C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:550:43
+[1]     at async Session.<anonymous> (node:electron/js2c/browser_init:2:116659) {
+[1]   errno: -4048,
+[1]   code: 'EPERM',
+[1]   syscall: 'open',
+[1]   path: 'C:\\Users\\Administrator\\AppData\\Roaming\\KoneAI\\.kone-anchor\\anchor.bin'
+[1] }
+[1] [License] Failed to write file anchor in development, skipped EPERM: Error: EPERM: operation not permitted, open 'C:\Users\Administrator\AppData\Roaming\KoneAI\.kone-anchor\anchor.bin'
+[1]     at Object.writeFileSync (node:fs:2413:20)
+[1]     at writeFileAnchorBlob (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:180:12)
+[1]     at persistAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:245:5)
+[1]     at syncTrialAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:334:5)
+[1]     at async C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:550:43
+[1]     at async Session.<anonymous> (node:electron/js2c/browser_init:2:116659) {
+[1]   errno: -4048,
+[1]   code: 'EPERM',
+[1]   syscall: 'open',
+[1]   path: 'C:\\Users\\Administrator\\AppData\\Roaming\\KoneAI\\.kone-anchor\\anchor.bin'
+[1] }
+[1] [License] Failed to write file anchor in development, skipped EPERM: Error: EPERM: operation not permitted, open 'C:\Users\Administrator\AppData\Roaming\KoneAI\.kone-anchor\anchor.bin'
+[1]     at Object.writeFileSync (node:fs:2413:20)
+[1]     at writeFileAnchorBlob (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:180:12)
+[1]     at persistAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:245:5)
+[1]     at syncTrialAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:334:5)
+[1]     at async C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:550:43
+[1]     at async Session.<anonymous> (node:electron/js2c/browser_init:2:116659) {
+[1]   errno: -4048,
+[1]   code: 'EPERM',
+[1]   syscall: 'open',
+[1]   path: 'C:\\Users\\Administrator\\AppData\\Roaming\\KoneAI\\.kone-anchor\\anchor.bin'
+[1] }
+[1] [License] Failed to write file anchor in development, skipped EPERM: Error: EPERM: operation not permitted, open 'C:\Users\Administrator\AppData\Roaming\KoneAI\.kone-anchor\anchor.bin'
+[1]     at Object.writeFileSync (node:fs:2413:20)
+[1]     at writeFileAnchorBlob (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:180:12)
+[1]     at persistAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:245:5)
+[1]     at syncTrialAnchor (C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:334:5)
+[1]     at async C:\Users\Administrator\Kone-System\dist-electron\electron\services\license-service.js:550:43
+[1]     at async Session.<anonymous> (node:electron/js2c/browser_init:2:116659) {
+[1]   errno: -4048,
+[1]   code: 'EPERM',
+[1]   syscall: 'open',
+[1]   path: 'C:\\Users\\Administrator\\AppData\\Roaming\\KoneAI\\.kone-anchor\\anchor.bin'
+[1] }

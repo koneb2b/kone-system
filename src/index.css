@@ -1,0 +1,65 @@
+@import "tailwindcss" source(none);
+@source "./";
+@source "../index.html";
+
+:root {
+  --brand-green: 92 65% 44%;
+  --deep-blue: 210 100% 8%;
+  --neutral-gray: 217 20% 47%;
+  --sidebar-background: 217 33% 17%;
+  --chart-axis: 214 32% 91%;
+  --chart-surface: 0 0% 100%;
+  --chart-green-soft: 92 65% 44% / 0.8;
+  --chart-blue-soft: 217 33% 17% / 0.8;
+
+  --background: 210 40% 98%;
+  --foreground: 217 33% 17%;
+  --card: 0 0% 100%;
+  --card-foreground: 217 33% 17%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 217 16% 46%;
+  --ring: 92 65% 44%;
+
+  --primary: 92 65% 44%;
+  --primary-foreground: 0 0% 100%;
+  --radius: 0.75rem;
+}
+
+body {
+  background: linear-gradient(180deg, #f3f6f9 0%, #eef2f6 55%, #f8f9fa 100%) !important;
+  color: hsl(217 33% 17%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+aside {
+  background-color: hsl(217 33% 17%) !important;
+}
+
+button,
+a,
+[role='tab'] {
+  transition: all 0.2s ease;
+}
+
+button:active,
+a:active,
+[role='tab']:active {
+  transform: scale(0.95);
+}
+
+.btn-action {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+  border-color: #e2e8f0;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.btn-action:hover {
+  border-color: #6aba28;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(0, 21, 41, 0.08);
+}

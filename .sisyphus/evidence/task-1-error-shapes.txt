@@ -1,0 +1,74 @@
+Required source shapes for Wave 2 authors
+
+1) TRIAL_EXPIRED / SYSTEM_TIME_ABNORMAL error shape
+Source: electron/services/license-service.ts:393-415
+Lines:
+406:     return {
+407:       success: false,
+408:       error: trialStatus.rollbackDetected ? 'SYSTEM_TIME_ABNORMAL' : 'TRIAL_EXPIRED',
+409:       message: trialStatus.rollbackDetected ? SYSTEM_TIME_ABNORMAL_MESSAGE : `${operationName}不可用：试用期已过期，请完成授权后继续使用`,
+410:       operationName,
+411:       code: 403,
+412:     }
+
+Exact shape:
+{
+  success: false,
+  error: 'TRIAL_EXPIRED',
+  message: `${operationName}不可用：试用期已过期，请完成授权后继续使用`,
+  operationName,
+  code: 403,
+}
+
+Rollback variant exact shape:
+{
+  success: false,
+  error: 'SYSTEM_TIME_ABNORMAL',
+  message: SYSTEM_TIME_ABNORMAL_MESSAGE,
+  operationName,
+  code: 403,
+}
+
+Resolved abnormal time message constant:
+Source: electron/services/license-service.ts:28
+28: const SYSTEM_TIME_ABNORMAL_MESSAGE = '系统环境异常，请恢复标准北京时间'
+
+2) FEATURE_DENIED error shape
+Source: electron/services/license-service.ts:428-434
+Lines:
+428: const buildFeatureDeniedResponse = (operationName: string, error: { message?: string; code?: number } | undefined) => ({
+429:   success: false,
+430:   error: 'FEATURE_DENIED',
+431:   message: String(error?.message || `当前授权无权执行${operationName}`),
+432:   operationName,
+433:   code: Number(error?.code) || 403,
+434: })
+
+Exact shape:
+{
+  success: false,
+  error: 'FEATURE_DENIED',
+  message: String(error?.message || `当前授权无权执行${operationName}`),
+  operationName,
+  code: Number(error?.code) || 403,
+}
+
+3) fallbackStatus type / normalization / assignment
+Type definition:
+Source: electron/services/search-service.ts:38
+38:   fallbackStatus?: 'social_blind_score'
+
+Normalization:
+Source: electron/services/search-service.ts:449
+449:   fallbackStatus: item.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
+
+Assignment:
+Source: electron/services/search-service.ts:988
+988:       fallbackStatus: usedSocialFallback ? 'social_blind_score' : payload.candidate.fallbackStatus,
+
+4) Blind score label exact string
+Source: electron/services/search-service.ts:995
+995:             : '⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）',
+
+Exact string:
+⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）

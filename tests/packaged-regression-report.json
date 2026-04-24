@@ -1,0 +1,10 @@
+{
+  "dashboardEntered": true,
+  "settingsVerified": true,
+  "searchVerified": true,
+  "leadsVerified": false,
+  "analysisVerified": false,
+  "exportVerified": false,
+  "failedStep": "deep-loop",
+  "failureReason": "Waiting for selector `[data-testid=\"btn-save-lead\"]` failed: Waiting failed: 5000ms exceeded"
+}

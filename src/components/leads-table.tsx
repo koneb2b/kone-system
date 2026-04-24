@@ -1,0 +1,211 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import { Sparkles, Filter, Download, Mail, Phone, Lock, Rocket } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { useToast } from "@/hooks/use-toast"
+import { stableHash } from "@/lib/utils"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import { getLeadUniqueKey, LeadItem, useLeadsStore } from "@/store/leads-store"
+import { saveExportFile } from "@/lib/electron-api"
+
+const formatErrorMessage = (error: unknown, fallback: string) => {
+  const message = error instanceof Error ? error.message : fallback
+  const normalized = message.toLowerCase()
+  if (/403|401|授权|license|无权/.test(normalized)) return `授权异常：${message}`
+  if (/network|timeout|fetch|socket|econn|enet/.test(normalized)) return `网络异常：${message}`
+  if (/write|file|export|downloads|path/.test(normalized)) return `文件写入异常：${message}`
+  if (/config|missing|base url|key|webhook/.test(normalized)) return `配置异常：${message}`
+  return `系统异常：${message}`
+}
+
+type Lead = LeadItem
+type UserRole = "trial" | "pro" | "enterprise"
+
+const hasNumericMatchScore = <T extends { matchScore?: number | null }>(lead: T): lead is T & { matchScore: number } => typeof lead.matchScore === "number"
+
+interface LeadsTableProps {
+  onAnalyze: (lead: Lead) => void
+  userRole?: UserRole | null
+  onSendToCloud?: (lead: Lead) => Promise<{ skipped: boolean; reason?: string } | void>
+  onViewAll?: () => void
+}
+
+function MatchBar({ score }: { score?: number | null }) {
+  if (typeof score !== "number") {
+    return <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">待评估</span>
+  }
+
+  const color = score >= 80 ? "bg-blue-600" : "bg-slate-400"
+  const textColor = score >= 80 ? "text-blue-600" : "text-slate-500"
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${score}%` }} />
+      </div>
+      <span className={`text-sm font-semibold ${textColor}`}>{score}%</span>
+    </div>
+  )
+}
+
+const escapeCsvValue = (value: string | number | boolean | undefined | null) => {
+  const text = String(value ?? "")
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`
+  }
+  return text
+}
+
+export function LeadsTable({ onAnalyze, userRole, onSendToCloud, onViewAll }: LeadsTableProps) {
+  const [sendingCloud, setSendingCloud] = useState<number | null>(null)
+  const [savedLeadIds, setSavedLeadIds] = useState<Set<number>>(new Set())
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [analysisLoading, setAnalysisLoading] = useState<number | null>(null)
+  const { leads, addLead, hydrateFromConfig, hydrated } = useLeadsStore()
+  const [filters, setFilters] = useState({ highMatch: false, unlocked: false, hasEmail: false })
+  const { toast } = useToast()
+  useEffect(() => {
+    if (!hydrated) {
+      void hydrateFromConfig()
+    }
+  }, [hydrateFromConfig, hydrated])
+
+  useEffect(() => {
+    setSavedLeadIds(new Set(leads.map((lead) => lead.id)))
+  }, [leads])
+
+  const displayLeads = useMemo(
+    () =>
+      leads
+        .filter(hasNumericMatchScore)
+        .filter((lead) => {
+          if (filters.highMatch && lead.matchScore < 85) return false
+          if (filters.unlocked && !lead.unlocked) return false
+          if (filters.hasEmail && !lead.email) return false
+          return true
+        })
+        .sort((a, b) => b.matchScore - a.matchScore),
+    [filters, leads]
+  )
+
+  const handleSendToCloud = async (lead: Lead) => {
+    setSendingCloud(lead.id)
+    try {
+      const result = await onSendToCloud?.(lead)
+      if (result && typeof result === "object" && result.skipped) {
+        toast({
+          title: "推送被拦截",
+          description: result.reason || "推送被拦截：线索评分低于系统设定的最低阈值或角色不符。",
+          variant: "destructive",
+          className: "bg-amber-50 border-amber-200 text-amber-900",
+        })
+        return
+      }
+      toast({ title: "发送成功", description: `已将线索 \"${lead.company}\" 提交至云端发送队列`, variant: "default", className: "bg-emerald-50 border-emerald-200 text-emerald-800" })
+    } catch (error) {
+      toast({ title: "发送失败", description: formatErrorMessage(error, "发送到云端失败"), variant: "destructive" })
+    } finally {
+      setSendingCloud(null)
+    }
+  }
+
+  if (userRole === null || userRole === undefined || !hydrated) {
+    return (
+      <div className="card-base">
+        <div className="flex items-center justify-center h-40 loading-fade">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-slate-500">加载中...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 relative overflow-hidden">
+      <div className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-[radial-gradient(circle_at_center,rgba(0,21,41,0.12),rgba(0,21,41,0))]" />
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 relative z-10">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-base font-semibold text-slate-900">高潜线索推荐</h3>
+          <p className="text-xs text-slate-500">优先展示最值得跟进的高潜线索</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {onViewAll ? <Button variant="ghost" size="sm" className="text-xs text-slate-600 hover:text-slate-900" onClick={onViewAll}>查看全部</Button> : null}
+          <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
+            <SheetTrigger asChild><Button variant="outline" size="sm" className="btn-action"><Filter className="size-3.5" />筛选</Button></SheetTrigger>
+            <SheetContent className="w-[300px]">
+              <SheetHeader><SheetTitle className="text-slate-800">筛选条件</SheetTitle></SheetHeader>
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center space-x-2"><Checkbox id="highMatch" checked={filters.highMatch} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, highMatch: checked as boolean }))} /><Label htmlFor="highMatch" className="text-slate-700">仅显示高匹配度 (&gt;80%)</Label></div>
+                <div className="flex items-center space-x-2"><Checkbox id="unlocked" checked={filters.unlocked} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, unlocked: checked as boolean }))} /><Label htmlFor="unlocked" className="text-slate-700">仅显示已解锁</Label></div>
+                <div className="flex items-center space-x-2"><Checkbox id="hasEmail" checked={filters.hasEmail} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, hasEmail: checked as boolean }))} /><Label htmlFor="hasEmail" className="text-slate-700">仅显示有邮箱</Label></div>
+              </div>
+            </SheetContent>
+          </Sheet>
+          <Button variant="outline" size="sm" className="btn-action" disabled={isExporting} isLoading={isExporting} onClick={async () => {
+            if (isExporting) return
+            try {
+              setIsExporting(true)
+              const rows = [["公司名称", "行业", "匹配度", "联系人", "职位", "邮箱", "电话", "网站"], ...displayLeads.map((lead) => [lead.company, lead.industry, `${lead.matchScore}%`, lead.contact, lead.contactTitle, lead.email, lead.phone, lead.website || ""])]
+              const csvContent = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\n")
+              const response = await saveExportFile({ fileName: `kone-leads-export-${new Date().toISOString().slice(0, 10)}.csv`, content: "\ufeff" + csvContent })
+              if (response.canceled) {
+                return
+              }
+              toast({ title: "导出成功", description: "已导出当前筛选结果到指定位置", variant: "default", className: "bg-emerald-50 border-emerald-200 text-emerald-800" })
+            } catch (error) {
+              toast({ title: "导出失败", description: formatErrorMessage(error, "导出失败"), variant: "destructive" })
+            } finally {
+              setIsExporting(false)
+            }
+          }}>{!isExporting ? <Download className="size-3.5" /> : null}{isExporting ? "导出中" : "导出"}</Button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-100 bg-[hsl(var(--background))]"><th className="text-left px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">公司名称</th><th className="text-left px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">ICP 匹配度</th><th className="text-left px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">关键联系人</th><th className="text-right px-5 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th></tr></thead>
+          <tbody>
+            {displayLeads.length === 0 ? (
+               <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-500"><div className="text-sm text-slate-500">暂无已评估的高潜线索，请先完成搜索评分或放宽筛选条件</div>{onViewAll ? <div className="mt-3 flex justify-center"><Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={onViewAll}>去智能获客</Button></div> : null}</td></tr>
+            ) : (
+              displayLeads.map((lead, index) => (
+                <tr key={stableHash(`${lead.id}-${index}`)} className="border-b border-slate-100 last:border-b-0 hover:bg-[hsl(var(--background))] transition-colors h-16">
+                  <td className="px-5 py-4"><button onClick={() => { window.location.hash = `/data-center/${lead.id}` }} className="flex items-center gap-3 hover:opacity-80 transition-opacity"><div className="w-10 h-10 rounded-lg bg-[hsl(var(--background))] border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">{lead.company.charAt(0)}</div><span className="font-medium text-slate-800">{lead.company}</span></button></td>
+                  <td className="px-5 py-4"><MatchBar score={lead.matchScore} /></td>
+                  <td className="px-5 py-4">{lead.unlocked ? <div className="flex flex-col gap-1"><span className="font-medium text-slate-700">{lead.contact || "暂无数据"}</span><div className="flex items-center gap-3 text-xs text-slate-500"><span className="flex items-center gap-1"><Mail className="size-3" />{lead.email || "暂无数据"}</span><span className="flex items-center gap-1"><Phone className="size-3" />{lead.phone || "暂无数据"}</span></div></div> : <button className="flex items-center gap-1.5 text-[hsl(var(--deep-blue))] text-sm font-medium hover:underline"><Lock className="size-3.5" />点击解锁</button>}</td>
+                  <td className="px-5 py-4 text-right"><div className="flex items-center justify-end gap-2"><Button size="sm" className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700" disabled={analysisLoading === lead.id} isLoading={analysisLoading === lead.id} onClick={async () => {
+                    if (analysisLoading === lead.id) return
+                    setAnalysisLoading(lead.id)
+                    onAnalyze(lead)
+                    try {
+                      const key = getLeadUniqueKey(lead)
+                      const exists = leads.some((item) => getLeadUniqueKey(item) === key)
+                      setSavedLeadIds((prev) => new Set(prev).add(lead.id))
+                      if (!exists) {
+                        await addLead(lead)
+                        toast({ title: "已同步线索", description: `线索 "${lead.company}" 已保存至本地`, variant: "default", className: "bg-emerald-50 border-emerald-200 text-emerald-800" })
+                      } else {
+                        toast({ title: "已保存", description: "该线索已在库中，无需重复保存", variant: "default", className: "bg-emerald-50 border-emerald-200 text-emerald-800" })
+                      }
+                    } catch (error) {
+                      setSavedLeadIds((prev) => { const next = new Set(prev); next.delete(lead.id); return next })
+                      toast({ title: "保存失败", description: formatErrorMessage(error, "保存线索失败"), variant: "destructive" })
+                    } finally {
+                      setAnalysisLoading(null)
+                    }
+                  }}>{!analysisLoading || analysisLoading !== lead.id ? <Sparkles className="size-3.5" /> : null}{analysisLoading === lead.id ? "加载中" : savedLeadIds.has(lead.id) ? "查看分析" : "AI 深度分析"}</Button><Button size="sm" className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700" onClick={() => void handleSendToCloud(lead)} disabled={sendingCloud === lead.id || !onSendToCloud} isLoading={sendingCloud === lead.id}>{sendingCloud !== lead.id ? <Rocket className="size-3.5" /> : null}{sendingCloud === lead.id ? "发送中" : "发送至云端"}</Button></div></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
