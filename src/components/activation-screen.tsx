@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { KoneLogo } from "@/components/kone-logo"
 import { getLicenseInfo, submitLicense, requestTrial } from "@/lib/electron-api"
 import { useLicenseStore } from "@/store/licenseStore"
+import { useToast } from "@/hooks/use-toast"
 
 type ActivationScreenProps = {
   onActivated: () => void
@@ -20,6 +21,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
   const [requestingTrial, setRequestingTrial] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const refreshLicenseStatus = useLicenseStore((state) => state.refreshLicenseStatus)
+  const { toast } = useToast()
 
   useEffect(() => {
     const loadInfo = async () => {
@@ -45,7 +47,9 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
 
   const handleActivate = async () => {
     if (!licenseKey.trim()) {
-      setErrorMessage("请输入激活码")
+      const message = "请输入激活码"
+      setErrorMessage(message)
+      toast({ title: "激活失败", description: message, variant: "destructive" })
       return
     }
     setActivating(true)
@@ -55,18 +59,24 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
         licenseKey: licenseKey.trim(),
       })
       if (result.isExpired) {
-        setErrorMessage("授权已过期，请联系商务续费")
+        const message = result.message || "授权已过期，请联系商务续费"
+        setErrorMessage(message)
+        toast({ title: "激活失败", description: message, variant: "destructive" })
         return
       }
       if (result.tier === "unregistered") {
-        setErrorMessage("激活失败，请检查激活码是否正确")
+        const message = result.message || "激活失败，请检查激活码是否正确"
+        setErrorMessage(message)
+        toast({ title: "激活失败", description: message, variant: "destructive" })
         return
       }
       await refreshLicenseStatus(true)
       await refreshLicenseStatus(true)
       onActivated()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "授权验证失败，请稍后重试")
+      const message = error instanceof Error ? error.message : "授权验证失败，请稍后重试"
+      setErrorMessage(message)
+      toast({ title: "激活失败", description: message, variant: "destructive" })
     } finally {
       setActivating(false)
     }
@@ -78,12 +88,16 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
     try {
       const result = await requestTrial()
       if (!result.success) {
-        setErrorMessage(result.message || "试用申请失败，该设备可能已试用过")
+        const message = result.message || "试用申请失败，该设备可能已试用过"
+        setErrorMessage(message)
+        toast({ title: "试用开启失败", description: message, variant: "destructive" })
         return
       }
       onActivated()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "试用申请失败，请稍后重试")
+      const message = error instanceof Error ? error.message : "试用申请失败，请稍后重试"
+      setErrorMessage(message)
+      toast({ title: "试用开启失败", description: message, variant: "destructive" })
     } finally {
       setRequestingTrial(false)
     }
@@ -102,7 +116,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
       data-stage="activation-screen"
     >
       {/* ── Left Branding Panel ── */}
-      <div className="relative hidden w-[42%] flex-col justify-between overflow-hidden bg-slate-950 p-10 lg:flex">
+      <div className="relative hidden w-[42%] flex-col justify-between overflow-hidden bg-gradient-to-br from-blue-900 via-blue-800 to-cyan-500 p-10 lg:flex">
         {/* Decorative circles */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-16 left-8 w-64 h-64 rounded-full border border-white/30" />
@@ -118,12 +132,12 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             <br />
             B2B 智能获客系统
           </h1>
-          <p className="max-w-md text-lg leading-relaxed text-slate-300">
+          <p className="max-w-md text-lg leading-relaxed text-white/85">
             面向全球企业市场的智能获客操作系统，融合 AI 线索挖掘与精细化风控能力，帮助销售团队稳定、可持续地拓展高质量 B2B 客户。
           </p>
         </div>
 
-        <div className="relative z-10 flex items-center gap-3 text-sm text-slate-400">
+        <div className="relative z-10 flex items-center gap-3 text-sm text-white/80">
           <Shield className="size-4" />
           <span>企业级数据安全保障 &middot; 本地化部署</span>
         </div>

@@ -69,7 +69,9 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
 
   const handleActivate = async () => {
     if (!licenseKey.trim()) {
-      setErrorMessage(copy.emptyKeyMessage)
+      const message = copy.emptyKeyMessage
+      setErrorMessage(message)
+      toast({ title: "激活失败", description: message, variant: "destructive" })
       return
     }
 
@@ -78,18 +80,24 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
     try {
       const result = await submitLicense({ licenseKey: licenseKey.trim() })
       if (result.isExpired) {
-        setErrorMessage("授权已过期，请联系专属顾问续费")
+        const message = result.message || "授权已过期，请联系专属顾问续费"
+        setErrorMessage(message)
+        toast({ title: "激活失败", description: message, variant: "destructive" })
         return
       }
       if (result.tier === "unregistered") {
-        setErrorMessage("激活码无效，请核对后重新输入")
+        const message = result.message || "激活码无效，请核对后重新输入"
+        setErrorMessage(message)
+        toast({ title: "激活失败", description: message, variant: "destructive" })
         return
       }
       await refreshLicenseStatus(true)
       onOpenChange(false)
       onActivated?.()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "验证失败，请稍后重试")
+      const message = error instanceof Error ? error.message : "验证失败，请稍后重试"
+      setErrorMessage(message)
+      toast({ title: "激活失败", description: message, variant: "destructive" })
     } finally {
       setActivating(false)
     }
@@ -225,9 +233,10 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                   data-testid="btn-upgrade-unlock"
                   onClick={handleActivate}
                   disabled={activating || !licenseKey.trim()}
+                  isLoading={activating}
                   className="mt-5 h-12 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-md transition-colors hover:bg-blue-700"
                 >
-                  <Rocket className="size-4.5" />
+                  {!activating ? <Rocket className="size-4.5" /> : null}
                   {activating ? `正在解锁${intent === "basic" ? "基础版" : "高级版"}...` : copy.activateButtonLabel}
                 </Button>
               </div>
