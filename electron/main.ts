@@ -38,6 +38,11 @@ if (process.env.KONE_SMOKE_TEST === '1' || process.env.KONE_REGRESSION_TEST === 
   app.commandLine.appendSwitch('remote-debugging-port', process.env.KONE_REMOTE_DEBUGGING_PORT?.trim() || '9222')
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
+
 const store = createConfigStore()
 assertConfigWritable(store)
 
@@ -46,6 +51,20 @@ let mainTray: Tray | null = null
 let isQuitting = false
 let autopilotLifecycle: AutopilotLifecycle = 'idle'
 let mainWindowRef: BrowserWindow | null = null
+
+app.on('second-instance', () => {
+  const mainWindow = mainWindowRef ?? BrowserWindow.getAllWindows()[0] ?? null
+  if (!mainWindow) {
+    return
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+
+  mainWindow.show()
+  mainWindow.focus()
+})
 
 const registerIpcHandlers = () => {
   registerAuthHandlers(ipcMain)
@@ -163,6 +182,10 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) {
+    return
+  }
+
   migrateLegacySecretsFromConfig(store)
   clearLegacyAutopilotNode(store)
   registerIpcHandlers()
@@ -183,7 +206,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' && isQuitting) {
+  if (process.platform !== 'darwin') {
     app.quit()
   }
 })
@@ -191,12 +214,15 @@ app.on('window-all-closed', () => {
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     const mainWindow = await createMainWindow()
+    mainWindowRef = mainWindow
     createTray(mainWindow)
     bindWindowCloseToTray(mainWindow)
     return
   }
 
-  BrowserWindow.getAllWindows()[0]?.show()
+  const mainWindow = BrowserWindow.getAllWindows()[0] ?? null
+  mainWindowRef = mainWindow
+  mainWindow?.show()
 })
 
 app.on('before-quit', () => {
