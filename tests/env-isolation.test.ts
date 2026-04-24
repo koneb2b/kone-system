@@ -112,7 +112,7 @@ test('development runtime returns full mock claims when stored claims are missin
   assert.ok(result.featureSet.has('cloud_send'))
 })
 
-test('development runtime tolerates EPERM during anchor persistence, packaged runtime still throws', async () => {
+test('anchor persistence tolerates EPERM in both development and packaged runtime so activation flow still resolves', async () => {
   const epermError = Object.assign(new Error('access denied'), { code: 'EPERM' })
   const originalFetch = global.fetch
   const store = createStoreMock({
@@ -153,8 +153,9 @@ test('development runtime tolerates EPERM during anchor persistence, packaged ru
   const packagedService = createPackagedLicenseService(store)
   packagedService.registerHandlers(packagedIpcMain, electronMock.app)
   const packagedResult = await packagedIpcMain.getHandler(packagedChannels.LICENSE.REQUEST_TRIAL)()
-  assert.equal(packagedResult.success, false)
-  assert.match(String(packagedResult.error || ''), /access denied/)
+  assert.equal(packagedResult.success, true)
+  assert.equal(packagedResult.data?.success, true)
+  assert.equal(typeof packagedResult.data?.expiresAt, 'number')
 
   global.fetch = originalFetch
 })
