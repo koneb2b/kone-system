@@ -581,16 +581,16 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
     try {
       setIsExporting(true)
       const rows = [
-        ["公司名称", "联系人", "职位", "邮箱", "电话", "网站", "国家", "行业", "来源", "匹配度", "跟进状态", "预估价值", "跟进记录 (Snippet)", "AI策略 (AI Strategies)"],
+        ["公司名称", "联系人", "职位", "邮箱", "电话", "网站", "国家", "行业/产品", "来源", "匹配度", "跟进状态", "预估价值", "跟进记录 (Snippet)", "AI策略 (AI Strategies)"],
         ...filteredLeads.map((lead) => [
           lead.company,
-          lead.contact,
-          lead.contactTitle,
-          lead.email,
-          lead.phone,
+          lead.contact || "暂无/待解锁",
+          lead.contactTitle || "暂无/待解锁",
+          lead.email || "暂无/待解锁",
+          lead.phone || "暂无/待解锁",
           lead.website || "",
           lead.country,
-          lead.industry,
+          lead.industry || "暂无/待解锁",
           lead.source,
           typeof lead.matchScore === "number" ? lead.matchScore.toString() : "待评估",
           lead.status,

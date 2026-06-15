@@ -1,19 +1,26 @@
-import { app, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, screen, session } from './electron-bridge'
 import path from 'path'
 
-const windowIconPath = path.join(__dirname, '../build/icon.ico')
+const getWindowIconPath = () => path.join(app.getAppPath(), 'build', 'icon.ico')
 
 export const createMainWindow = async () => {
   const isDev = !app.isPackaged
   const devUrl = process.env.ELECTRON_RENDERER_URL || 'http://127.0.0.1:5173'
   const preloadPath = path.join(app.getAppPath(), 'dist-electron', 'preload', 'index.js')
+  const { workAreaSize } = screen.getPrimaryDisplay()
+  const width = Math.min(1280, workAreaSize.width)
+  const height = Math.min(800, workAreaSize.height)
+  const minWidth = Math.min(960, workAreaSize.width)
+  const minHeight = Math.min(640, workAreaSize.height)
 
   const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width,
+    height,
+    minWidth,
+    minHeight,
     show: false,
     autoHideMenuBar: true,
-    icon: windowIconPath,
+    icon: getWindowIconPath(),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

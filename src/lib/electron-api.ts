@@ -1,4 +1,13 @@
 import type {
+  AccountConnectData,
+  AccountConnectRequest,
+  AccountDisconnectRequest,
+  AccountListData,
+  AccountSessionEntry,
+  AgentControlData,
+  AgentControlRequest,
+  AgentListData,
+  AgentLogData,
   AnalysisGenerateData,
   AnalysisGenerateRequest,
   AutopilotAction,
@@ -11,10 +20,13 @@ import type {
   ConfigSetRequest,
   CreateCampaignData,
   CreateCampaignRequest,
+  DnsHealthCheckResult,
   DomainCollisionResult,
   EmailVerifyData,
   FetchModelsData,
   FetchModelsRequest,
+  FileExportPdfData,
+  FileExportPdfRequest,
   FileExportSaveData,
   FileExportSaveRequest,
   IpcResponse,
@@ -24,6 +36,7 @@ import type {
   ProxyData,
   ProxyRequest,
   RealtimeLeadEvent,
+  SalesAgentState,
   SecretCheckData,
   SecretSetRequest,
   SearchExecuteData,
@@ -167,6 +180,17 @@ export const saveExportFile = async (payload: FileExportSaveRequest): Promise<Fi
     return (response.data as FileExportSaveData) ?? {}
   }
 
+export const exportPdfFile = async (payload: FileExportPdfRequest): Promise<FileExportPdfData> => {
+  const response = await window.electronAPI.files.exportPdf(payload)
+  if (response?.canceled) {
+    return { canceled: true }
+  }
+  if (!response?.success) {
+    throw new ElectronApiError(response?.error || 'PDF 导出失败', response?.code, { canceled: false, meta: response?.meta })
+  }
+  return (response.data as FileExportPdfData) ?? {}
+}
+
 export const verifyLicense = async (key: string) =>
   unwrapIpc(await window.electronAPI.license.verify(key), '授权验证失败')
 
@@ -226,3 +250,37 @@ export const fetchClaimedDomains = async (): Promise<ClaimedDomainsData> =>
 
 export const onCloudRealtimeLeadEvent = (callback: (event: RealtimeLeadEvent) => void) =>
   window.electronAPI.onCloudRealtimeLeadEvent(callback)
+
+/* ── V1.3 Multi-Account Sandbox ── */
+
+export const accountConnect = async (payload: AccountConnectRequest): Promise<AccountConnectData> =>
+  unwrapIpc(await window.electronAPI.accounts.connect(payload), '账号连接失败')
+
+export const accountDisconnect = async (payload: AccountDisconnectRequest): Promise<void> => {
+  unwrapIpc(await window.electronAPI.accounts.disconnect(payload), '账号断开失败')
+}
+
+export const accountGetList = async (): Promise<AccountListData> =>
+  unwrapIpc(await window.electronAPI.accounts.getList(), '读取账号列表失败')
+
+export const onAccountStatusUpdate = (callback: (entry: AccountSessionEntry) => void) =>
+  window.electronAPI.onAccountStatusUpdate(callback)
+
+/* ── V1.3 Sales Agents ── */
+
+export const agentGetList = async (): Promise<AgentListData> =>
+  unwrapIpc(await window.electronAPI.agents.getList(), '读取智能体列表失败')
+
+export const agentControl = async (payload: AgentControlRequest): Promise<AgentControlData> =>
+  unwrapIpc(await window.electronAPI.agents.control(payload), '智能体控制指令失败')
+
+export const onAgentStatusChanged = (callback: (state: SalesAgentState) => void) =>
+  window.electronAPI.onAgentStatusChanged(callback)
+
+export const agentGetLog = async (agentId: string): Promise<AgentLogData> =>
+  unwrapIpc(await window.electronAPI.agents.getLog(agentId), '读取智能体运行日志失败')
+
+/* ── V1.3 DNS Health Check ── */
+
+export const dnsHealthCheck = async (domain: string): Promise<DnsHealthCheckResult> =>
+  unwrapIpc(await window.electronAPI.dns.healthCheck({ domain }), 'DNS 健康检测失败')

@@ -202,6 +202,127 @@ test('search handler pre-filter removes body shop and mechanic noise while retai
     assert.ok(companies.includes('Tokyo Battery Trading'))
     assert.ok(!companies.includes('Downtown Body Shop'))
     assert.ok(!companies.includes('Quick Mechanic Service'))
+
+    const eventNames = senderEvents.map((entry) => entry.channel)
+    const completeIndex = eventNames.lastIndexOf(IPC_CHANNELS.SEARCH.STREAM_COMPLETE)
+    const enrichingIndex = senderEvents.findIndex((entry) => entry.channel === IPC_CHANNELS.SEARCH.STAGE && entry.payload?.stage === 'enriching')
+    const stageCompleteIndex = senderEvents.findIndex((entry) => entry.channel === IPC_CHANNELS.SEARCH.STAGE && entry.payload?.stage === 'complete')
+    assert.ok(enrichingIndex >= 0, 'search should emit enriching stage before final completion')
+    assert.ok(stageCompleteIndex > enrichingIndex, 'search should emit complete stage after enriching')
+    assert.ok(completeIndex > stageCompleteIndex, 'stream complete should be emitted only after stage complete')
+  })
+})
+
+test('AnySearch google_organic dataSourceType skips Maps and returns organic Scout candidates', async () => {
+  const electronMock = createElectronMock()
+  const secretManagerMock = {
+    getSecret(key) {
+      if (/google-leads/i.test(String(key || ''))) return 'mock-google-key'
+      return ''
+    },
+    setSecret() { return { exists: true, masked: '***' } },
+    checkSecret() { return { exists: true, masked: '***' } },
+    migrateSecrets() { return false },
+  }
+  const licenseServiceMock = {
+    createLicenseService() {
+      return { licenseGuard: {} }
+    },
+    registerSecureFeatureIpc(ipcMain, channel, _store, _licenseGuard, _featureName, handler) {
+      ipcMain.handle(channel, handler)
+    },
+  }
+
+  const requestedEngines = []
+  const senderEvents = []
+  global.fetch = async (url) => {
+    const target = String(url)
+    if (target.startsWith('https://serpapi.com/search.json')) {
+      const parsed = new URL(target)
+      requestedEngines.push(parsed.searchParams.get('engine'))
+      assert.equal(parsed.searchParams.get('engine'), 'google')
+      const start = parsed.searchParams.get('start') || '0'
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        async text() {
+          return JSON.stringify({
+            organic_results: start === '0'
+              ? [
+                {
+                  title: 'Tokyo Industrial Battery Distributor',
+                  link: 'https://tokyo-industrial-battery.example',
+                  snippet: 'Industrial battery distributor and wholesale supplier in Japan',
+                },
+              ]
+              : [],
+          })
+        },
+      }
+    }
+    throw new Error(`Unexpected fetch: ${target}`)
+  }
+
+  await withModuleMocks({
+    electron: electronMock,
+    'electron-store': class MockStore {
+      constructor() {
+        this.values = {}
+        this.path = path.join(process.cwd(), '.tmp-business-logic-user-data', 'kone-config.json')
+      }
+      get(key) {
+        return this.values[key]
+      }
+      set(key, value) {
+        this.values[key] = value
+      }
+    },
+    [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]: secretManagerMock,
+    [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`]: secretManagerMock,
+    [`./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]: licenseServiceMock,
+  }, async () => {
+    resetModule(searchServicePath)
+    resetModule(configServicePath)
+    resetModule(secretManagerPath)
+    resetModule(licenseServicePath)
+    resetModule(channelsPath)
+    const { registerSearchHandlers } = require(searchServicePath)
+    const { IPC_CHANNELS } = require(channelsPath)
+    const ipcMain = createIpcMainMock()
+    const store = createStoreMock({
+      user_config: {
+        providers: [
+          { id: 'google-leads', baseUrl: 'https://serpapi.com' },
+        ],
+        icpProfile: {
+          targetProduct: 'Industrial battery system',
+          buyerPersona: 'distributor',
+          coreAdvantage: 'stable delivery',
+          negativeIcp: '',
+        },
+      },
+    })
+
+    registerSearchHandlers(ipcMain, store)
+    const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)({
+      sender: {
+        send(channel, payload) {
+          senderEvents.push({ channel, payload })
+        },
+      },
+    }, {
+      keyword: 'Industrial battery distributor',
+      country: 'Japan',
+      city: 'Tokyo',
+      dataSourceType: 'google_organic',
+      filterOptions: {},
+    })
+
+    assert.equal(result?.success, true)
+    assert.deepEqual([...new Set(requestedEngines)], ['google'])
+    assert.ok(result.data.results.some((item) => item.source === 'Google Organic'))
+    assert.ok(senderEvents.some((entry) => entry.channel === IPC_CHANNELS.SEARCH.STREAM_COMPLETE))
   })
 })
 

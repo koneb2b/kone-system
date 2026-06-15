@@ -124,16 +124,23 @@ Forbidden degraded wording:
 4. 错误输入场景的提示必须保持非阻塞、专业、简体中文，不得制造恐慌或误导用户认为系统已彻底失败。
 
 ### 5.2 降级透明化强制规则
-1. 二级关键词容错时，UI 必须显示：`地图定位受限，正在尝试扩大识别范围...`
-2. 三级 Organic 补位时，UI 必须显示：`未发现地图商户，已自动为您补位全局网页线索...`
-3. 降级文案必须通过后端状态语义驱动，不能依赖用户自行猜测。
-4. 缺失 AI 密钥属于可恢复降级状态，前端必须以 Amber 或等价的非阻塞方式展示提醒，不得误报为致命错误。
+1. 第零级 AnySearch 穿透时，UI 必须显示：`🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...`
+2. 二级关键词容错时，UI 必须显示：`地图定位受限，正在尝试扩大识别范围...`
+3. 三级 Organic 补位时，UI 必须显示：`未发现地图商户，已自动为您补位全局网页线索...`
+4. 降级文案必须通过后端状态语义驱动，不能依赖用户自行猜测。
+5. 缺失 AI 密钥属于可恢复降级状态，前端必须以 Amber 或等价的非阻塞方式展示提醒，不得误报为致命错误。
 
 ### 5.3 高级质量控制闭环
-1. `优先官网`、`优先本土域名`、`高相关优先`、`B2B 角色优先` 等高级质量控制模块属于搜索确定性的核心，不得移除或仅保留视觉外壳。
+1. `优先官网`、`优先本土域名`、`只看高相关`、`优先 B2B 角色词` 等高级质量控制模块属于搜索确定性的核心，不得移除或仅保留视觉外壳。
 2. UI 勾选状态必须作为契约入参透传至主进程。
 3. 主进程必须依据该配置在 Scout 阶段执行真实过滤与排序，确保所见即所得。
 4. 若前端可见但后端未挂载逻辑，视为严重违例。
+
+### 5.4 多源数据徽标规范 (V1.3)
+1. 搜索数据源选择器标签使用纯简体中文，不得含英文辅助文案。
+2. 数据源徽标颜色按来源分类：海关提单 `emerald`、展会名录 `amber`、行业黄页 `purple`、LinkedIn `blue`、Facebook `blue`、Google Maps `blue`、网页搜索 `slate`。
+3. 决策人、海关数据、展会足迹徽标以非侵入方式展示在线索卡片头部区域。
+4. 多源覆盖率统计卡片在数据中心页面使用水平条形图展示来源分布。
 
 ---
 
@@ -178,9 +185,45 @@ Autopilot is a background companion panel, not the hero surface.
 
 ---
 
-## 9. Tech and State Rules
+## 9. V1.3 Multi-Agent Panel UX Rules
+
+### 9.1 AgentsPanel (`/agents`)
+1. Three agent cards (WhatsApp/LinkedIn/Email) render in a responsive 3-column grid.
+2. Each card shows: agent label, description, progress bar, daily quota, success/fail counts.
+3. Start button text: `启动智能体` or `启动`; Stop: `停止`; Pause: `暂停`.
+4. Trial users must see only an upgrade/promo surface, not live agent metrics.
+5. Paid Basic users may see Email and low-volume WhatsApp Web cards when configured; LinkedIn must be clearly labeled as read-only Profile辅助 + AI 文案生成, not auto outreach.
+6. Locked or unavailable capabilities show lock icon + upgrade CTA, but must not expose fake progress metrics.
+7. Email agent checks for connected email sandbox before allowing start; shows failure toast if no SMTP/IMAP account connected.
+8. Daily quota badge visible at panel top; WhatsApp Basic low-volume limit and Email Basic 20/day must be displayed clearly.
+9. Autopilot physical boundary warning banner: `本地 AI 智能体群正在安全复用您本机的住宅网络和独立沙箱环境...`
+10. LinkedIn UI must never show `自动加好友`、`自动私信` or equivalent wording. Approved wording: `浏览 Profile`、`生成破冰文案`、`复制文案人工触达`。
+7. Autopilot physical boundary warning banner: `本地 AI 智能体群正在安全复用您本机的住宅网络和独立沙箱环境...`
+
+### 9.2 AccountsManagement (`/accounts`)
+1. "Add account sandbox" cards display 5 account types: SMTP, IMAP, LinkedIn, Facebook, WhatsApp.
+2. Each card shows the account type icon, label, and description.
+3. Locked cards show semi-transparent overlay with `升级解锁` or `需配置账号` badge. WhatsApp Web Basic may be enabled as low-volume local session; WhatsApp Cloud API remains Premium.
+4. Email cards show `基础版仅支持 1 个邮箱实例` when Basic user already has one connected.
+5. Connected account cards display: connection status badge (已连接/已断开/被限速/异常), last health check timestamp, disconnect button.
+6. Empty state shows shield icon with operational guide text.
+
+### 9.3 DNS Health Check Warning UX
+1. DNS health check result displays as compact info/warning card.
+2. Green (passed): `域名信誉合格` with MX/SPF/DKIM/DMARC check results.
+3. Red (failed): `域名合规告警` with specific error reason (missing SPF/DKIM/blacklisted).
+4. Campaign send button becomes `disabled` when DNS check has errors.
+5. Disabled state shows red warning bar: `发信域名存在安全风险，发送按钮已软锁定`.
+
+---
+
+## 10. Tech and State Rules
 1. Tailwind syntax must remain compatible with Tailwind CSS v3.4.
 2. Cross-component operational state belongs in Zustand.
 3. UI should read from store truth instead of duplicating business state locally when the state spans components or pages.
 4. Any score-derived aggregate shown in UI must filter invalid numeric values first.
 5. UI optimization should prefer low-noise rendering and avoid effects that burden low-spec office machines.
+6. V1.3 agent and account status use `onAgentStatusChanged`/`onAccountStatusUpdate` listeners, not polling.
+7. Data source label/color mappings must use shared constants (avoid per-component ternary chains for DataSourceType display).
+8. Localized-search progress must be displayed through backend stage events in Simplified Chinese; renderer must not infer country language on its own.
+9. Agent success UI must be driven by backend `AgentState` and persistent `LeadItem.agentStatus`; no frontend-only optimistic success counters.

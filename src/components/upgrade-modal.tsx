@@ -37,7 +37,7 @@ const INTENT_COPY: Record<UpgradeIntent, { title: string; subtitle: string; desc
   },
   premium: {
     title: "升级 Kone 企业高级版",
-    subtitle: "B2B 私域协同 + 全自动化极速交付",
+    subtitle: "B2B 私域协同 + 云端自动化序列",
     description:
       "扫码添加专属顾问 | 获取高级版授权。解锁云端防撞单检测、团队线索共享与多节点自动化发信引擎。",
     activationHint: "粘贴专属顾问交付的 Premium 离线授权码后，系统将立即完成校验并瞬间覆盖当前试用状态，解锁云端高级能力。",

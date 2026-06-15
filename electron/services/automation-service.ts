@@ -33,6 +33,13 @@ export type CampaignStartResult = {
   message?: string
 }
 
+const N8N_GOLD_FILTER_MIN_SCORE = 80
+
+const resolveLeadScore = (lead: Record<string, unknown>) => {
+  const rawScore = typeof lead.matchScore === 'number' ? lead.matchScore : lead.score
+  return Number.isFinite(Number(rawScore)) ? Math.round(Number(rawScore)) : undefined
+}
+
 export type EmailTemplate = {
   id: string
   name: string
@@ -192,7 +199,7 @@ const triggerN8nWorkflow = async (
         risk_flags: Array.isArray(lead.riskFlags) ? lead.riskFlags.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 3) : [],
         snippet: String(lead.snippet || '').trim().slice(0, 500),
       },
-      icp_match_score: Number.isFinite(Number(lead.matchScore || lead.score)) ? Math.round(Number(lead.matchScore || lead.score)) : undefined,
+      icp_match_score: resolveLeadScore(lead),
       ai_analysis: {
         companyProfile: String(aiAnalysis.companyProfile || '').trim().slice(0, 800),
         painPoints: String(aiAnalysis.painPoints || '').trim().slice(0, 800),
@@ -221,10 +228,10 @@ const triggerN8nWorkflow = async (
       },
       verification_status: String(lead.verificationStatus || 'unverified').trim(),
     }
-  }).filter((entry) => entry.lead_info.email)
+  }).filter((entry) => entry.lead_info.email && typeof entry.icp_match_score === 'number' && entry.icp_match_score >= N8N_GOLD_FILTER_MIN_SCORE)
 
   if (!compactLeads.length) {
-    return { triggered: false, error: '选中线索均无有效邮箱', rejected: leads.length }
+    return { triggered: false, error: `选中线索均无有效邮箱或评分低于上云阈值 ${N8N_GOLD_FILTER_MIN_SCORE}`, rejected: leads.length }
   }
 
   const webhookUrl = getN8nWebhookUrl(store)
@@ -234,7 +241,7 @@ const triggerN8nWorkflow = async (
       triggered: true,
       accepted: compactLeads.length,
       rejected: leads.length - compactLeads.length,
-      message: '渐进式开发模式：数据组装成功，云端 Webhook 暂未配置，已取消推送',
+      message: `渐进式开发模式：数据组装成功，云端 Webhook 暂未配置，已取消推送；已拦截 ${leads.length - compactLeads.length} 条低分或无邮箱线索`,
     }
   }
 
@@ -254,7 +261,7 @@ const triggerN8nWorkflow = async (
         triggered: true,
         accepted: compactLeads.length,
         rejected: leads.length - compactLeads.length,
-        message: `已成功同步 ${compactLeads.length} 条线索至云端发送队列`,
+        message: `已成功同步 ${compactLeads.length} 条线索至云端发送队列，已拦截 ${leads.length - compactLeads.length} 条低分或无邮箱线索`,
       }
     }
     return { triggered: false, error: `云端发送失败（HTTP ${response.status}）` }
@@ -296,14 +303,12 @@ export const registerAutomationHandlers = (
     const authorizationLevel = resolveAuthorizationLevel(store, licenseGuard)
     const trialDenied = ensureTrialAccess(store, licenseGuard, '自动化发信')
     if (trialDenied) {
-      console.log(`📊 [Probe-IPC] 云端发送请求已拦截/放行，当前授权级别: ${authorizationLevel}，结果: 已拦截`)
       return trialDenied
     }
 
     try {
       licenseGuard.requireFeature('cloud_send', '自动化发信')
     } catch (error: any) {
-      console.log(`📊 [Probe-IPC] 云端发送请求已拦截/放行，当前授权级别: ${authorizationLevel}，结果: 已拦截`)
       return {
         success: false,
         error: 'FEATURE_DENIED',
@@ -312,8 +317,6 @@ export const registerAutomationHandlers = (
         code: Number(error?.code) || 403,
       }
     }
-
-    console.log(`📊 [Probe-IPC] 云端发送请求已拦截/放行，当前授权级别: ${authorizationLevel}，结果: 已放行`)
 
     try {
       const result = await triggerN8nWorkflow(store, payload?.leads || [], payload?.templateId)

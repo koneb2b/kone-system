@@ -1,4 +1,4 @@
-import { app, safeStorage } from 'electron'
+import { app, safeStorage } from './electron-bridge'
 import * as fs from 'fs'
 import * as path from 'path'
 

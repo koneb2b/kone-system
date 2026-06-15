@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app } from './electron-bridge'
 import * as fs from 'fs'
 import * as path from 'path'
 import { IPC_CHANNELS } from '../ipc/channels'

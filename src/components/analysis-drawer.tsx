@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Sparkles, Globe, MapPin, Copy, CheckCircle2, Target, ShieldAlert, Building2, MessageSquareQuote } from "lucide-react"
+import { Sparkles, Globe, MapPin, Copy, CheckCircle2, Target, ShieldAlert, Building2, MessageSquareQuote, Users, FileDown, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useLeadsStore } from "@/store/leads-store"
 import type { LeadAnalysisCacheEntry, LeadItem } from "@/store/leads-store"
-import { analysisGenerate, ElectronApiError } from "@/lib/electron-api"
+import { getDataSourceBadge, getDataSourceMeta } from "@/lib/data-source-meta"
+import { analysisGenerate, ElectronApiError, exportPdfFile } from "@/lib/electron-api"
 import { useFeatureGate } from "@/lib/feature-gate"
 
 const formatErrorMessage = (error: unknown, fallback: string) => {
@@ -89,6 +90,7 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
   const [replyError, setReplyError] = useState<string | null>(null)
   const [analysisUiState, setAnalysisUiState] = useState<AnalysisUiState>("idle")
   const [analysisStatus, setAnalysisStatus] = useState("")
+  const [pdfExporting, setPdfExporting] = useState(false)
   const replyInputRef = useRef<HTMLTextAreaElement | null>(null)
   const { toast } = useToast()
   const { updateLead } = useLeadsStore()
@@ -124,6 +126,12 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
       matchScore: lead.matchScore,
       hasSocialBlindScore,
       needsManualReview,
+      /* V1.3 多源融合字段 */
+      dataSourceType: lead.dataSourceType,
+      decisionMakers: lead.decisionMakers,
+      customsData: lead.customsData,
+      exhibitionFootprints: lead.exhibitionFootprints,
+      agentStatus: lead.agentStatus,
     }
   }, [lead])
 
@@ -426,11 +434,52 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
     }
   }
 
+  const handleExportPdf = async () => {
+    if (!leadMeta || pdfExporting) return
+    setPdfExporting(true)
+    try {
+      const strategies = Object.entries(strategyData).map(([key, data]) => ({
+        scenario: scenarioLabels[key as StrategyKey] || key,
+        subject: data.emailSubject || '',
+        body: data.emailBody || '',
+      }))
+      const result = await exportPdfFile({
+        company: leadMeta.company,
+        website: leadMeta.website,
+        country: leadMeta.country,
+        customsData: leadMeta.customsData as any,
+        exhibitionFootprints: leadMeta.exhibitionFootprints,
+        decisionMakers: leadMeta.decisionMakers as any,
+        strategies,
+      })
+      if (result.canceled) return
+      toast({ title: "PDF 已保存", description: "客户白皮书已成功写入本地安全路径", variant: "default", className: "bg-emerald-50 border-emerald-200 text-emerald-800" })
+    } catch (error: any) {
+      if (error?.canceled) return
+      const message = error instanceof Error ? error.message : 'PDF 生成失败'
+      toast({ title: "PDF 导出失败", description: message, variant: "destructive" })
+    } finally {
+      setPdfExporting(false)
+    }
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full bg-white sm:max-w-[680px]" data-testid="drawer-analysis">
         <SheetHeader className="pb-4">
           <SheetTitle className="text-base font-semibold text-slate-900">AI 深度分析</SheetTitle>
+          {leadMeta && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportPdf}
+              disabled={pdfExporting}
+              className="text-xs gap-1 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            >
+              {pdfExporting ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5" />}
+              {pdfExporting ? "生成中..." : "下载白皮书 PDF"}
+            </Button>
+          )}
         </SheetHeader>
 
         {!lead || !leadMeta ? (
@@ -448,6 +497,27 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
                     {typeof leadMeta.matchScore === "number" ? <Badge variant="outline" className="text-xs">ICP {leadMeta.matchScore}%</Badge> : <Badge variant="outline" className="text-xs text-slate-400">ICP 待评估</Badge>}
                     {leadMeta.hasSocialBlindScore ? <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700">{SOCIAL_BLIND_SCORE_MESSAGE}</span> : null}
                     {leadMeta.needsManualReview ? <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700">待人工复核</span> : null}
+                    {leadMeta.dataSourceType ? (
+                        <span className={getDataSourceBadge(leadMeta.dataSourceType)}>
+                        {getDataSourceMeta(leadMeta.dataSourceType).label || leadMeta.dataSourceType}
+                      </span>
+                    ) : null}
+                    {leadMeta.decisionMakers && leadMeta.decisionMakers.length > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700">
+                        <Users className="size-3" />
+                        {leadMeta.decisionMakers.length} 位决策人
+                      </span>
+                    ) : null}
+                    {leadMeta.customsData && (leadMeta.customsData.annualImportVolume || leadMeta.customsData.topSuppliers) ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
+                        📦 海关数据 {leadMeta.customsData.annualImportVolume ? leadMeta.customsData.annualImportVolume : '有记录'}
+                      </span>
+                    ) : null}
+                    {leadMeta.exhibitionFootprints && leadMeta.exhibitionFootprints.length > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700">
+                        🏛️ {leadMeta.exhibitionFootprints.length} 个展会足迹
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="text-right text-xs text-slate-500">

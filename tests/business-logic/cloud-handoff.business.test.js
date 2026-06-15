@@ -61,6 +61,7 @@ test('cloud handoff payload obeys compact slice caps and filters invalid email l
           email: 'valid@example.com',
           company: long,
           website: 'https://example.com',
+          matchScore: 88,
           country: long,
           contact: long,
           contactTitle: long,
@@ -95,11 +96,25 @@ test('cloud handoff payload obeys compact slice caps and filters invalid email l
           email: '',
           company: 'No Email Lead',
           website: 'https://no-email.example.com',
+          matchScore: 95,
+        },
+        {
+          email: 'low-score@example.com',
+          company: 'Low Score Lead',
+          website: 'https://low-score.example.com',
+          matchScore: 40,
+        },
+        {
+          email: 'unscored@example.com',
+          company: 'Unscored Lead',
+          website: 'https://unscored.example.com',
         },
       ],
     })
 
     assert.equal(result?.success, true)
+    assert.equal(result?.data?.accepted, 1)
+    assert.equal(result?.data?.rejected, 3)
   })
 
   assert.ok(capturedRequests.length > 0)

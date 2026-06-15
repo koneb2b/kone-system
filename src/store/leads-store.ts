@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { fetchClaimedDomains as fetchClaimedDomainsApi, checkDomainsCollision } from "@/lib/electron-api"
+import type { DataSourceType, DecisionMaker, CustomsData, AgentStatus } from "@/shared/ipc-contracts"
 
 export type LeadStatus = "new" | "contacting" | "replied" | "archived"
 export type FollowUpStatus = LeadStatus
@@ -57,13 +58,19 @@ export type LeadItem = {
   salesStrategy?: string
   analysisCache?: Record<string, LeadAnalysisCacheEntry>
   generatedStrategies?: Record<string, string>
+  /* V1.3 多源融合字段 */
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 
 export type LeadSearchResult = {
   id: number
   company: string
   industry: string
-  matchScore?: number
+  matchScore?: number | null
   fallbackStatus?: 'social_blind_score'
   contact: string
   contactTitle: string
@@ -83,6 +90,12 @@ export type LeadSearchResult = {
   salesStrategy?: string
   status?: LeadStatus
   analysisCache?: Record<string, LeadAnalysisCacheEntry>
+  /* V1.3 多源融合字段 */
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 
 const normalizeLeadWebsite = (website?: string) => {
@@ -127,6 +140,43 @@ export const getLeadUniqueKey = (lead: Pick<LeadItem, "website" | "company">) =>
   return `company:${normalizeLeadCompany(lead.company)}`
 }
 
+const mergeDecisionMakers = (existing: DecisionMaker[] | undefined, incoming: DecisionMaker[] | undefined): DecisionMaker[] | undefined => {
+  if (!incoming?.length) return existing
+  if (!existing?.length) return incoming
+
+  const result = [...existing]
+
+  for (const dm of incoming) {
+    const matchIdx = result.findIndex((e) => {
+      const eEmail = e.email?.toLowerCase().trim()
+      const dmEmail = dm.email?.toLowerCase().trim()
+      if (eEmail && dmEmail && eEmail === dmEmail) return true
+
+      const eName = e.name?.toLowerCase().trim()
+      const dmName = dm.name?.toLowerCase().trim()
+      const eTitle = e.title?.toLowerCase().trim()
+      const dmTitle = dm.title?.toLowerCase().trim()
+      return !!(eName && dmName && eName === dmName && eTitle && dmTitle && eTitle === dmTitle)
+    })
+
+    if (matchIdx >= 0) {
+      const existingScore = result[matchIdx].confidenceScore
+      const incomingScore = dm.confidenceScore
+      result[matchIdx] = {
+        ...result[matchIdx],
+        ...dm,
+        confidenceScore: existingScore !== undefined && incomingScore !== undefined
+          ? Math.max(existingScore, incomingScore)
+          : (existingScore ?? incomingScore),
+      }
+    } else {
+      result.push(dm)
+    }
+  }
+
+  return result
+}
+
 export const mergeLeads = (current: LeadItem[], incoming: LeadItem[]) => {
   const merged = new Map<string, LeadItem>()
 
@@ -140,18 +190,23 @@ export const mergeLeads = (current: LeadItem[], incoming: LeadItem[]) => {
     merged.set(
       key,
       existing
-        ? {
-            ...existing,
-            ...lead,
-            id: existing.id,
-            company: lead.company || existing.company,
-            website: lead.website || existing.website,
-            tags: lead.tags?.length ? lead.tags : existing.tags,
-            generatedStrategies: {
-              ...(existing.generatedStrategies || {}),
-              ...(lead.generatedStrategies || {}),
-            },
-          }
+          ? {
+              ...existing,
+              ...lead,
+              id: existing.id,
+              company: lead.company || existing.company,
+              website: lead.website || existing.website,
+              tags: lead.tags?.length ? lead.tags : existing.tags,
+              decisionMakers: mergeDecisionMakers(existing.decisionMakers, lead.decisionMakers),
+              exhibitionFootprints: Array.from(new Set([
+                ...(existing.exhibitionFootprints || []),
+                ...(lead.exhibitionFootprints || []),
+              ])),
+              generatedStrategies: {
+                ...(existing.generatedStrategies || {}),
+                ...(lead.generatedStrategies || {}),
+              },
+            }
         : lead
     )
   })
@@ -163,8 +218,8 @@ export const mergeLeads = (current: LeadItem[], incoming: LeadItem[]) => {
   })
 }
 
-const probeLeadStore = (count: number) => {
-  console.log("📊 [Probe-Store] Store 纯内存态更新，当前线索数:", count)
+const probeLeadStore = (_count: number) => {
+  // Intentionally no-op: keep renderer production bundles free of store probe logs.
 }
 
 type LeadsState = {

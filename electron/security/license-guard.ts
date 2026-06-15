@@ -1,6 +1,6 @@
 export type LicensePlan = 'trial' | 'basic' | 'premium' | 'enterprise'
 
-import { app } from 'electron'
+import { app } from '../services/electron-bridge'
 
 export type StoredLicenseClaims = {
   status: 'active' | 'expired'
@@ -23,7 +23,7 @@ type VerifyDeps = {
   fetchImpl: typeof fetch
 }
 
-const BASIC_FEATURES = ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full']
+const BASIC_FEATURES = ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot']
 const PREMIUM_FEATURES = [...BASIC_FEATURES, 'cloud_send', 'team_collaboration']
 const ENTERPRISE_FEATURES = ['enterprise', ...PREMIUM_FEATURES]
 const EXPORT_ROW_LIMIT = 100
@@ -200,6 +200,16 @@ export const createLicenseGuard = (deps: GuardDeps) => {
     }
   }
 
+  const hasFullExport = () => {
+    if (shouldBypassFeatureGateInDev()) return true
+    try {
+      const { featureSet } = requireAnyFeature(['export_full'], '全量导出')
+      return featureSet.has('export_full')
+    } catch {
+      return false
+    }
+  }
+
   return {
     getStoredClaims,
     normalizeFeatureSet,
@@ -207,6 +217,7 @@ export const createLicenseGuard = (deps: GuardDeps) => {
     requireFeature,
     requireAnyFeature,
     enforceExportLimit,
+    hasFullExport,
     verifyLicenseClaims,
   }
 }

@@ -1,13 +1,13 @@
 {
   "name": "kone-system",
- "version": "1.2.0",
+  "version": "1.3.0-alpha",
   "description": "Kone AI - B2B 智能获客与线索管理系统",
   "author": "Kone Team",
   "main": "dist-electron/electron/main.js",
   "license": "MIT",
   "scripts": {
     "clean": "if exist .vite rmdir /s /q .vite & if exist dist rmdir /s /q dist & if exist dist-electron rmdir /s /q dist-electron & if exist release rmdir /s /q release",
-    "dev": "taskkill /f /im electron.exe /t 2>nul & concurrently \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && ping -n 3 127.0.0.1 >nul && npm run build:electron:dev && npx electron .\"",
+    "dev": "taskkill /f /im electron.exe /t 2>nul & concurrently \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && ping -n 3 127.0.0.1 >nul && npm run build:electron:dev && node launch-electron.cjs\"",
     "build": "npm run clean && rimraf --glob \"release/*\" && vite build && npm run build:electron",
     "build:electron:dev": "tsc -p tsconfig.electron.json",
     "build:electron": "tsc -p tsconfig.electron.json && node --max-old-space-size=16384 scripts/obfuscate.cjs",
@@ -15,7 +15,7 @@
     "dist": "npm run build && electron-builder --win nsis",
     "preview": "vite preview",
     "license:offline": "node ./scripts/generate-offline-license.cjs",
-    "test": "node --test tests/**/*.test.js",
+    "test": "node --test tests/**/*.test.{js,ts}",
     "test:e2e": "npm run build:electron:dev && node --test tests/e2e/fallback-routing.test.js",
     "test:e2e-journey": "npm run build:electron:dev && node --test tests/e2e-journey.test.js",
     "test:mock-search-fallback": "npm run build:electron:dev && node tests/mock-search-fallback.js",
@@ -62,8 +62,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
-    "electron-store": "^11.0.2",
-    "node-machine-id": "^1.1.12"
+    "node-machine-id": "^1.1.12",
+    "nodemailer": "^8.0.10"
   },
   "devDependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
@@ -95,6 +95,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^20.19.37",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.2.3",
@@ -102,7 +103,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "concurrently": "^9.2.1",
-    "electron": "^40.8.0",
+    "electron": "^33.3.2",
     "electron-builder": "^26.8.1",
     "javascript-obfuscator": "^4.1.0",
     "lucide-react": "^0.577.0",

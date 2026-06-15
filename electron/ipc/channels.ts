@@ -44,6 +44,7 @@ export const IPC_CHANNELS = {
   },
   FILES: {
     EXPORT_SAVE: 'file:export-save',
+    EXPORT_PDF: 'file:export-pdf',
   },
   CLOUD: {
     CHECK_COLLISION: 'cloud:check-collision',
@@ -61,6 +62,24 @@ export const IPC_CHANNELS = {
   AUTOMATION: {
     VERIFY_EMAILS: 'automation:verify-emails',
     START_CAMPAIGN: 'automation:start-campaign',
+  },
+  /* V1.3 DNS 域名健康探测 */
+  DNS: {
+    HEALTH_CHECK: 'dns:health-check',
+  },
+  /* V1.3 智能体多开控制 */
+  AGENT: {
+    LIST: 'agent:list',
+    CONTROL: 'agent:control',
+    STATUS_CHANGED: 'agent:status-changed',
+    GET_LOG: 'agent:get-log',
+  },
+  /* V1.3 多账号沙箱管理 */
+  ACCOUNT: {
+    CONNECT: 'account:connect',
+    DISCONNECT: 'account:disconnect',
+    GET_LIST: 'account:get-list',
+    STATUS_UPDATE: 'account:status-update',
   },
 } as const;
 

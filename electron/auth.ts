@@ -1,4 +1,4 @@
-import { shell, WebContents } from 'electron'
+import { shell } from './services/electron-bridge'
 import * as crypto from 'crypto'
 import * as http from 'http'
 import { clearSecret, getSecret, setSecret } from './services/secret-manager'
@@ -20,7 +20,7 @@ export type StartAuthFlowOptions = {
   callbackPath?: string
   timeoutMs?: number
   extraAuthParams?: Record<string, string | undefined>
-  webContents?: WebContents
+  webContents?: Electron.WebContents
   successEventChannel?: string
   errorEventChannel?: string
 }

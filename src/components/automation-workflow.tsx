@@ -16,11 +16,12 @@ import {
   ShieldCheck,
   ChevronRight,
   Crown,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { verifyEmails, startCampaign, fetchTrackingStatus } from "@/lib/electron-api"
-import type { EmailVerifyResult } from "@/shared/ipc-contracts"
+import { verifyEmails, startCampaign, fetchTrackingStatus, dnsHealthCheck } from "@/lib/electron-api"
+import type { EmailVerifyResult, DnsHealthCheckResult } from "@/shared/ipc-contracts"
 import { useToast } from "@/hooks/use-toast"
 import { useLicenseStore } from "@/store/licenseStore"
 import { UpgradeModal } from "@/components/upgrade-modal"
@@ -65,6 +66,9 @@ export function AutomationWorkflow() {
   const [trackingOffline, setTrackingOffline] = useState(false)
   const [loadingTracking, setLoadingTracking] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
+  const [dnsResult, setDnsResult] = useState<DnsHealthCheckResult | null>(null)
+  const [dnsChecking, setDnsChecking] = useState(false)
+  const [senderDomain, setSenderDomain] = useState("")
 
   const canUseCloudSend = tier === "premium" || plan === "enterprise"
 
@@ -164,12 +168,24 @@ export function AutomationWorkflow() {
   const handleStartCampaign = useCallback(async () => {
     if (!canUseCloudSend) {
       handleOpenUpgrade()
-      toast({ title: "高级发送能力未开通", description: "当前套餐无法使用云端协同发送，请升级到高级版。", variant: "destructive" })
+      toast({ title: "企业云端协同引擎暂未启用", description: "当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。", variant: "destructive" })
       return
     }
 
     const emails = (validEmails.length ? validEmails.map((r) => r.email) : rawEmails.split(/[\n,;]+/).map((e) => e.trim()).filter(Boolean)).map(normalizeEmail)
     if (!emails.length) return
+    if (!senderDomain.trim()) {
+      toast({ title: "请先完成域名信誉检测", description: "请输入发信域名并完成 DNS 健康检测后，再提交云端发送队列。", variant: "destructive" })
+      return
+    }
+    if (!dnsResult || dnsResult.domain !== senderDomain.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '')) {
+      toast({ title: "请先完成域名信誉检测", description: "当前发信域名尚未完成 DNS 审计，请先点击“域名信誉检测”。", variant: "destructive" })
+      return
+    }
+    if (!dnsResult.valid || dnsResult.error) {
+      toast({ title: "发信域名存在安全风险", description: dnsResult.error || "DNS 健康检测未通过，发送按钮已软锁定。", variant: "destructive" })
+      return
+    }
     setSending(true)
     setCampaignResult(null)
     try {
@@ -184,13 +200,16 @@ export function AutomationWorkflow() {
         className: data.triggered ? "bg-emerald-50 border-emerald-200 text-emerald-800" : undefined,
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : "发送失败"
-      setCampaignResult({ triggered: false, message })
-      toast({ title: "发送失败", description: message, variant: "destructive" })
+      const rawMessage = err instanceof Error ? err.message : "发送失败"
+      const supabaseMessage = /supabase|URL.*Key|Anon|service_role|JWT/i.test(rawMessage)
+        ? "企业云端协同引擎暂未启用。当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。"
+        : rawMessage
+      setCampaignResult({ triggered: false, message: supabaseMessage })
+      toast({ title: "发送失败", description: supabaseMessage, variant: "destructive" })
     } finally {
       setSending(false)
     }
-  }, [buildLeadPayloads, canUseCloudSend, handleOpenUpgrade, rawEmails, selectedTemplate, toast, validEmails])
+  }, [buildLeadPayloads, canUseCloudSend, dnsResult, handleOpenUpgrade, rawEmails, selectedTemplate, senderDomain, toast, validEmails])
 
   const loadTracking = useCallback(async () => {
     const emails = validEmails.length ? validEmails.map((r) => r.email) : rawEmails.split(/[\n,;]+/).map((e) => e.trim()).filter(Boolean)
@@ -358,6 +377,61 @@ export function AutomationWorkflow() {
                 <div className="font-semibold text-foreground mb-1">Subject: {template.subject}</div>
                 <div className="text-muted-foreground whitespace-pre-wrap leading-relaxed">{template.body}</div>
               </div>
+               <div className="flex gap-2 mt-3">
+                <input
+                  type="text"
+                  value={senderDomain}
+                  onChange={(e) => setSenderDomain(e.target.value)}
+                  placeholder="输入发信域名（如 example.com）"
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={dnsChecking || !senderDomain.trim()}
+                  onClick={async () => {
+                    setDnsChecking(true)
+                    try {
+                      const result = await dnsHealthCheck(senderDomain.trim())
+                      setDnsResult(result)
+                      if (result.error) {
+                        toast({ title: "域名安全警告", description: result.error, variant: "destructive" })
+                      } else {
+                        toast({ title: "域名检测通过", description: `MX: ${result.hasMX ? '✔' : '✗'} SPF: ${result.hasSPF ? '✔' : '✗'} DKIM: ${result.hasDKIM ? '✔' : '✗'} DMARC: ${result.hasDMARC ? '✔' : '✗'}`, variant: "default" })
+                      }
+                    } catch (error) {
+                      toast({ title: "DNS 检测失败", description: error instanceof Error ? error.message : '检测异常', variant: "destructive" })
+                    } finally {
+                      setDnsChecking(false)
+                    }
+                  }}
+                  className="text-xs"
+                >
+                  <ShieldCheck className="size-3 mr-1" />
+                  {dnsChecking ? "检测中..." : "域名信誉检测"}
+                </Button>
+              </div>
+              {dnsResult && (
+                <div className={`mt-2 rounded-lg border px-3 py-2 text-xs flex flex-col gap-1 ${dnsResult.error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                  <div className="flex items-center gap-1 font-semibold">
+                    <ShieldCheck className="size-3" />
+                    {dnsResult.error ? '域名合规告警' : '域名信誉合格'}
+                  </div>
+                  {dnsResult.error && <p>{dnsResult.error}</p>}
+                  <div className="flex gap-3 text-[10px] opacity-75">
+                    <span>MX: {dnsResult.hasMX ? '✓' : '✗'}</span>
+                    <span>SPF: {dnsResult.hasSPF ? '✓' : '✗'}</span>
+                    <span>DKIM: {dnsResult.hasDKIM ? '✓' : '✗'}</span>
+                    <span>DMARC: {dnsResult.hasDMARC ? '✓' : '✗'}</span>
+                  </div>
+                </div>
+              )}
+              {dnsResult?.error && canUseCloudSend && (
+                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex items-center gap-2">
+                  <AlertTriangle className="size-3.5" />
+                  发信域名存在安全风险，<strong>发送按钮已软锁定</strong>。请先修复域名配置后再执行群发，以保护公司主邮箱域名信誉。
+                </div>
+              )}
               <div className="flex gap-2 mt-3">
                 <Button
                   size="sm"
@@ -369,7 +443,7 @@ export function AutomationWorkflow() {
                     }
                     void handleStartCampaign()
                   }}
-                  disabled={sending || !rawEmails.trim() || loading}
+                  disabled={sending || !rawEmails.trim() || loading || !dnsResult || !dnsResult.valid || (dnsResult?.error ? true : false)}
                   className="bg-blue-600 text-white hover:bg-blue-700"
                 >
                   {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}

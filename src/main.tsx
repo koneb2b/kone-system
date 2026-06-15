@@ -13,6 +13,7 @@ const DEV_ENTERPRISE_FEATURES = [
   'analysis_advanced',
   'lead_export',
   'export_full',
+  'local_autopilot',
   'cloud_send',
   'team_collaboration',
 ] as const
@@ -142,7 +143,7 @@ if (import.meta.env.DEV) {
             hasLlmApiKey: false,
             plan: 'enterprise',
             expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-            features: ['enterprise', 'search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'cloud_send'],
+            features: [...DEV_ENTERPRISE_FEATURES],
           },
         })) as ElectronApi['license']['getInfo'],
         submit: (async () => ({
@@ -151,7 +152,7 @@ if (import.meta.env.DEV) {
             tier: 'premium' as const,
             status: 'active' as const,
             expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-            features: ['enterprise', 'search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'cloud_send'],
+            features: [...DEV_ENTERPRISE_FEATURES],
             plan: 'enterprise',
             type: 'license' as const,
             isExpired: false,
@@ -188,7 +189,7 @@ if (import.meta.env.DEV) {
         fetchModels: unsupported as ElectronApi['config']['fetchModels'],
       },
       autopilot: {
-        getState: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['getState'],
+        getState: (async () => ({ success: true, data: { stateKind: 'ready_empty', source: 'dev_shell', state: null } })) as ElectronApi['autopilot']['getState'],
         setState: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['setState'],
         clearLegacy: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['clearLegacy'],
         syncLifecycle: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['syncLifecycle'],
@@ -233,6 +234,7 @@ if (import.meta.env.DEV) {
       },
       files: {
         saveExport: unsupported as ElectronApi['files']['saveExport'],
+        exportPdf: unsupported as ElectronApi['files']['exportPdf'],
       },
       cloud: {
         checkCollision: (async () => ({ success: true, data: { collision: false, domain: '' } })) as ElectronApi['cloud']['checkCollision'],
@@ -251,6 +253,77 @@ if (import.meta.env.DEV) {
         verifyEmails: (async () => ({ success: true, data: { results: [] } })) as ElectronApi['automation']['verifyEmails'],
         startCampaign: (async () => ({ success: true, data: { triggered: false, error: 'Dev shell: n8n 未连接' } })) as ElectronApi['automation']['startCampaign'],
       },
+      accounts: {
+        connect: (async () => ({ success: true, data: { accountId: 'dev-account', status: 'connected' } })) as ElectronApi['accounts']['connect'],
+        disconnect: (async () => ({ success: true, data: null })) as ElectronApi['accounts']['disconnect'],
+        getList: (async () => ({ success: true, data: { accounts: [] } })) as ElectronApi['accounts']['getList'],
+      },
+      onAccountStatusUpdate: (() => () => undefined) as ElectronApi['onAccountStatusUpdate'],
+      agents: {
+        getList: (async () => ({
+          success: true,
+          data: {
+            agents: [
+              {
+                agentId: 'agent-whatsapp',
+                agentType: 'whatsapp',
+                status: 'idle',
+                label: 'WhatsApp 拓客猎手',
+                description: '开发壳模式：真实自动触达请通过 npm run dev 启动 Electron 主进程。',
+                progress: 0,
+                totalTargets: 0,
+                completedCount: 0,
+                failedCount: 0,
+                dailyLimit: 50,
+                dailyUsed: 0,
+              },
+              {
+                agentId: 'agent-linkedin',
+                agentType: 'linkedin',
+                status: 'idle',
+                label: 'LinkedIn 商务买手',
+                description: '开发壳模式：真实沙箱会话请通过 npm run dev 启动 Electron 主进程。',
+                progress: 0,
+                totalTargets: 0,
+                completedCount: 0,
+                failedCount: 0,
+                dailyLimit: 50,
+                dailyUsed: 0,
+              },
+              {
+                agentId: 'agent-email',
+                agentType: 'email',
+                status: 'idle',
+                label: '邮件跟进助理',
+                description: '开发壳模式：真实 SMTP/IMAP 请通过 npm run dev 启动 Electron 主进程。',
+                progress: 0,
+                totalTargets: 0,
+                completedCount: 0,
+                failedCount: 0,
+                dailyLimit: 50,
+                dailyUsed: 0,
+              },
+            ],
+          },
+        })) as ElectronApi['agents']['getList'],
+        control: unsupported as ElectronApi['agents']['control'],
+        getLog: (async () => ({ success: true, data: { agentId: '', logEntries: [] } })) as ElectronApi['agents']['getLog'],
+      },
+      onAgentStatusChanged: (() => () => undefined) as ElectronApi['onAgentStatusChanged'],
+      dns: {
+        healthCheck: (async (payload) => ({
+          success: true,
+          data: {
+            domain: payload.domain,
+            hasMX: true,
+            hasSPF: true,
+            hasDKIM: false,
+            hasDMARC: false,
+            records: [],
+            valid: true,
+          },
+        })) as ElectronApi['dns']['healthCheck'],
+      },
     }
     window.electronAPI = devShellApi
   }
@@ -263,4 +336,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </React.StrictMode>,
 )
-

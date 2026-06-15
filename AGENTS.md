@@ -1,4 +1,4 @@
-# Kone V1.2 Multi-Agent Anti-Regression Protocol
+# Kone V1.3 Multi-Agent Anti-Regression Protocol
 
 This repository uses Oh My OpenCode Flow Engineering as a mandatory working model for non-trivial changes.
 
@@ -9,16 +9,16 @@ This repository uses Oh My OpenCode Flow Engineering as a mandatory working mode
 
 ## Mandatory Document Chain
 
-Before analyzing, planning, or modifying existing logic, every agent must read these 7 documents in order:
+Before analyzing, planning, or modifying existing logic, every agent must read these 8 documents in order. `kone-PRD.md` is the global authoritative requirements source (全局唯一权威需求主源头):
 
-1. `PROJECT-PRD.md`
-2. `ARCH-STANDARDS.md`
-3. `.opencode/agents/ui-agent.md`
-4. `.opencode/agents/ipc-agent.md`
-5. `.opencode/agents/system-blueprint.md`
-6. `.opencode/agents/build-agent.md`
-7. `V1.2-商业版交付与运维手册.md`
-8. `.clinerules`
+1. `kone-PRD.md` — V1.3 全局唯一权威需求主源头 (Global Authoritative Requirements Source)
+2. `PROJECT-PRD.md`
+3. `ARCH-STANDARDS.md`
+4. `.opencode/agents/ui-agent.md`
+5. `.opencode/agents/ipc-agent.md`
+6. `.opencode/agents/system-blueprint.md`
+7. `.opencode/agents/build-agent.md`
+8. `V1.2-商业版交付与运维手册.md`
 
 Skipping any document in this chain is a protocol violation.
 
@@ -38,7 +38,7 @@ Skipping any document in this chain is a protocol violation.
 ## Anti-Regression Protocol
 
 - Read the full 7-document chain before changing existing logic.
-- Preserve all validated behavior, especially the mandatory `三级降级链路`.
+- Preserve all validated behavior, especially the mandatory `四级弹性搜索协议`.
 - Never fix a new bug by breaking a previously working path.
 - Any change that may affect existing logic must be verified with local test scripts after modification.
 - A task is not complete until the relevant local verification passes.
@@ -54,3 +54,105 @@ Skipping any document in this chain is a protocol violation.
 - Default to the smallest safe change.
 - Do not expand scope from workflow/configuration tasks into product code.
 - Keep repository rules, billing boundaries, and fallback resilience guarantees intact.
+
+## 本地 Autopilot 伴随巡航运行规范
+
+- 侧边栏 `💎 Kone AI 自航拓客特权港` 分区必须按授权层级展示真实能力：Trial 显示升级引导；Paid Basic 可使用低量本地 Email 与 WhatsApp Web 能力；Premium/Enterprise 解锁 WhatsApp Cloud API、LinkedIn Profile 只读辅助、账号多开与团队协作。
+- 任何 Agent 实施重构或维护前端时，必须强制实施 License 级别前置拦截与 AccountService 真实状态校验。
+- Trial 用户访问 `/agents` 路由时，必须熔断拦截并替换渲染升级推介海报与激活入口，严禁渲染任何智能体卡片或暴露运行指标。Paid Basic 用户若开放本地低量 Agent，则卡片必须清楚标注低频、本地、需账号配置和平台风控边界。
+- 高级版放行后，Agent 卡片中央的"执行进度"必须通过 `accountGetList()` 拉取真实账号绑定元数据后动态渲染。凡检测到某项渠道未配置（Cookie 为空、Token 不存在），卡片进度必须硬编码清零为 `0/0`，状态标签显示 `未连接 / 待配置`。**严禁写入任何硬编码假数据污染指标**。
+- `[查看运行日志]` 按钮通过 `agent:get-log` IPC 调取后端 `AgentLogEntry[]` 记录；若无历史记录渲染 `暂无本地沙箱运行记录，请先激活启动`。
+
+## Agent 双管道数据流宪法
+
+### 核心数据流路径
+```
+搜索穿透 → SearchExecuteResult
+  ├─ decisionMakers[]     → 前端展示 + AI 分析
+  ├─ customsData          → 线索详情面板
+  ├─ exhibitionFootprints → 线索详情面板
+  └─ agentStatus          → 智能体触达状态
+         ↑
+Agent 执行管道 (agent-pipeline.ts)
+  └─ 拾取 matchScore >= 60 且含可触达资产的线索
+  └─ 生成 AgentTask 队列
+  └─ Agent 消费执行
+  └─ writeBackAgentStatus → 更新 agentStatus (双管道)
+         ├─ 管道 A: agentStatus → LeadItem.agentStatus (持久化)
+         └─ 管道 B: AgentState → AGENT.STATUS_CHANGED IPC (运行时)
+```
+
+### Agent 类型与能力矩阵
+| Agent | 消费字段 | 执行通道 | 日频上限 | 技术实现 |
+|---|---|---|---|---|
+| WhatsApp 拓客猎手 | `phone` | whatsapp-web.js (Basic) / Cloud API (Premium) | 3-5/day Basic | 本地扫码 Web WA / 官方 Cloud API |
+| LinkedIn 商务猎手 | `linkedinUrl` | 本地 Session Cookie 只读 Profile 辅助 | ≤30 profile view/day | 公开资料提取 + AI 文案生成，人工触达 |
+| 邮件长效跟随助理 | `email` | Nodemailer SMTP+IMAP (Basic) / N8N Cloud (Premium) | 20/day Basic | 本地 SMTP 直连 / Webhook 云端 |
+
+### 宪法约束
+- Agent 在消费 `AgentTask` 时必须验证 `taskRunId !== currentPipelineRunId`，丢弃来自旧管道的过期任务
+- `writeBackAgentStatus` 必须同时更新 `agentStatus`（持久化线索态）和 `AgentState`（内存运行态），二者不可偏废
+- 任何 Agent 的实现不得以 `setTimeout` 模拟替代真实 HTTP 请求或浏览器自动化
+- 各 Agent 的日频上限必须参考 `userConfig` 中的配置，不得硬编码在实现中（除默认值外）
+- LinkedIn Agent 严禁自动发送好友申请、严禁自动私信、严禁批量点击 Connect。只读 Profile 浏览成功不得写成 `linkedinContacted = true`，只能写运行日志和 AI 文案状态。
+- WhatsApp Web Agent 必须真实检测 session 状态；断线、验证码、扫码过期、限流时必须进入 `paused` 或 `error`，不得假成功。
+- Email Agent 必须先通过 SMTP/IMAP 配置与 DNS 健康检查；SPF/DKIM/DMARC 高危时必须软锁定发送。
+
+## 多语言多源搜索执行宪法
+
+- 当用户自然语言或 `country` 字段限定国家时，`mutateSearchIntent()` 必须通过 LLM 解析该国官方语言，并生成本地语言产品词变体；LLM 不可达时只能降级为英文变体，不得臆造语言。
+- 搜索变体公式为：`(pureEnglishProducts[] + localizedProducts[].terms[]) × B2B_ROLE_TERMS[0..3] × country/city`。
+- 英文变体始终执行，本地语言变体并行补充。此策略允许约 `2x` API 调用量，但不得提高 LLM 评分与官网富化并发上限。
+- 所有 Provider 必须通过统一 `ProviderQuery` 消费 `keyword`, `language`, `country`, `city`, `intentProducts`, `b2bAttributes`, `myJobId`。
+- Provider 只负责采集与归一化，不得写 Zustand、不得发送 IPC、不得保存线索。
+- `google_maps`、`google_organic`、AnySearch、`linkedin_search`、`customs_shipment`、`trade_show`、`yellow_pages`、`facebook_search` 的失败必须互相隔离，任何单源失败不得中断整轮搜索。
+
+## Pre-Commit Hygiene
+
+- Before committing, separate source/test/document changes from generated or local-only artifacts.
+- Do not stage ignored runtime residue such as `.tmp-*`, `.playwright-mcp/`, `.codenomad/`, `.vite/`, `dist/`, logs, or accidental Windows redirection files like `$null`.
+- `dist-electron/` and packaged smoke artifacts may be tracked in the current repository history; changing that policy requires an explicit cleanup task rather than an incidental feature commit.
+- If tests or smoke scripts update tracked artifacts such as `tests/packaged-smoke-report.json` or `tests/packaged-smoke.png`, review whether those artifact diffs are intentional before staging.
+
+## Secrets Whitelist
+
+- `secrets.anysearch.apiKey` and `secrets.anysearch.baseUrl` are registered literal references in `search-service.ts`. They are re-exports of the user's own AnySearch endpoint configuration—not hardcoded secrets. Any agent modifying search-service.ts must preserve these references; replacing them with hardcoded values is a protocol violation.
+
+## Continuous Search Temporal Isolation Contract
+
+- `electron/services/search-service.ts` implements JobID stamping (`currentActiveJobId`) for temporal isolation: every `handleSearchExecute` invocation generates `crypto.randomUUID()`. All async callbacks (SerpApi response, AnySearch mutate, LLM scoring, website enrichment) must check `myJobId !== currentActiveJobId` at entry and silently discard if mismatched, preventing cross-industry race conditions.
+- The contract applies to: `emitBasicResults`, `emitDecisionMakers`, `computeLeadScore`, `enrichLeadWebsite`, and all `.then()` / `await` continuations in the search pipeline.
+- This is a module-level singleton pattern, sufficient for single-window single-user. Future multi-tab concurrent search should upgrade to a `Map<string, string>` structure.
+
+## Search-to-Agent Data Pipeline Contract
+
+### Agent Task Queue Isolation
+- `agent-pipeline.ts` generates `crypto.randomUUID()` per pipeline run via `withPipelineIsolation()` (`currentPipelineRunId`).
+- All Agent task consumption and `writeBackAgentStatus` callbacks must check `taskRunId !== currentPipelineRunId` at entry; stale tasks from previous runs must be silently discarded.
+- Same module-level singleton pattern as Search Temporal Isolation.
+
+### Provider Integration Contract
+> 权威来源: `kone-PRD.md §0.8` — 以下为引用摘要，完整接口定义与实现规范以 kone-PRD.md 为准。
+
+- All new data source providers must implement the `SearchProvider` interface defined in `kone-PRD.md §0.8`.
+- Provider files must be placed under `electron/services/providers/<id>-provider.ts`.
+- Each provider must be self-contained, stateless, with all configuration injected via constructor.
+- `execute()` must include `myJobId` temporal isolation check.
+- Provider failure must not break the full pipeline: use `Promise.allSettled` for aggregation.
+- Provider implementations must accept and preserve the query `language`; country-specific local language expansion belongs in intent mutation, not inside individual providers.
+
+### Agent Pipeline Execution Contract
+- Pipeline triggers on `search:stream-complete`: automatically collects qualified leads (`matchScore >= 60` with reachable assets).
+- `AgentTask` is the minimum work unit; tasks are queued per Agent type.
+- Agent execution updates both `AgentState` (memory Map → `AGENT.STATUS_CHANGED` IPC) and `agentStatus` (persistent → `LeadItem.agentStatus`).
+- The dual-channel write-back is mandatory: runtime state for UI panel, persistent status for lead timeline.
+- Daily limits must be enforced per Agent (WhatsApp: 3-5/day, LinkedIn: determined by session, Email: 20/day for Basic).
+- Agent execution must not fake completion. Real external effects or real platform state changes are required before incrementing `completedCount` or writing `agentStatus`.
+
+### Provider Expansion Priority
+| Priority | Provider | Effort | Dependency |
+|---|---|---|---|
+| P1 | SerpApi LinkedIn Search | 1 day | Reuses existing SerpApi Key |
+| P2 | Customs data crawler | 3-5 days | Public customs databases |
+| P3 | Facebook Search | 1 day | Reuses existing SerpApi Key |
+| P4 | Trade Show crawler | 2-3 days | Public exhibition databases |

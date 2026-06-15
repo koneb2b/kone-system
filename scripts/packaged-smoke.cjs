@@ -16,14 +16,17 @@ async function run() {
     throw new Error(`Unpacked executable not found: ${executablePath}`)
   }
 
+  const childEnv = {
+    ...process.env,
+    CI: '1',
+    KONE_SMOKE_TEST: '1',
+    ELECTRON_ENABLE_LOGGING: '1',
+  }
+  delete childEnv.ELECTRON_RUN_AS_NODE
+
   const electronProc = spawn(executablePath, [], {
     cwd: unpackedRoot,
-    env: {
-      ...process.env,
-      CI: '1',
-      KONE_SMOKE_TEST: '1',
-      ELECTRON_ENABLE_LOGGING: '1',
-    },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import {
-  Key, Globe, Cpu, Save, Target
+  Key, Globe, Cpu, Save, Radar
 } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -45,7 +45,7 @@ const secretKeysByProvider: Record<string, string> = {
   llm: 'secrets.llm.apiKey',
   'google-leads': 'secrets.google-leads.apiKey',
   'google-maps': 'secrets.google-maps.apiKey',
-  'decision-maker': 'secrets.decision-maker.apiKey',
+  'anysearch': 'secrets.anysearch.apiKey',
 }
 
 interface SystemSettingsProps {
@@ -69,7 +69,7 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
     { id: "llm", name: "智能决策大脑 (LLM)", icon: Cpu, key: "", baseUrl: "", status: "pending" },
     { id: "google-leads", name: "谷歌获客引擎", icon: Globe, key: "", baseUrl: "", status: "pending" },
     { id: "google-maps", name: "谷歌地图", icon: Globe, key: "", baseUrl: "", status: "pending" },
-    { id: "decision-maker", name: "关键决策人挖掘", icon: Target, key: "", baseUrl: "", status: "pending" },
+    { id: "anysearch", name: "@ AnySearch B2B 多维数据穿透雷达", icon: Radar, key: "", baseUrl: "", status: "pending" },
   ]
   const [apiKeys, setApiKeys] = useState<ApiKeyConfig[]>([])
   const [configLoading, setConfigLoading] = useState(true)

@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from 'electron'
 import path from 'path'
+import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from './services/electron-bridge'
 import { registerAuthHandlers } from './services/auth-service'
 import {
   assertConfigWritable,
@@ -14,6 +14,9 @@ import { registerSearchHandlers } from './services/search-service'
 import { clearLegacyAutopilotNode, registerAutopilotStateHandlers } from './services/autopilot-state-service'
 import { registerSupabaseHandlers } from './services/supabase-service'
 import { registerAutomationHandlers } from './services/automation-service'
+import { registerSandboxHandlers } from './services/sandbox-service'
+import { registerAgentHandlers } from './services/agent-service'
+import { registerDnsHandlers } from './services/dns-service'
 import { createMainWindow } from './services/window-service'
 import { IPC_CHANNELS } from './ipc/channels'
 import type { AutopilotLifecycle } from '../src/shared/ipc-contracts'
@@ -47,10 +50,10 @@ const store = createConfigStore()
 assertConfigWritable(store)
 
 const { licenseGuard, registerHandlers: registerLicenseHandlers } = createLicenseService(store)
-let mainTray: Tray | null = null
+let mainTray: Electron.Tray | null = null
 let isQuitting = false
 let autopilotLifecycle: AutopilotLifecycle = 'idle'
-let mainWindowRef: BrowserWindow | null = null
+let mainWindowRef: Electron.BrowserWindow | null = null
 
 app.on('second-instance', () => {
   const mainWindow = mainWindowRef ?? BrowserWindow.getAllWindows()[0] ?? null
@@ -76,15 +79,18 @@ const registerIpcHandlers = () => {
   registerAutopilotStateHandlers(ipcMain, store)
   registerSupabaseHandlers(ipcMain, store, licenseGuard, () => mainWindowRef)
   registerAutomationHandlers(ipcMain, store, licenseGuard)
+  registerSandboxHandlers(ipcMain, store)
+  registerAgentHandlers(ipcMain, store)
+  registerDnsHandlers(ipcMain, store)
 }
 
 const getTrayIcon = () => {
-  const trayIconPath = path.join(app.getAppPath(), 'dist-electron', 'electron', 'build', 'icon.ico')
+  const trayIconPath = path.join(app.getAppPath(), 'build', 'icon.ico')
   const icon = nativeImage.createFromPath(trayIconPath)
   return icon.isEmpty() ? nativeImage.createFromNamedImage('NSStatusAvailable', []) : icon
 }
 
-const buildTrayMenu = (mainWindow: BrowserWindow) => {
+const buildTrayMenu = (mainWindow: Electron.BrowserWindow) => {
   const isRunning = autopilotLifecycle === 'running'
   const isPaused = autopilotLifecycle === 'paused'
 
@@ -144,7 +150,7 @@ const getTrayTooltip = () => {
   return 'Kone - 待命休眠中'
 }
 
-const refreshTrayMenu = (mainWindow: BrowserWindow) => {
+const refreshTrayMenu = (mainWindow: Electron.BrowserWindow) => {
   if (!mainTray) {
     return
   }
@@ -152,7 +158,7 @@ const refreshTrayMenu = (mainWindow: BrowserWindow) => {
   mainTray.setContextMenu(buildTrayMenu(mainWindow))
 }
 
-const createTray = (mainWindow: BrowserWindow) => {
+const createTray = (mainWindow: Electron.BrowserWindow) => {
   if (mainTray) return mainTray
 
   mainTray = new Tray(getTrayIcon())
@@ -166,7 +172,7 @@ const createTray = (mainWindow: BrowserWindow) => {
   return mainTray
 }
 
-const bindWindowCloseToTray = (mainWindow: BrowserWindow) => {
+const bindWindowCloseToTray = (mainWindow: Electron.BrowserWindow) => {
   mainWindow.on('close', (event) => {
     if (isQuitting) {
       return

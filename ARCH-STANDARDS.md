@@ -79,6 +79,8 @@ Forbidden:
 8. Typical noise such as auto repair shops, body shop, mechanic, tire, car wash, oil change, and similar automotive-service records must be silently removed at Scout stage.
 9. Pre-filter output must remain observable through structured probes, including kept count, discarded count, and major reason categories.
 10. When website fetch fails, snippet/title-based blind scoring is allowed if the reason clearly states that the result is based on lightweight snippet judgment.
+11. When `country` or natural language constrains a target nation, Scout must expand search intent into English product terms plus the country's official-language product terms. English remains the backbone; localized variants are additive.
+12. Multi-source acquisition must normalize every provider result into `SearchExecuteResult` and preserve `dataSourceType`; provider-specific payloads must not leak into renderer-only logic.
 
 ---
 
@@ -138,21 +140,39 @@ By contrast, Premium n8n automation may continue remotely after payload handoff,
 ## 9. Reliability, Cost, and Performance Controls
 1. No infinite retries against SerpApi, LLM providers, or remote mail/cloud services.
 2. `400/401/403/429` class failures must fail fast.
-3. Search resilience must obey the mandatory `三级弹性搜索协议`:
+3. Search resilience must obey the mandatory `四级弹性搜索协议`:
+   - level 0 (V1.3): call AnySearch B2B entity API to resolve natural-language input against multi-source databases (customs, trade shows, yellow pages, LinkedIn search, Facebook search), extracting structured company profiles and decision maker network graphs
    - level 1: call Google Maps with independent `location` parameter for precise geography
    - level 2: if level 1 returns location-related `400`, retry automatically with empty `location` and append geography into `q`
    - level 3: if level 2 returns `localCount === 0`, switch automatically to Google Organic and normalize results back into Scout candidates
-4. On 429 or network interruption:
+4. V1.3 AnySearch is a source-selection layer, not a replacement for the resilient search law:
+   - `google_organic` may enter Organic-only acquisition directly when explicitly selected
+   - `customs_shipment`, `trade_show`, `yellow_pages`, `linkedin_search`, and `facebook_search` are routed through AnySearch when implemented
+   - no source expansion may weaken stream closure, billing isolation, or Scout normalization
+5. On 429 or network interruption:
     - keep existing results intact
     - notify clearly
     - avoid destructive resets
-5. Stream failures must end with a completion signal so UI cannot deadlock.
-6. Prompt construction should keep stable system rules separate from dynamic business content to maximize cache efficiency.
-7. Advanced quality controls such as `优先官网`、`优先本土域名`、`高相关优先`、`B2B 角色优先` are contract-bound search inputs; renderer state must be passed into main process and main process must perform real Scout-stage filtering or sorting from them.
-8. Search scoring and website enrichment concurrency is a hard performance law: maximum concurrent jobs must remain fixed at `2`.
-9. Website content sent into LLM must be reduced to high-value plain text only, stripped of HTML/script/style noise, and strictly truncated to no more than `3000` characters before prompt assembly.
-10. Any implementation or commit that exceeds the `2` concurrency ceiling or the `3000`-character website-text ceiling is an architecture violation.
-11. CPU- or memory-heavy changes that only work on high-end devices fail the architecture standard.
+6. Stream failures must end with a completion signal so UI cannot deadlock.
+7. Prompt construction should keep stable system rules separate from dynamic business content to maximize cache efficiency.
+8. Advanced quality controls such as `优先官网`、`优先本土域名`、`高相关优先`、`B2B 角色优先` are contract-bound search inputs; renderer state must be passed into main process and main process must perform real Scout-stage filtering or sorting from them.
+9. Search scoring and website enrichment concurrency is a hard performance law: maximum concurrent jobs must remain fixed at `2`.
+10. Website content sent into LLM must be reduced to high-value plain text only, stripped of HTML/script/style noise, and strictly truncated to no more than `3000` characters before prompt assembly.
+11. Any implementation or commit that exceeds the `2` concurrency ceiling or the `3000`-character website-text ceiling is an architecture violation.
+12. CPU- or memory-heavy changes that only work on high-end devices fail the architecture standard.
+13. Multi-language search may increase provider API usage by approximately `2x`, but it must not increase LLM scoring or website enrichment concurrency beyond `2`.
+14. Provider failures must be isolated with `Promise.allSettled`; a failed LinkedIn/customs/trade-show/Facebook source must not break Maps, Organic, AnySearch, or stream closure.
+
+---
+
+## 9.5 Local Agent Real-Execution Boundary
+1. Agent implementations must perform real external work or real platform-state checks before incrementing success counters.
+2. `setTimeout`-only simulation is forbidden for WhatsApp, LinkedIn, and Email agents.
+3. LinkedIn automation is limited to user-authorized Session Cookie import, Profile read-only browsing, public data extraction, and AI icebreaker generation for manual user action.
+4. LinkedIn automatic Connect requests, automatic direct messages, and batch social actions are prohibited unless this standard and `kone-PRD.md` are explicitly revised.
+5. WhatsApp Basic execution is limited to low-volume `whatsapp-web.js` with QR/session health handling; Premium execution may use official WhatsApp Cloud API.
+6. Email execution must use SMTP/IMAP plus DNS deliverability checks; high-risk SPF/DKIM/DMARC states must soft-lock sends.
+7. Agent completion must update both persistent lead `agentStatus` and runtime `AgentState`; UI must not infer success locally.
 
 ---
 
@@ -173,3 +193,4 @@ An architecture-affecting change is complete only when all are true:
 5. 429/network failure preserves user assets
 6. low-spec office hardware remains within safe CPU and memory behavior
 7. build and packaging rules remain clean
+8. multi-language search, provider contracts, and Agent write-back remain consistent across PRD, PROJECT-PRD, AGENTS.md, IPC contracts, and renderer behavior

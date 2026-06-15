@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { Search, Sparkles, Globe, TrendingUp, AlertCircle, Lock, Check, AlertTriangle, Radar } from "lucide-react"
+import { Search, Sparkles, Globe, TrendingUp, AlertCircle, Check, AlertTriangle, Radar } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { stableHash } from "@/lib/utils"
@@ -18,6 +17,7 @@ import { useAutopilotStore } from "@/store/autopilot-store"
 import { autopilotSyncLifecycle, onAutopilotAction, onSearchBasicResults, onSearchLeadScored, onSearchStage, onSearchStreamComplete, onSearchStreamError, onSearchStreamStart, searchExecute, secretCheck } from "@/lib/electron-api"
 import { useFeatureGate } from "@/lib/feature-gate"
 import { useConfigStore } from "@/store/config-store"
+import type { SearchExecuteResult } from "@/shared/ipc-contracts"
 
 const formatErrorMessage = (error: unknown, fallback: string) => {
   const message = error instanceof Error ? error.message : fallback
@@ -43,7 +43,18 @@ const buildPersistentErrorMessage = (error: unknown, fallback: string) => {
   return rawMessage.trim() || friendlyMessage
 }
 
-const resolveSearchStageMessage = (payload?: { stage?: string; message?: string; searchMode?: 'maps' | 'maps-keyword-fallback' | 'organic-fallback' }) => {
+const resolveSearchStageMessage = (payload?: { stage?: string; message?: string; searchMode?: 'anysearch' | 'maps' | 'maps-keyword-fallback' | 'organic-fallback'; intentMutated?: { country?: string; keywords?: string[] } }) => {
+  if (payload?.intentMutated) {
+    const country = payload.intentMutated.country || 'Global'
+    const keywords = Array.isArray(payload.intentMutated.keywords) ? payload.intentMutated.keywords : []
+    return `🤖 AI 智能解构成功！当前目标国家 [${country}]，正在全渠道并发穿透以下高价值 B2B 变种词：${keywords.map((item) => `[${item}]`).join(', ')}`
+  }
+  if (payload?.stage === 'prefiltering') {
+    return '🔍 正在执行相关度预筛，剔除泛化结果...'
+  }
+  if (payload?.stage === 'blind_scoring' || payload?.searchMode === 'anysearch') {
+    return '🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...'
+  }
   if (payload?.searchMode === 'maps-keyword-fallback') {
     return '地图定位受限，正在尝试扩大识别范围...'
   }
@@ -78,7 +89,7 @@ type AnalysisResult = {
 
 type UserRole = 'trial' | 'pro' | 'enterprise'
 
-type SearchDataSource = 'google' | 'linkedin_company' | 'facebook_pages'
+type SearchDataSource = 'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search'
 
 interface SearchEngineProps {
   userRole?: UserRole | null
@@ -117,28 +128,59 @@ const COUNTRY_TLD_MAP: Record<string, string[]> = {
   australia: ['.au'],
 }
 
-const SEARCH_PAGE_SIZE = 50
-
-const SEARCH_DATA_SOURCE_OPTIONS: Array<{ value: SearchDataSource; label: string }> = [
-  { value: 'google', label: 'Google 综合' },
-  { value: 'linkedin_company', label: 'LinkedIn 企业库' },
-  { value: 'facebook_pages', label: 'Facebook 商业页' },
-]
-
-const SEARCH_DATA_SOURCE_PREFIX: Record<SearchDataSource, string> = {
-  google: '',
-  linkedin_company: 'site:linkedin.com/company',
-  facebook_pages: 'site:facebook.com/pages',
-}
+const SEARCH_PAGE_SIZE = 30
+const OMNI_SEARCH_RESULT_LIMIT = 50
+const OMNI_SEARCH_MODE_LABEL = 'AI 全渠道盲搜'
+const OMNI_COMPLIANCE_GUIDE = '💡 规范向导：系统已依据 [Kone AI 商业全能版合规大坝] 自动为您死锁前 50 条最高相关度黄金买家资产，正在为您执行精细化清洗与高管穿透...'
 
 const CSV_IMPORT_MAX_BYTES = 2 * 1024 * 1024
 const CSV_IMPORT_MAX_LINES = 5_000
 
-const SEARCH_DATA_SOURCE_HINT: Record<SearchDataSource, string> = {
-  google: 'Google 综合',
-  linkedin_company: 'LinkedIn 企业库',
-  facebook_pages: 'Facebook 商业页',
+
+
+const buildSearchKeyword = (keyword: string, _dataSource: SearchDataSource) => {
+  const normalizedKeyword = keyword
+    .trim()
+    .replace(/\bsite:linkedin\.com\/company\b/gi, '')
+    .replace(/\bsite:facebook\.com\/pages\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  return normalizedKeyword || keyword.trim()
 }
+
+const mapSearchExecuteResultToSearchResult = (
+  item: Partial<SearchExecuteResult> & Record<string, any>,
+  idx: number,
+  context: { keyword: string; country: string },
+): LeadSearchResult => ({
+  id: Number(item.id) || Date.now() + idx,
+  company: item.company || "",
+  industry: context.keyword.trim(),
+  matchScore: typeof item.matchScore === 'number' ? Number(item.matchScore) : undefined,
+  fallbackStatus: item.fallbackStatus === 'social_blind_score' ? ('social_blind_score' as const) : undefined,
+  contact: item.contact || "",
+  contactTitle: item.contactTitle || "",
+  email: item.email || "",
+  phone: item.phone || "",
+  unlocked: Boolean(item.unlocked),
+  source: item.source || "Google Maps",
+  country: context.country || "Global",
+  countryCode: context.country ? context.country.slice(0, 2).toUpperCase() : "GL",
+  website: item.website || "",
+  matchReasons: Array.isArray(item.matchReasons) ? item.matchReasons : [],
+  riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : [],
+  address: item.address || "",
+  isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : undefined,
+  snippet: item.snippet || "",
+  inferredRole: item.inferredRole || "",
+  salesStrategy: item.salesStrategy || "",
+  status: item.status || "new",
+  dataSourceType: item.dataSourceType,
+  exhibitionFootprints: Array.isArray(item.exhibitionFootprints) ? item.exhibitionFootprints : undefined,
+  customsData: item.customsData,
+  decisionMakers: Array.isArray(item.decisionMakers) ? item.decisionMakers : undefined,
+  agentStatus: item.agentStatus,
+})
 
 const hasAnalysisResult = (analysisCache?: Record<string, unknown>) =>
   Boolean(
@@ -212,23 +254,6 @@ const mergeTopRankedResults = (current: LeadSearchResult[], next: LeadSearchResu
   const rankedKeys = new Set(rankedTop.map((lead) => `${lead.website || ''}::${lead.company || ''}`))
   const untouched = current.filter((lead) => !rankedKeys.has(`${lead.website || ''}::${lead.company || ''}`))
   return [...rankedTop, ...untouched]
-}
-
-const buildSearchKeyword = (keyword: string, dataSource: SearchDataSource) => {
-  const normalizedKeyword = keyword
-    .trim()
-    .replace(/\bsite:linkedin\.com\/company\b/gi, '')
-    .replace(/\bsite:facebook\.com\/pages\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-  const prefix = SEARCH_DATA_SOURCE_PREFIX[dataSource]
-
-  if (!normalizedKeyword || !prefix) return normalizedKeyword
-  if (normalizedKeyword.startsWith(`${prefix} `) || normalizedKeyword === prefix) {
-    return normalizedKeyword
-  }
-
-  return `${prefix} ${normalizedKeyword}`
 }
 
 const parseCsvLine = (line: string) => {
@@ -372,7 +397,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   const [savingLeadId, setSavingLeadId] = useState<number | null>(null)
   const [savedLeadIds, setSavedLeadIds] = useState<Set<number>>(new Set())
   const [searchKeyword, setSearchKeyword] = useState("")
-  const [searchDataSource, setSearchDataSource] = useState<SearchDataSource>('google')
+  const [searchDataSource] = useState<SearchDataSource>('google_maps')
   const [searchCountry, setSearchCountry] = useState("")
   const [searchCity, setSearchCity] = useState("")
   const [emptyStateMessage, setEmptyStateMessage] = useState("")
@@ -384,7 +409,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   const [streamTotal, setStreamTotal] = useState(0)
   const [analyzedCount, setAnalyzedCount] = useState(0)
   const [streamStageMessage, setStreamStageMessage] = useState("")
-  const [streamStage, setStreamStage] = useState<"fetching" | "normalizing" | "scoring" | "enriching" | "complete" | "">("")
+  const [streamStage, setStreamStage] = useState<"fetching" | "normalizing" | "prefiltering" | "blind_scoring" | "scoring" | "enriching" | "complete" | "localized_search" | "anysearch" | "">("")
   const [currentPage, setCurrentPage] = useState(1)
   const [autoSortEnabled, setAutoSortEnabled] = useState(true)
   const [trialExpired, setTrialExpired] = useState(false)
@@ -395,6 +420,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   const [hasLlmKey, setHasLlmKey] = useState(true)
   const [showLlmKeyReminder, setShowLlmKeyReminder] = useState(false)
   const [aiScoringSkipped, setAiScoringSkipped] = useState(false)
+  const [anySearchDegradeHint, setAnySearchDegradeHint] = useState(false)
   const { toast } = useToast()
   const { hydrateFromStorage: hydrateUserConfig, hydrated: configHydrated } = useConfigStore()
   const { searchResults, setSearchResults, addLead, leads, hydrateFromConfig, hydrated } = useLeadsStore()
@@ -415,6 +441,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   const streamTotalRef = useRef(0)
   const streamStartedRef = useRef(false)
   const csvFileInputRef = useRef<HTMLInputElement | null>(null)
+  const intentMutatedKeywordsRef = useRef<string>('')
   const autopilotBusy = autopilotRuntime.lifecycle === "running" || autopilotRuntime.lifecycle === "paused"
   const autopilotStartDisabled = isStartingAutopilot || autopilotRuntime.lifecycle === "running" || (!autopilotRawText.trim() && autopilotRuntime.lifecycle !== "paused")
   const autopilotCompletedOrFailed = autopilotRuntime.completedJobs + autopilotRuntime.failedJobs
@@ -435,7 +462,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         : autopilotStateKind === "state_unavailable"
           ? "主进程巡航状态不可用"
           : "暂无执行中的任务"
-  const currentDataSourceLabel = SEARCH_DATA_SOURCE_HINT[searchDataSource]
+  const currentDataSourceLabel = OMNI_SEARCH_MODE_LABEL
   const shouldShowAutopilotFilterHint = (autopilotCurrentJob?.qualifiedCount || 0) === 0 || (autopilotCurrentJob?.savedCount || 0) === 0
 
   const handleNavigateLeads = () => {
@@ -449,7 +476,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
       if (highRelevanceOnlyEnabled && ((typeof lead.matchScore === 'number' ? lead.matchScore : 0) < 60)) return false
       if (b2bRoleOnlyEnabled && !matchesB2BRoleSignal(lead)) return false
       return true
-    })
+    }).slice(0, OMNI_SEARCH_RESULT_LIMIT)
   }, [b2bRoleOnlyEnabled, highRelevanceOnlyEnabled, localDomainOnlyEnabled, officialOnlyEnabled, searchCountry, searchResults])
 
   const totalPages = Math.max(1, Math.ceil(displayedResults.length / SEARCH_PAGE_SIZE))
@@ -538,7 +565,9 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   }, [currentPage, totalPages])
 
   const goToSearchPage = (page: number) => {
-    const nextPage = Math.max(1, Math.min(totalPages, page))
+    let nextPage = page
+    if (nextPage < 1) nextPage = totalPages
+    if (nextPage > totalPages) nextPage = 1
     setCurrentPage(nextPage)
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -567,33 +596,17 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
       if (isAiSkippedStageMessage(payload?.message)) {
         setAiScoringSkipped(true)
       }
+      const mutated = (payload as any)?.intentMutated
+      if (mutated && Array.isArray(mutated.keywords)) {
+        intentMutatedKeywordsRef.current = mutated.keywords.join(' | ')
+      }
     })
 
     const unsubscribeBasic = onSearchBasicResults((results) => {
-      const normalizedResults = (Array.isArray(results) ? results : []).map((item: any, idx: number) => ({
-          id: Number(item.id) || Date.now() + idx,
-          company: item.company || "",
-          industry: searchKeyword.trim(),
-          matchScore: typeof item.matchScore === 'number' ? Number(item.matchScore) : undefined,
-          contact: item.contact || "",
-          contactTitle: item.contactTitle || "",
-          email: item.email || "",
-          phone: item.phone || "",
-          unlocked: Boolean(item.unlocked),
-          source: item.source || "Google Maps",
-          country: searchCountry || "Global",
-          countryCode: searchCountry ? searchCountry.slice(0, 2).toUpperCase() : "GL",
-          website: item.website || "",
-          matchReasons: Array.isArray(item.matchReasons) ? item.matchReasons : [],
-          riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : [],
-          fallbackStatus: item.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
-          address: item.address || "",
-          isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : undefined,
-            snippet: item.snippet || "",
-            inferredRole: item.inferredRole || "",
-            salesStrategy: item.salesStrategy || "",
-            status: item.status || "new",
-          })).slice(0, searchLimit.maxResults)
+      const industryKeyword = intentMutatedKeywordsRef.current || searchKeyword
+      const normalizedResults: LeadSearchResult[] = (Array.isArray(results) ? results : [])
+        .map((item: any, idx: number) => mapSearchExecuteResultToSearchResult(item, idx, { keyword: industryKeyword, country: searchCountry }))
+        .slice(0, Math.min(searchLimit.maxResults, OMNI_SEARCH_RESULT_LIMIT))
       void setSearchResults(normalizedResults)
     })
 
@@ -617,8 +630,18 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           matchReasons: Array.isArray(scoredLead.matchReasons) ? scoredLead.matchReasons : lead.matchReasons,
           riskFlags: Array.isArray(scoredLead.riskFlags) ? scoredLead.riskFlags : lead.riskFlags,
           fallbackStatus: scoredLead.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : lead.fallbackStatus,
+          contact: typeof scoredLead.contact === 'string' ? scoredLead.contact : lead.contact,
+          contactTitle: typeof scoredLead.contactTitle === 'string' ? scoredLead.contactTitle : lead.contactTitle,
+          email: typeof scoredLead.email === 'string' ? scoredLead.email : lead.email,
+          phone: typeof scoredLead.phone === 'string' ? scoredLead.phone : lead.phone,
+          snippet: typeof scoredLead.snippet === 'string' ? scoredLead.snippet : lead.snippet,
           inferredRole: typeof scoredLead.inferredRole === 'string' ? scoredLead.inferredRole : lead.inferredRole,
           salesStrategy: typeof scoredLead.salesStrategy === 'string' ? scoredLead.salesStrategy : lead.salesStrategy,
+          dataSourceType: scoredLead.dataSourceType || lead.dataSourceType,
+          exhibitionFootprints: Array.isArray(scoredLead.exhibitionFootprints) ? scoredLead.exhibitionFootprints : lead.exhibitionFootprints,
+          customsData: scoredLead.customsData || lead.customsData,
+          decisionMakers: Array.isArray(scoredLead.decisionMakers) ? scoredLead.decisionMakers : lead.decisionMakers,
+          agentStatus: scoredLead.agentStatus || lead.agentStatus,
         }
       })
       if (!hasMatch) return
@@ -633,7 +656,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
       const finalResults = useLeadsStore.getState().searchResults
       const total = streamTotalRef.current || finalResults.length
       setAnalyzedCount(total || finalResults.filter((item) => typeof item.matchScore === 'number').length)
-      const sortedResults = autoSortEnabled ? sortSearchResults(finalResults) : finalResults
+      const sortedResults = (autoSortEnabled ? sortSearchResults(finalResults) : finalResults).slice(0, OMNI_SEARCH_RESULT_LIMIT)
       void setSearchResults(sortedResults)
       toast({
         title: "分析完成",
@@ -795,6 +818,17 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
       setShowLlmKeyReminder(true)
     }
     const searchKeywordForRequest = buildSearchKeyword(searchKeyword, searchDataSource)
+    const isAnySearchSource = true
+    if (isAnySearchSource) {
+      try {
+        const result = await secretCheck('secrets.anysearch.apiKey')
+        setAnySearchDegradeHint(!result?.exists)
+      } catch {
+        setAnySearchDegradeHint(true)
+      }
+    } else {
+      setAnySearchDegradeHint(false)
+    }
     let searchTriggered = false
     try {
       searchTriggered = true
@@ -802,6 +836,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         keyword: searchKeywordForRequest,
         country: searchCountry,
         city: searchCity,
+        dataSourceType: undefined,
         filterOptions: {
           priorityWebsite: officialOnlyEnabled,
           localDomainOnly: localDomainOnlyEnabled,
@@ -816,37 +851,17 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         throw new Error('当前搜索结果暂不可用，请稍后重试')
       }
 
-      const rawResults = targetData.map((item: any, idx: number) => ({
-            id: Number(item.id) || Date.now() + idx,
-            company: item.company || "",
-            industry: searchKeyword.trim(),
-            matchScore: typeof item.matchScore === 'number' ? Number(item.matchScore) : undefined,
-            fallbackStatus: item.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
-            contact: item.contact || "",
-            contactTitle: item.contactTitle || "",
-            email: item.email || "",
-            phone: item.phone || "",
-            unlocked: Boolean(item.unlocked),
-            source: item.source || "Google Maps",
-            country: searchCountry || "Global",
-            countryCode: searchCountry ? searchCountry.slice(0, 2).toUpperCase() : "GL",
-            website: item.website || "",
-            matchReasons: Array.isArray(item.matchReasons) ? item.matchReasons : [],
-            riskFlags: Array.isArray(item.riskFlags) ? item.riskFlags : [],
-            address: item.address || "",
-            isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : undefined,
-            snippet: item.snippet || "",
-            inferredRole: item.inferredRole || "",
-            salesStrategy: item.salesStrategy || "",
-            status: item.status || "new",
-          }))
+      const industryKeyword = intentMutatedKeywordsRef.current || searchKeyword
+      const rawResults: LeadSearchResult[] = targetData.map((item: any, idx: number) =>
+        mapSearchExecuteResultToSearchResult(item, idx, { keyword: industryKeyword, country: searchCountry })
+      )
 
-      const results = rawResults.slice(0, searchLimit.maxResults)
+      const results = rawResults.slice(0, Math.min(searchLimit.maxResults, OMNI_SEARCH_RESULT_LIMIT))
 
         if (rawResults.length > results.length) {
         toast({
           title: "已应用搜索深度限制",
-          description: `当前仅展示前 ${searchLimit.maxResults} 条结果。`,
+          description: `当前仅展示前 ${Math.min(searchLimit.maxResults, OMNI_SEARCH_RESULT_LIMIT)} 条结果。`,
           variant: "default",
           className: "bg-amber-50 border-amber-200 text-amber-800",
         })
@@ -1155,36 +1170,30 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6" data-stage="search">
         <div className="flex flex-col gap-6">
-        {/* 第一行：数据源与关键词输入 */}
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <div className="flex flex-col gap-1.5 w-full">
-            <label className="text-xs font-medium text-muted-foreground">数据源 (Data Source)</label>
-            <Select value={searchDataSource} onValueChange={(value) => setSearchDataSource(value as SearchDataSource)}>
-              <SelectTrigger className="h-10 w-full rounded-lg border-input bg-slate-50 text-sm text-foreground focus-visible:ring-blue-500/10">
-                <SelectValue placeholder="选择数据源" />
-              </SelectTrigger>
-              <SelectContent>
-                {SEARCH_DATA_SOURCE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+        {/* 第一行：唯一全渠道盲搜输入 */}
+        <div className="grid gap-4">
           <div className="flex-[2] flex flex-col gap-1.5 w-full">
-            <label className="text-xs font-medium text-muted-foreground">关键词 / 目标客户搜索词</label>
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs font-medium text-muted-foreground">智能全渠道盲搜输入框</label>
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700">{OMNI_SEARCH_MODE_LABEL}</span>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <input
                 type="text"
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
-                placeholder={`例如："energy storage distributor" germany / intitle:dealer solar`}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void handleSearch()
+                  }
+                }}
+                placeholder="🤖 支持直接输入纯自然语言描述，例如：帮我找 50 家在德国做高性能储能电池的独立站经销商，要求有采购高管邮箱且能做批发..."
                 className="w-full h-10 pl-9 pr-4 rounded-lg border border-input bg-slate-50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-primary transition-all"
               />
             </div>
+            <p className="text-xs text-slate-500">系统会先自动解构意图、翻译并突变为高价值 B2B 英文词，再并发检索地图、网页与多源穿透数据。</p>
           </div>
         </div>
 
@@ -1460,7 +1469,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                 自动按评估排序
               </label>
               {hasSearched && (
-                <div className="text-xs text-slate-500">当前结果 {displayedResults.length} 条</div>
+                <div className="text-xs text-slate-500">当前结果 {Math.min(displayedResults.length, OMNI_SEARCH_RESULT_LIMIT)} 条</div>
               )}
               <div className="text-[11px] text-slate-400">
                 ⚡ 数据源: 实时全网商业搜索
@@ -1473,7 +1482,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                 <div className="text-sm font-medium text-slate-800">高级质量控制</div>
                 <div className="text-xs text-slate-500">面向 B2B 商用场景，优先保留更像真实采购客户的线索。</div>
               </div>
-              <div className="text-xs text-slate-500">当前展示 {displayedResults.length} / {searchResults.length}</div>
+              <div className="text-xs text-slate-500">当前展示 {Math.min(displayedResults.length, OMNI_SEARCH_RESULT_LIMIT)} / {Math.min(searchResults.length, OMNI_SEARCH_RESULT_LIMIT)}</div>
             </div>
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
@@ -1502,12 +1511,20 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                   <span>{streamStageMessage || '🤖 AI 正在处理搜索任务...'}</span>
                 </div>
                 <div className="text-xs text-slate-500">
-                  {streamStage === 'scoring' ? `${analyzedCount} / ${streamTotal}` : '处理中'}
+                  {streamStage === 'scoring' ? `${Math.min(analyzedCount, OMNI_SEARCH_RESULT_LIMIT)} / ${Math.min(streamTotal, OMNI_SEARCH_RESULT_LIMIT)}` : '处理中'}
                 </div>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-slate-800">🤖 AI 深度分析中... {analyzedCount} / {streamTotal}</div>
+                <div className="text-sm font-medium text-slate-800">🤖 AI 深度分析中... {Math.min(analyzedCount, OMNI_SEARCH_RESULT_LIMIT)} / {Math.min(streamTotal, OMNI_SEARCH_RESULT_LIMIT)}</div>
                 <div className="text-xs text-slate-500">实时更新线索评分与风险判断</div>
+              </div>
+              {anySearchDegradeHint && (
+                <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/80 px-3 py-2 text-xs text-blue-700 leading-relaxed">
+                  💡 提示：检测到您未在前台配置 AnySearch 专用密钥，系统已为您自动无感激活【四级弹性自愈协议】，正在无头补位常规 Google 地图/网页数据，请放心查看列表。
+                </div>
+              )}
+              <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/80 px-3 py-2 text-xs text-blue-700 leading-relaxed">
+                {OMNI_COMPLIANCE_GUIDE}
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
                 <div
@@ -1531,7 +1548,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           ) : null}
           {isLoading && searchResults.length === 0 ? (
             <div className="p-6">
-              <div className="mb-4 text-sm font-medium text-slate-700">{isStreaming ? `正在并发分析 ${streamTotal || 0} 条线索...` : 'Searching...'}</div>
+              <div className="mb-4 text-sm font-medium text-slate-700">{isStreaming ? `正在并发分析 ${Math.min(streamTotal || 0, OMNI_SEARCH_RESULT_LIMIT)} 条线索...` : '正在搜索...'}</div>
               <div className="space-y-3">
                 <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
                 <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
@@ -1565,7 +1582,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
               {searchResults.length > 0 ? (
                 <>
                   <div>当前质量筛选已隐藏全部结果，请关闭优先官网/高相关筛选后查看。</div>
-                  <div className="mt-2 text-[11px] text-slate-400">原始结果 {searchResults.length} 条，当前展示 0 条</div>
+                  <div className="mt-2 text-[11px] text-slate-400">原始结果 {Math.min(searchResults.length, OMNI_SEARCH_RESULT_LIMIT)} 条，当前展示 0 条</div>
                 </>
               ) : (
                 <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm">
@@ -1701,15 +1718,14 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                         className="text-xs"
                         onClick={() => {
                           toast({
-                            title: "正在发送至云端",
-                            description: "已提交至云端发送队列",
+                            title: "请先保存线索",
+                            description: "云端发送队列属于高级版能力，请先将线索保存至本地线索库后在推荐线索区或智能触达工作流中提交。",
                             variant: "default",
                             className: "bg-blue-50 border-blue-200 text-blue-800",
                           })
                         }}
                       >
-                        <Lock className="size-3.5" />
-                        发送至云端
+                        保存后可云端触达
                       </Button>
                     </div>
                   </div>
@@ -1722,7 +1738,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         {displayedResults.length > SEARCH_PAGE_SIZE ? (
           <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-slate-500">当前第 {currentPage} 页 / 共 {totalPages} 页，每页 50 条</div>
+              <div className="text-xs text-slate-500">当前第 {currentPage} 页 / 共 {totalPages} 页，每页 30 条</div>
               <Pagination className="mx-0 w-auto justify-end">
                 <PaginationContent>
                   <PaginationItem>

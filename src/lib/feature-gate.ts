@@ -10,6 +10,7 @@ export type FeatureKey =
   | 'analysis_advanced'
   | 'cloud_send'
   | 'team_collaboration'
+  | 'local_autopilot'
 
 export type LicensePlan = 'trial' | 'basic' | 'premium' | 'enterprise'
 
@@ -27,6 +28,7 @@ const ENTERPRISE_FEATURES: FeatureKey[] = [
   'export_full',
   'analysis_basic',
   'analysis_advanced',
+  'local_autopilot',
   'cloud_send',
   'team_collaboration',
 ]
@@ -42,6 +44,7 @@ const DEV_ENTERPRISE_FALLBACK: LicenseStatusLike = {
     'analysis_advanced',
     'lead_export',
     'export_full',
+    'local_autopilot',
     'cloud_send',
     'team_collaboration',
   ],
@@ -84,9 +87,9 @@ const FEATURE_ALIASES: Record<string, string[]> = {
   search: ['search_basic'],
   analysis: ['analysis_basic'],
   export: ['lead_export'],
-  basic: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full'],
-  premium: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'cloud_send', 'team_collaboration'],
-  enterprise: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'cloud_send', 'team_collaboration'],
+  basic: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot'],
+  premium: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot', 'cloud_send', 'team_collaboration'],
+  enterprise: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot', 'cloud_send', 'team_collaboration'],
 }
 
 let cachedStatus: LicenseStatusLike | null = null

@@ -14,12 +14,14 @@ import {
   RefreshCw,
   Phone,
   Clock3,
+  Database,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { stableHash } from "@/lib/utils"
 import { normalizeLeadStatus, type LeadStatus, useLeadsStore } from "@/store/leads-store"
+import { getDataSourceMeta } from "@/lib/data-source-meta"
 import { saveExportFile } from "@/lib/electron-api"
 import { useFeatureGate } from "@/lib/feature-gate"
 import {
@@ -209,6 +211,9 @@ export function DataCenter({ onLeadsNavigate, onAcquireNavigate }: { onLeadsNavi
   const todayKey = new Date().toISOString().slice(0, 10)
   const contactedCount = useMemo(() => leads.filter((lead) => getLeadStage(lead) !== "new").length, [leads])
   const highScoreCount = useMemo(() => leads.filter((lead) => hasNumericMatchScore(lead) && lead.matchScore > 80).length, [leads])
+  const customsDataCount = useMemo(() => leads.filter((lead) => lead.customsData?.annualImportVolume || lead.customsData?.topSuppliers).length, [leads])
+  const decisionMakerCount = useMemo(() => leads.filter((lead) => lead.decisionMakers && lead.decisionMakers.length > 0).length, [leads])
+  const exhibitionCount = useMemo(() => leads.filter((lead) => lead.exhibitionFootprints && lead.exhibitionFootprints.length > 0).length, [leads])
   const stageCounts = useMemo(() => {
     const counts: Record<LeadStatus, number> = {
       new: 0,
@@ -288,13 +293,17 @@ export function DataCenter({ onLeadsNavigate, onAcquireNavigate }: { onLeadsNavi
     const todayAdded = leads.filter((lead) => normalizeDateKey(lead.addedDate) === todayKey).length
     const validLeads = leads.filter(hasNumericMatchScore)
     const avgMatch = validLeads.length > 0 ? Math.round(validLeads.reduce((sum, lead) => sum + lead.matchScore, 0) / validLeads.length) : null
+    const customsPct = total > 0 ? `${Math.round((customsDataCount / total) * 100)}%` : "--"
+    const decisionMakerPct = total > 0 ? `${Math.round((decisionMakerCount / total) * 100)}%` : "--"
     return [
       { label: "总线索数", value: total.toLocaleString(), change: total ? "实时" : "-", up: true, icon: Users, color: "text-[hsl(var(--deep-blue))]", bgColor: "bg-blue-50" },
       { label: "今日新增", value: todayAdded.toLocaleString(), change: todayAdded ? "新增" : "-", up: todayAdded > 0, icon: Calendar, color: "text-[hsl(var(--brand-green))]", bgColor: "bg-emerald-50" },
       { label: "已触达客户", value: contactedCount.toLocaleString(), change: contactedCount ? "跟进中" : "-", up: true, icon: Phone, color: "text-amber-600", bgColor: "bg-amber-50" },
       { label: "高分线索数", value: highScoreCount.toLocaleString(), change: typeof avgMatch === "number" ? `均值 ${avgMatch}%` : "--", up: highScoreCount > 0, icon: BarChart3, color: "text-[hsl(var(--deep-blue))]", bgColor: "bg-blue-50" },
+      { label: "海关数据覆盖", value: customsDataCount.toLocaleString(), change: customsPct, up: customsDataCount > 0, icon: Database, color: "text-emerald-600", bgColor: "bg-emerald-50" },
+      { label: "决策人覆盖", value: decisionMakerCount.toLocaleString(), change: decisionMakerPct, up: decisionMakerCount > 0, icon: Users, color: "text-purple-600", bgColor: "bg-purple-50" },
     ]
-  }, [contactedCount, highScoreCount, leads, todayKey])
+  }, [contactedCount, highScoreCount, leads, todayKey, customsDataCount, decisionMakerCount])
 
   const regionData = useMemo(() => {
     const totals = new Map<string, number>()
@@ -326,6 +335,22 @@ export function DataCenter({ onLeadsNavigate, onAcquireNavigate }: { onLeadsNavi
       }))
       .sort((a, b) => b.leads - a.leads)
       .slice(0, 6)
+  }, [leads])
+
+  const sourceDistribution = useMemo(() => {
+    const totals = new Map<string, number>()
+    leads.forEach((lead) => {
+      if (lead.dataSourceType) {
+        totals.set(lead.dataSourceType, (totals.get(lead.dataSourceType) || 0) + 1)
+      }
+    })
+    return Array.from(totals.entries())
+      .map(([source, count]) => ({
+        source: getDataSourceMeta(source).label || source,
+        count,
+        rate: leads.length > 0 ? `${Math.round((count / leads.length) * 100)}%` : "0%",
+      }))
+      .sort((a, b) => b.count - a.count)
   }, [leads])
 
   const funnelData = useMemo(() => {
@@ -468,6 +493,8 @@ export function DataCenter({ onLeadsNavigate, onAcquireNavigate }: { onLeadsNavi
             <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm"><div className="flex items-center justify-between px-5 py-4 border-b border-border/60"><h3 className="text-sm font-semibold text-foreground">目标区域分析</h3><Badge variant="secondary" className="text-xs bg-muted text-muted-foreground border-border"><Globe className="size-3 mr-1" />{regionData.length} 个区域</Badge></div><div className="p-5 min-h-[300px] h-72">{isMounted ? <ResponsiveContainer width="100%" height="100%"><BarChart data={regionData} layout="vertical" barSize={14}><CartesianGrid strokeDasharray="3 3" stroke={chartColors.border} horizontal={false} /><XAxis type="number" tick={{ fontSize: 11, fill: chartColors.axisText }} axisLine={{ stroke: chartColors.border }} tickLine={false} /><YAxis dataKey="region" type="category" tick={{ fontSize: 11, fill: chartColors.axisText }} axisLine={{ stroke: chartColors.border }} tickLine={false} width={64} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="leads" fill={chartColors.successSoft} radius={[0, 4, 4, 0]} name="线索数" /></BarChart></ResponsiveContainer> : null}</div></div>
             <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm"><div className="flex items-center justify-between px-5 py-4 border-b border-border/60"><h3 className="text-sm font-semibold text-foreground">行业分布与匹配度</h3></div><div className="p-5 flex flex-col gap-3">{industryData.map((item, index) => <div key={stableHash(`${item.industry}-${index}`)} className="flex items-center gap-3"><span className="text-xs text-muted-foreground w-20 shrink-0 text-right">{item.industry}</span><div className="flex-1 flex items-center gap-2"><div className="flex-1 h-6 bg-muted rounded-md overflow-hidden relative"><div className="h-full bg-blue-100 rounded-md flex items-center" style={{ width: `${(item.leads / Math.max(industryData[0]?.leads || 1, 1)) * 100}%` }}><div className="h-full bg-[hsl(var(--deep-blue)/0.8)] rounded-md" style={{ width: `${item.matchRate}%` }} /></div></div><div className="flex items-center gap-2 shrink-0"><span className="text-xs font-semibold text-foreground/80 w-8 text-right">{item.leads}</span><span className="text-xs text-[hsl(var(--brand-green))] font-medium w-10 text-right">{item.matchRate}%</span></div></div></div>)}</div></div>
           </div>
+
+          <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm"><div className="flex items-center justify-between px-5 py-4 border-b border-border/60"><h3 className="text-sm font-semibold text-foreground">多源数据覆盖</h3><Badge variant="secondary" className="text-xs bg-muted text-muted-foreground border-border"><Database className="size-3 mr-1" />{sourceDistribution.length} 个数据源</Badge></div><div className="p-5 flex flex-col gap-4"><div className="grid grid-cols-3 gap-3">{(() => { const total = leads.length; return [ { label: '海关数据', count: customsDataCount, pct: total > 0 ? `${Math.round((customsDataCount / total) * 100)}%` : '0%' }, { label: '决策人信息', count: decisionMakerCount, pct: total > 0 ? `${Math.round((decisionMakerCount / total) * 100)}%` : '0%' }, { label: '展会足迹', count: exhibitionCount, pct: total > 0 ? `${Math.round((exhibitionCount / total) * 100)}%` : '0%' } ].map((item) => <div key={item.label} className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-center"><div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">{item.label}</div><div className="mt-1 text-2xl font-semibold text-foreground tabular-nums">{item.count}</div><div className="text-xs text-muted-foreground mt-1">覆盖率 {item.pct}</div></div>) } )()}</div><div className="flex flex-col gap-2">{sourceDistribution.map((item, index) => <div key={stableHash(`${item.source}-${index}`)} className="flex items-center gap-3"><span className="text-xs text-muted-foreground w-20 shrink-0 text-right">{item.source}</span><div className="flex-1 h-6 bg-muted rounded-md overflow-hidden"><div className="h-full rounded-md" style={{ width: item.rate, background: 'linear-gradient(90deg, hsl(var(--deep-blue)) 0%, hsl(var(--deep-blue) / 0.7) 100%)' }} /></div><span className="text-xs font-semibold text-foreground/80 w-8 text-right">{item.count}</span><span className="text-xs text-muted-foreground w-12 text-right">{item.rate}</span></div>)}</div></div></div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm"><div className="px-5 py-4 border-b border-border/60"><h3 className="text-sm font-semibold text-foreground">转化漏斗</h3></div><div className="p-5 flex flex-col gap-2">{funnelData.map((stage, index) => { const maxCount = Math.max(funnelData[0]?.count || 1, 1); const widthPct = (stage.count / maxCount) * 100; return <div key={stableHash(`${stage.stage}-${index}`)} className="flex items-center gap-3"><span className="text-xs text-muted-foreground w-16 shrink-0 text-right">{stage.stage}</span><div className="flex-1 relative"><div className="h-10 rounded-lg flex items-center px-3 transition-all" style={{ width: `${Math.max(widthPct, 16)}%`, background: `linear-gradient(90deg, ${stage.color} 0%, ${chartColors.primarySoft} 100%)` }}><span className="text-xs font-semibold text-white">{stage.count.toLocaleString()}</span></div></div><span className="text-xs font-medium text-muted-foreground w-12 text-right">{stage.rate}</span></div> })}</div></div>

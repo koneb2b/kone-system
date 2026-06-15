@@ -31,12 +31,29 @@ If packaging include/exclude rules are touched, explicit deny rules must be used
 2. At minimum, stale output in `release/`, `dist/`, and `dist-electron/` must not pollute a fresh package.
 3. Never trust a build result that may contain previous binaries or prior obfuscation output.
 
+### 4.1 V1.3 New Service Packaging
+The following V1.3 services have been added to the main-process handler registry in `electron/main.ts` and must be included in packaging:
+- `electron/services/agent-service.ts` — 3 local sales agents (WhatsApp/LinkedIn/Email)
+- `electron/services/sandbox-service.ts` — Multi-account session partition isolation
+- `electron/services/dns-service.ts` — DNS deliverability shield
+
+These services are registered via `registerIpcHandlers()` in `main.ts` lines 82-84. The Electron packaging config at `package.json#build.files` already includes all of `dist-electron/**/*`, so no special packaging exclusion is needed for these new services.
+
+### 4.2 V1.3 New UI Components
+The following V1.3 components are lazy-loaded in `dashboard-page.tsx`:
+- `src/components/agents-panel.tsx` — `/agents` route
+- `src/components/accounts-management.tsx` — `/accounts` route
+
+These are included in the Vite renderer build automatically via lazy imports.
+
 ---
 
 ## 5. Production Logging Floor
 1. Production bundles must not preserve noisy `console.log` or `console.debug` traces.
 2. Only necessary irrecoverable diagnostics may survive as `console.error`.
 3. Build-time debugging is allowed temporarily, but must not ship.
+4. **DEV bypass safety (confirmed):** `import.meta.env.DEV` in `src/lib/feature-gate.ts:189` is statically replaced with `false` by Vite during production renderer build, preventing enterprise fallback leakage. The obfuscation script (`scripts/obfuscate.cjs`) further hardens the main-process JS output.
+5. **Probe logging note:** renderer-side store diagnostics should stay no-op or be compile-time stripped; main-process probe logs must use the existing `probeLog(...)` helper so production bundles remain quiet.
 
 ---
 
@@ -60,8 +77,10 @@ If packaging include/exclude rules are touched, explicit deny rules must be used
    - app launches cleanly on `4G-8G RAM` machine profile
    - no abnormal idle memory climb after startup
    - no obvious CPU saturation during basic search flow
-3. Search enrichment, website probing, blind scoring, and `三级弹性搜索协议` fallback changes must preserve the hard resource ceiling: search scoring and website enrichment concurrency fixed at `2`, and website text passed to LLM stripped of HTML/script/style noise and capped at `3000` characters.
+3. Search enrichment, website probing, blind scoring, and `四级弹性搜索协议` fallback changes must preserve the hard resource ceiling: search scoring and website enrichment concurrency fixed at `2`, and website text passed to LLM stripped of HTML/script/style noise and capped at `3000` characters.
 4. If an `.exe` is only smooth on development hardware, the build is not release-ready.
+5. Multi-language Provider expansion may increase search API calls, but packaged runtime must still keep LLM scoring, website enrichment, Agent health polling, and account health polling within low-spec constraints.
+6. Agent runtime dependencies for real execution (SMTP/IMAP, WhatsApp Web, browser automation) must be explicitly reviewed before packaging. Do not ship mock-only `setTimeout` agent behavior as a completed V1.3 feature.
 
 Any build candidate that exceeds the `2` concurrency ceiling or the `3000`-character website-text ceiling fails release sign-off.
 

@@ -186,12 +186,21 @@ test('autopilot state handler returns state_unavailable when state file is corru
   fs.writeFileSync(path.join(userDataDir, 'autopilot_state.json'), '{invalid-json', 'utf8')
 
   registerAutopilotStateHandlers(ipcMain, store)
-  const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOPILOT.GET_STATE)()
+  const originalConsoleError = console.error
+  const capturedErrors = []
+  console.error = (...entries) => capturedErrors.push(entries)
+  let result
+  try {
+    result = await ipcMain.getHandler(IPC_CHANNELS.AUTOPILOT.GET_STATE)()
+  } finally {
+    console.error = originalConsoleError
+  }
 
   assert.equal(result?.success, true)
   assert.equal(result?.data?.stateKind, 'state_unavailable')
   assert.equal(result?.data?.state, null)
   assert.ok(result?.data?.statusReason)
+  assert.ok(capturedErrors.some((entries) => String(entries[0] || '').includes('[AutopilotState] Read failed')))
 })
 
 test.after(() => {

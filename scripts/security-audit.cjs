@@ -57,34 +57,53 @@ function createSessionDirs(tag) {
 
 async function launchApp(tag, env = {}, existingDirs = null) {
   const dirs = existingDirs || createSessionDirs(tag)
+  let exitInfo = null
+  const childEnv = {
+    ...process.env,
+    CI: '1',
+    KONE_REGRESSION_TEST: '1',
+    KONE_REMOTE_DEBUGGING_PORT: debugPort,
+    KONE_TEST_USER_DATA_DIR: dirs.userDataDir,
+    KONE_TEST_DOWNLOADS_DIR: dirs.downloadsDir,
+    ELECTRON_ENABLE_LOGGING: '1',
+    ...env,
+  }
+  delete childEnv.ELECTRON_RUN_AS_NODE
   const proc = spawn(executablePath, [], {
     cwd: unpackedRoot,
-    env: {
-      ...process.env,
-      CI: '1',
-      KONE_REGRESSION_TEST: '1',
-      KONE_REMOTE_DEBUGGING_PORT: debugPort,
-      KONE_TEST_USER_DATA_DIR: dirs.userDataDir,
-      KONE_TEST_DOWNLOADS_DIR: dirs.downloadsDir,
-      ELECTRON_ENABLE_LOGGING: '1',
-      ...env,
-    },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
   let stdout = ''
   let stderr = ''
+  proc.on('exit', (code, signal) => {
+    exitInfo = { code, signal }
+  })
   proc.stdout.on('data', (chunk) => { stdout += chunk.toString() })
   proc.stderr.on('data', (chunk) => { stderr += chunk.toString() })
 
-  await wait(4000)
-  const browser = await connectToElectron()
-  const page = await getActivePage(browser)
-  await page.bringToFront()
-  await page.setViewport({ width: 1440, height: 960 })
-  await wait(1500)
+  try {
+    await wait(4000)
+    const browser = await connectToElectron()
+    const page = await getActivePage(browser)
+    await page.bringToFront()
+    await page.setViewport({ width: 1440, height: 960 })
+    await wait(1500)
 
-  return { proc, browser, page, dirs, stdoutRef: () => stdout, stderrRef: () => stderr }
+    return { proc, browser, page, dirs, stdoutRef: () => stdout, stderrRef: () => stderr }
+  } catch (error) {
+    try { proc.kill() } catch {}
+    const stdoutPreview = stdout.trim().slice(-2000)
+    const stderrPreview = stderr.trim().slice(-2000)
+    throw new Error([
+      error?.message || String(error),
+      `tag=${tag}`,
+      `exit=${exitInfo ? JSON.stringify(exitInfo) : 'still-running-or-unknown'}`,
+      `stdout=${stdoutPreview || '<empty>'}`,
+      `stderr=${stderrPreview || '<empty>'}`,
+    ].join('\n'))
+  }
 }
 
 async function stopApp(session) {

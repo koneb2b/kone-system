@@ -1,6 +1,5 @@
-import { app } from 'electron'
+import { app } from './electron-bridge'
 import * as crypto from 'crypto'
-import Store from 'electron-store'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -17,6 +16,8 @@ export const SECRET_KEYS = {
   DECISION_MAKER_API_KEY: 'secrets.decision-maker.apiKey',
   LICENSE_KEY: 'secrets.license.key',
   LICENSE_CLAIMS: 'secrets.license.claims',
+  ANYSEARCH_API_KEY: 'secrets.anysearch.apiKey',
+  ANYSEARCH_BASE_URL: 'secrets.anysearch.baseUrl',
 } as const
 
 export const PROVIDER_SECRET_KEYS: Record<string, string> = {
@@ -24,26 +25,136 @@ export const PROVIDER_SECRET_KEYS: Record<string, string> = {
   'google-leads': SECRET_KEYS.GOOGLE_LEADS_API_KEY,
   'google-maps': SECRET_KEYS.GOOGLE_MAPS_API_KEY,
   'decision-maker': SECRET_KEYS.DECISION_MAKER_API_KEY,
+  anysearch: SECRET_KEYS.ANYSEARCH_API_KEY,
+}
+
+/* ── 原生文件存储 Store 替代 electron-store ── */
+
+const MAX_CONCURRENT_WRITES = 2
+let pendingWrites = 0
+const writeQueue: Array<() => void> = []
+
+const drainWriteQueue = () => {
+  while (pendingWrites < MAX_CONCURRENT_WRITES && writeQueue.length > 0) {
+    const next = writeQueue.shift()
+    if (next) {
+      pendingWrites += 1
+      next()
+    }
+  }
+}
+
+class NativeStore {
+  declare path: string
+  private data: Record<string, unknown>
+
+  constructor(options: { name: string; cwd: string; defaults?: Record<string, unknown> }) {
+    this.path = path.join(options.cwd, `${options.name}.json`)
+    const defaults = options.defaults || {}
+    this.data = { ...defaults }
+
+    try {
+      if (fs.existsSync(this.path)) {
+        const raw = fs.readFileSync(this.path, 'utf-8')
+        if (raw && raw.trim()) {
+          const parsed = JSON.parse(raw)
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            Object.assign(this.data, parsed)
+          }
+        }
+      } else {
+        fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2), 'utf-8')
+      }
+    } catch {
+      try {
+        fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2), 'utf-8')
+      } catch {
+        // 磁盘写保护环境静默降级
+      }
+    }
+  }
+
+  get(key: string, defaultValue?: any): any {
+    const parts = String(key || '').split('.')
+    let node: any = this.data
+
+    for (const part of parts) {
+      if (node === null || typeof node !== 'object') {
+        return defaultValue
+      }
+      if (!(part in node)) {
+        return defaultValue
+      }
+      node = node[part]
+    }
+
+    return node === undefined ? defaultValue : node
+  }
+
+  set(key: string, value: any): void {
+    const parts = String(key || '').split('.')
+    const leaf = parts.pop()!
+    let node: any = this.data
+
+    for (const part of parts) {
+      if (!(part in node) || typeof node[part] !== 'object' || node[part] === null) {
+        node[part] = {}
+      }
+      node = node[part]
+    }
+
+    node[leaf] = value
+    this.flushToDisk()
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== undefined
+  }
+
+  private flushToDisk(): void {
+    const doWrite = () => {
+      try {
+        fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2), 'utf-8')
+      } catch {
+        // 写入失败静默降级
+      } finally {
+        pendingWrites = Math.max(0, pendingWrites - 1)
+        drainWriteQueue()
+      }
+    }
+
+    if (pendingWrites < MAX_CONCURRENT_WRITES) {
+      pendingWrites += 1
+      doWrite()
+    } else {
+      writeQueue.push(doWrite)
+    }
+  }
 }
 
 export type ConfigStore = any
 
+const fallbackUserData = () => {
+  const p = typeof app.getPath === 'function' ? app.getPath('userData') : undefined
+  return p || path.join(os.homedir(), '.kone-config')
+}
+
 export const createConfigStore = () =>
-  new Store<Record<string, unknown>>({
+  new NativeStore({
     name: 'kone-config',
-    cwd: app.getPath('userData'),
+    cwd: fallbackUserData(),
     defaults: {
       leads: [],
       auth: { verified: false },
     },
-  })
+  }) as ConfigStore
 
 export const assertConfigWritable = (store: ConfigStore) => {
   try {
-    const storePath = store.path || path.join(app.getPath('userData'), 'kone-config.json')
+    const storePath = (store as NativeStore).path || path.join(fallbackUserData(), 'kone-config.json')
     fs.accessSync(storePath, fs.constants.W_OK)
-  } catch (error) {
-    console.warn('⚠️ [Config] Store path is not writable:', error)
+  } catch {
+    console.warn('⚠️ [Config] Store path is not writable')
   }
 }
 
@@ -157,6 +268,9 @@ export const getProviderSecretKey = (provider?: string) => {
   if (!secretKey) {
     throw new Error(`Unsupported secret provider: ${provider || 'unknown'}`)
   }
+  if (provider === 'anysearch' && !getSecret(secretKey).trim()) {
+    return SECRET_KEYS.DECISION_MAKER_API_KEY
+  }
   return secretKey
 }
 
@@ -256,7 +370,13 @@ const SECRET_SET_WHITELIST: Set<string> = new Set([
   SECRET_KEYS.GOOGLE_LEADS_API_KEY,
   SECRET_KEYS.GOOGLE_MAPS_API_KEY,
   SECRET_KEYS.DECISION_MAKER_API_KEY,
+  SECRET_KEYS.ANYSEARCH_API_KEY,
+  SECRET_KEYS.ANYSEARCH_BASE_URL,
 ])
+
+interface IElectronMain extends Electron.IpcMain {
+  handle(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => any): void
+}
 
 export const registerConfigHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
   ipcMain.handle(IPC_CHANNELS.CONFIG.GET, (_event, key: string) => {
@@ -277,7 +397,7 @@ export const registerConfigHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         return { success: false, error: '配置项 key 无效', code: 400 }
       }
       if (isConfigKeyBlocked(key)) {
-        console.warn(`[Config] Blocked write to protected key: ${key}`)
+        console.warn(`[Config] 已拦截受保护配置项写入: ${key}`)
         return { success: false, error: `禁止直接修改受保护的配置项: ${key}`, code: 403 }
       }
       setConfigValue(store, key, value)
@@ -301,10 +421,13 @@ export const registerConfigHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         return { success: false, error: '密钥 value 无效', code: 400 }
       }
       if (!SECRET_SET_WHITELIST.has(payload.key)) {
-        console.warn(`[Secret] Blocked write to non-whitelisted key: ${payload.key}`)
+        console.warn(`[Secret] 已拦截非白名单密钥写入: ${payload.key}`)
         return { success: false, error: `禁止设置非白名单密钥: ${payload.key}`, code: 403 }
       }
       const result = setSecret(payload.key, payload.value)
+      if (payload.key === SECRET_KEYS.ANYSEARCH_API_KEY) {
+        setSecret('anysearch-api-key', payload.value)
+      }
       resetCircuitBreaker()
       return { success: true, data: result }
     } catch (error: any) {

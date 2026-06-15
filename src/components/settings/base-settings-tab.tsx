@@ -23,7 +23,11 @@ const secretKeysByProvider: Record<string, string> = {
   llm: "secrets.llm.apiKey",
   "google-leads": "secrets.google-leads.apiKey",
   "google-maps": "secrets.google-maps.apiKey",
-  "decision-maker": "secrets.decision-maker.apiKey",
+  "anysearch": "secrets.anysearch.apiKey",
+}
+
+const providerDescriptions: Record<string, string> = {
+  anysearch: "安全保存 AnySearch 垂直实体级 API 密钥，用于在获客时深度穿透潜客高管个人邮箱、海关提单与全球展会足迹，燃料自理支持本地持久化。",
 }
 
 type SecretState = {
@@ -269,7 +273,7 @@ export function BaseSettingsTab({
     } catch (error) {
       setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: "error" }))
       onUpdateConfig(api.id, { status: "error" })
-      const description = error instanceof Error ? error.message : "连接失败"
+      const description = `⚠️ 校验失败：${api.name} 密钥无效或连接海外服务器超时，请检查网络。`
       toast({ title: "测试连接失败", description, variant: "destructive" })
     } finally {
       setTestingById((prev) => ({ ...prev, [api.id]: false }))
@@ -323,7 +327,7 @@ export function BaseSettingsTab({
                     {status === "connected" ? "已联通" : status === "error" ? "未联通" : "待校验"}
                   </Badge>
                 </div>
-                <CardDescription>安全保存密钥与服务地址，支持本地持久化。</CardDescription>
+                <CardDescription>{providerDescriptions[api.id] || "安全保存密钥与服务地址，支持本地持久化。"}</CardDescription>
               </CardHeader>
 
               <CardContent className="grid gap-4">

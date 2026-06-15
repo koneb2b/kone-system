@@ -19,7 +19,8 @@ This split exists to preserve cost control, billing isolation, and resilient UX.
 5. Commercial boundaries are physical and architectural, not just visual.
 6. Kone must stay practical on low-spec office hardware, not only on development machines.
 
-### Mandatory resilient search law: 三级弹性搜索协议
+### Mandatory resilient search law: 四级弹性搜索协议
+- level 0 (V1.3): AnySearch B2B entity API resolves natural-language queries against multi-source databases, extracting structured company profiles and decision maker networks
 - level 1: precise geography via Google Maps `location` parameter
 - level 2: if level 1 hits location-related `400`, retry immediately with empty `location` and move geography text into query `q`
 - level 3: if level 2 yields `localCount === 0`, switch silently to Google Organic and normalize results into Scout candidate shape
@@ -225,6 +226,71 @@ Contrast rule:
 4. Trial expiry blocks new privileged work, not historical user assets.
 5. Cloud failure must not poison local Data Center state.
 6. Website fetch failure should prefer blind scoring over immediate total downgrade when snippet/title data is still available.
+
+### 7.1 V1.3 Source Expansion Boundary
+
+AnySearch belongs to the Scout acquisition layer. It may select a source strategy such as `google_organic`, but it must still output normalized Scout candidates and preserve progressive Scout -> Brain timing.
+
+Current verified boundary:
+- `google_organic` can run as an Organic-only acquisition path.
+- `customs_shipment`, `trade_show`, `yellow_pages`, `linkedin_search`, `facebook_search` are routed through AnySearch when implemented
+- Source expansion must not bypass stream completion, Fail-Closed authorization, pre-filtering, or low-spec performance constraints.
+- Country-constrained search expands into English plus official local-language product variants. Localized search is additive and may double provider calls, but it must not increase Brain concurrency.
+- Provider results must enter the same normalized Scout shape with `dataSourceType`; providers do not write renderer state or persist leads directly.
+
+---
+
+## 7.5 V1.3 Local Agent Matrix (Multi-Agent Automation)
+
+Three built-in sales agents run locally under the `/agents` panel:
+
+### WhatsApp Hunter
+- Basic path uses `whatsapp-web.js` with local QR login, real session health checks, low-volume 3-5/day sends, and explicit reconnect prompts
+- Premium path uses official WhatsApp Cloud API where configured
+- Validates phone numbers from discovered decision makers when platform state allows
+- Must never claim immunity from platform anti-fraud systems
+
+### LinkedIn Buyer
+- Reads local browser LinkedIn session cookies (no cloud credential storage)
+- Visits target decision maker profiles in read-only mode
+- Extracts public profile signals where available
+- Auto-generates personalized scenario-based icebreaker notes from ICP + knowledge base for manual user action
+- Prohibited: one-click batch connect requests, automatic DMs, automated Connect clicking
+
+### Email Sequence Assistant
+- Direct SMTP/IMAP connection via local Nodemailer to user's enterprise mailbox
+- 3-round long-cycle follow-up sequence: Day 1 cold outreach → Day 3 follow-up → Day 7 case study
+- IMAP reply detection pauses sequence when prospect responds
+
+### Agent Permission Model
+- Trial: upgrade/promo surface only for Agent panel; no protected metrics exposure
+- Basic: Email 20/day by default; WhatsApp Web 3-5/day when configured; LinkedIn read-only helper only if explicitly enabled
+- Premium/Enterprise: WhatsApp Cloud API, account sandbox expansion, team collaboration, and cloud automation according to licensed features
+
+---
+
+## 7.6 V1.3 DNS Deliverability Shield
+
+Before any SMTP sending sequence starts, the system runs a local DNS audit on the sender's email domain:
+- Checks MX records for mail server existence
+- Validates SPF sender policy whitelist coverage
+- Probes DKIM digital signature key presence
+- Audits DMARC enforcement policy strength
+- Verifies Spamhaus global blacklist status
+
+If critical SPF/DKIM records are missing or the domain is blacklisted, the UI soft-locks the campaign send button with a red warning, preventing blind mass-sending that would damage the company's domain reputation.
+
+---
+
+## 7.7 V1.3 Multi-Account Sandbox Isolation
+
+Kone uses Electron's `session.fromPartition('persist:account_id')` for physical sandbox isolation:
+- Each account (LinkedIn, Facebook, WhatsApp, SMTP/IMAP) gets its own persistent session partition
+- Cookies, LocalStorage, and cache are fully independent between accounts
+- From the platform's anti-fraud perspective, each account appears as a separate physical machine
+- Basic tier: 1 email account allowed; Premium/Enterprise: multiple social + email accounts
+
+Health polling runs at 30-second intervals with max concurrency of 2 to stay within low-spec hardware limits.
 
 ---
 

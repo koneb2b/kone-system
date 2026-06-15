@@ -6,6 +6,8 @@ const Module = require('node:module')
 const originalLoad = Module._load
 const originalUnhandledListeners = process.listeners('unhandledRejection')
 const originalUncaughtListeners = process.listeners('uncaughtException')
+const originalTestUserDataDir = process.env.KONE_TEST_USER_DATA_DIR
+process.env.KONE_TEST_USER_DATA_DIR = path.join(process.env.TEMP || process.cwd(), 'opencode', `kone-ipc-sweep-user-data-${process.pid}`)
 
 const electronMock = {
   app: {
@@ -56,12 +58,35 @@ const supabaseModuleMock = {
   },
 }
 
+const authModuleMock = {
+  async startAuthFlow() {
+    return {
+      code: 'mock-code',
+      state: 'mock-state',
+      redirectUri: 'http://127.0.0.1/mock-callback',
+      codeVerifier: 'mock-code-verifier',
+    }
+  },
+  async exchangeCodeForTokens() {
+    return { accessToken: 'mock-access-token' }
+  },
+  async getSessionState() {
+    return { authenticated: true, hasRefreshToken: false, expiresAt: Date.now() + 60_000 }
+  },
+  async logoutSession() {
+    return undefined
+  },
+}
+
 Module._load = function mockLoad(request, parent, isMain) {
   if (request === 'electron') {
     return electronMock
   }
   if (request === '@supabase/supabase-js') {
     return supabaseModuleMock
+  }
+  if (request === '../auth' && parent && /auth-service\.js$/.test(parent.filename)) {
+    return authModuleMock
   }
   if (request === '../utils/http-client' && parent && /automation-service\.js$/.test(parent.filename)) {
     return { safeFetch: safeFetchStub }
@@ -136,6 +161,9 @@ const createLicenseGuardMock = ({ claims = null, featureError = null } = {}) => 
   enforceExportLimit(content) {
     return String(content || '')
   },
+  hasFullExport() {
+    return true
+  },
 })
 
 const packagedClaims = {
@@ -165,6 +193,8 @@ const normalizeResultKind = (result) => {
 const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
   const unhandled = []
   const uncaught = []
+  const logs = []
+  let timeoutId = null
   const onUnhandled = (reason) => {
     unhandled.push(reason)
   }
@@ -174,10 +204,14 @@ const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
 
   process.on('unhandledRejection', onUnhandled)
   process.on('uncaughtException', onUncaught)
+  const originalConsoleError = console.error
+  const originalConsoleWarn = console.warn
+  console.error = (...entries) => logs.push({ level: 'error', entries })
+  console.warn = (...entries) => logs.push({ level: 'warn', entries })
 
   try {
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('IPC_SWEEP_TIMEOUT')), timeoutMs)
+      timeoutId = setTimeout(() => reject(new Error('IPC_SWEEP_TIMEOUT')), timeoutMs)
     })
     const value = await Promise.race([handler(...args), timeoutPromise])
     return {
@@ -185,6 +219,7 @@ const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
       value,
       unhandled,
       uncaught,
+      logs,
     }
   } catch (error) {
     return {
@@ -192,8 +227,12 @@ const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
       error,
       unhandled,
       uncaught,
+      logs,
     }
   } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+    console.error = originalConsoleError
+    console.warn = originalConsoleWarn
     process.removeListener('unhandledRejection', onUnhandled)
     process.removeListener('uncaughtException', onUncaught)
   }
@@ -248,7 +287,8 @@ const getSweepCases = (IPC_CHANNELS) => [
     label: 'AUTH.LOGIN',
     family: 'auth',
     expectation: 'business_error_expected',
-    payloads: [undefined, {}, { issuerBaseUrl: '', realm: '', clientId: '' }],
+    // Keep this malformed-only: valid-shaped payloads start the real local OAuth callback server.
+    payloads: [undefined, {}],
   },
   {
     channel: IPC_CHANNELS.AUTH.LOGOUT,
@@ -292,13 +332,8 @@ const getSweepCases = (IPC_CHANNELS) => [
     expectation: 'business_error_expected',
     payloads: [undefined, {}, { licenseKey: '' }, { licenseKey: 'bad-license-key' }],
   },
-  {
-    channel: IPC_CHANNELS.LICENSE.REQUEST_TRIAL,
-    label: 'LICENSE.REQUEST_TRIAL',
-    family: 'license',
-    expectation: 'success_or_error_structured',
-    payloads: [undefined],
-  },
+  // LICENSE.REQUEST_TRIAL intentionally has filesystem/registry anchor side effects.
+  // It is covered by license-ipc-closure.test.js instead of the generic boundary sweep.
   {
     channel: IPC_CHANNELS.CONFIG.GET,
     label: 'CONFIG.GET',
@@ -396,6 +431,13 @@ const getSweepCases = (IPC_CHANNELS) => [
     family: 'export',
     expectation: 'business_error_expected',
     payloads: [undefined, {}, { fileName: '', content: '' }, { fileName: 'test.csv', content: 'a,b' }],
+  },
+  {
+    channel: IPC_CHANNELS.FILES.EXPORT_PDF,
+    label: 'FILES.EXPORT_PDF',
+    family: 'export',
+    expectation: 'business_error_expected',
+    payloads: [undefined, {}, { html: '' }, { html: '<html><body>Test</body></html>', fileName: 'test.pdf' }],
   },
   {
     channel: IPC_CHANNELS.CLOUD.CHECK_COLLISION,
@@ -520,6 +562,7 @@ test('ipc contract sweep: handlers resist boundary-value barrage without fatal c
         outcome: resultKind,
         returnedSuccess: outcome.value?.success,
         returnedError: stripAnsi(outcome.value?.error || ''),
+        logCount: outcome.logs?.length || 0,
         eventChannels: sent.map((entry) => entry.channel),
       })
     }
@@ -538,6 +581,11 @@ test('ipc contract sweep: handlers resist boundary-value barrage without fatal c
 
 test.after(() => {
   Module._load = originalLoad
+  if (typeof originalTestUserDataDir === 'undefined') {
+    delete process.env.KONE_TEST_USER_DATA_DIR
+  } else {
+    process.env.KONE_TEST_USER_DATA_DIR = originalTestUserDataDir
+  }
   for (const listener of process.listeners('unhandledRejection')) {
     if (!originalUnhandledListeners.includes(listener)) {
       process.removeListener('unhandledRejection', listener)

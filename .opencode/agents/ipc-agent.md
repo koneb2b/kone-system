@@ -15,6 +15,11 @@
    - email verification
    - cloud send / webhook handoff
    - team collision and realtime collaboration paths
+4. V1.3 new IPC families (`accounts:connect/disconnect/get-list`, `agents:list/control`, `dns:health-check`) follow the same Fail-Closed discipline:
+   - `accounts:connect` gating: Basic tier → single email account + WhatsApp Web local session where enabled; Premium/Enterprise → social media + multiple email + official API paths
+   - `agents:list` gating: Trial → upgrade surface only; Paid Basic → Email + low-volume WhatsApp Web when configured, LinkedIn read-only helper only if explicitly enabled; Premium/Enterprise → full authorized panel
+   - `agents:control` gating: `agent:control` requires `local_autopilot` feature at minimum
+   - `dns:health-check` gating: `cloud_send` feature required (Premium/Enterprise only)
 
 ---
 
@@ -69,12 +74,14 @@ Stages currently recognized by product flow:
 - `complete`
 
 Mandatory downgrade visibility law:
-- `search:stage` must be able to express at least: normal acquisition, secondary keyword retry, tertiary Organic fallback, scoring degradation, and recoverable missing-key state
+- `search:stage` must be able to express at least: AnySearch multi-source acquisition (level 0), normal acquisition, secondary keyword retry, tertiary Organic fallback, scoring degradation, and recoverable missing-key state
 - downgrade semantics must be forwarded to renderer rather than being trapped only in backend logs
 - missing AI key is a recoverable degraded state and must be exposed through dedicated IPC semantics or fields so UI can show a non-blocking notice
 - any started stream must end with explicit `complete` or `error + complete` closure so UI cannot deadlock under extreme timeout or upstream failure conditions
 
 Recommended stage additions for practical fallback visibility:
+- `anysearch`
+- `localized_search`
 - `prefiltering`
 - `blind_scoring`
 
@@ -110,6 +117,8 @@ Hard rule:
     - `matchScore` may still be numeric
     - `matchReasons` must explicitly state that the score is based on lightweight snippet judgment
     - the event must remain a normal score update, not a fake hard error
+9. Country-constrained natural-language search must preserve multi-language intent metadata: `language`, `country`, `city`, `intentProducts`, `b2bAttributes`, and `myJobId` must be available to Provider execution.
+10. Provider failures must be isolated. A failed localized query or failed social/customs/trade-show Provider may emit a downgrade stage, but must not clear candidate state or block stream closure.
 
 ---
 
@@ -119,12 +128,14 @@ The renderer must be able to distinguish three practical states:
 2. blind scoring success
 3. full downgrade without numeric score
 
-Mandatory fallback law: `三级弹性搜索协议`
+Mandatory fallback law: `四级弹性搜索协议`
+- level 0 (V1.3): AnySearch B2B entity API resolves natural-language input, retrieves multi-source data and decision maker networks
 - level 1: Google Maps with standalone `location`
 - level 2: on location-related `400`, retry with `location` cleared and geography appended into query `q`
 - level 3: if level 2 yields `localCount === 0`, switch silently to Google Organic and keep Scout fed with normalized lead payloads
 
 Mandatory user-facing copy law:
+- level 0 UI copy: `🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...`
 - level 2 UI copy: `地图定位受限，正在尝试扩大识别范围...`
 - level 3 UI copy: `未发现地图商户，已自动为您补位全局网页线索...`
 - these copies must be delivered via stage/progress semantics, not inferred only from local renderer heuristics

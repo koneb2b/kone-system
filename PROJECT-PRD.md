@@ -1,5 +1,7 @@
 # Kone 终极全景 PRD 与开发白皮书
 
+> 📌 **V1.3 最新需求与架构扩展请参见:** `kone-PRD.md` — 该文档是 V1.3 的唯一权威开发需求来源，包含 AnySearch 四级弹性搜索协议、决策人穿透数据结构、智能体本地多开矩阵及 DNS 防火墙等全新功能模块。
+
 ## 0. 文档说明
 
 本文档基于本地代码扫描自动生成，扫描范围覆盖：
@@ -28,11 +30,12 @@
 
 本文只描述代码中真实存在的变量、字段、IPC 通道、权限特性、异常处理与交互流程；未扫描到的内容不做臆测。
 
-## 宪法级强制协议：三级弹性搜索协议
+## 宪法级强制协议：四级弹性搜索协议
 
 任何后续需求、实现、UI 提示、IPC 契约与文档更新，均不得违背以下降级链路：
 
-1. 第一级（精准地理）：使用 `location` 独立参数请求 Google Maps。
+0. 第零级（AnySearch 多源穿透）：V1.3 新增，优先调用 AnySearch 垂直 B2B 实体 API 解析自然语言输入，全网检索海关、展会名录、行业黄页、LinkedIn、Facebook 等多源库，返回公司主体与决策人造网络图谱。
+1. 第一级（精准地理）：若零级超时/429失效，降级使用 `location` 独立参数请求 Google Maps。
 2. 第二级（参数容错）：若一级返回 `400` 且属于 location 拒绝，必须立即自动重试，改为 `location: null`，并把地理信息拼入关键词 `q`，例如 `Golf Cart Battery Dealer in San Francisco`。
 3. 第三级（无感补位）：若二级返回 `localCount === 0`，必须自动切换到 `google` Organic 网页搜索引擎，并将结果归一化为 Scout 可消费的线索对象。
 
@@ -40,13 +43,14 @@
 
 ### 强制降级透明化与 IPC 闭环
 
-三级弹性搜索协议不仅是后端请求链路，也必须在状态与体验层面完全闭环：
+四级弹性搜索协议不仅是后端请求链路，也必须在状态与体验层面完全闭环：
 
-1. `search:stage` 或等价流式状态通道必须能表达正常抓取、二级关键词容错、三级 Organic 补位等差异状态。
-2. 二级容错时前端必须显示：`地图定位受限，正在尝试扩大识别范围...`
-3. 三级补位时前端必须显示：`未发现地图商户，已自动为您补位全局网页线索...`
-4. 缺失 AI 评分密钥属于可恢复降级状态，必须通过单独 IPC 语义或字段告知前端，并以非阻塞方式展示。
-5. 任何搜索流无论成功、降级、部分成功或失败，都必须以明确的 complete 或错误闭环收尾，防止 UI 白屏、假死或 loading 悬挂。
+1. `search:stage` 或等价流式状态通道必须能表达 AnySearch 第零级多源穿透、正常抓取、二级关键词容错、三级 Organic 补位等差异状态。
+2. 第零级 AnySearch 穿透时前端必须显示：`🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...`
+3. 二级容错时前端必须显示：`地图定位受限，正在尝试扩大识别范围...`
+4. 三级补位时前端必须显示：`未发现地图商户，已自动为您补位全局网页线索...`
+5. 缺失 AI 评分密钥属于可恢复降级状态，必须通过单独 IPC 语义或字段告知前端，并以非阻塞方式展示。
+6. 任何搜索流无论成功、降级、部分成功或失败，都必须以明确的 complete 或错误闭环收尾，防止 UI 白屏、假死或 loading 悬挂。
 
 ---
 
@@ -158,6 +162,27 @@ Kone 是一个面向 B2B 出海场景的 Electron 桌面应用，核心定位不
 - 无 `cloud_send` 特性立即拒绝
 - 即使前端误调用，也由主进程做 Fail-Closed 拦截
 
+### 1.3.5 V1.3 多源融合层（已落地 / 边界说明）
+
+V1.3 扩展层已在 UI 层面落地多源字段展示与覆盖率统计，但不改变 V1.2 的搜索韧性基线与商业授权边界。
+
+已验证落地项：
+
+- `src/store/leads-store.ts` 定义 `DataSourceType`、`DecisionMaker`、`CustomsData`、`AgentStatus`、`fallbackStatus` 类型；`LeadItem` 与 `LeadSearchResult` 均已追加 V1.3 可选字段（`dataSourceType`、`decisionMakers`、`customsData`、`exhibitionFootprints`、`agentStatus`）。这些是 UI 专用类型，不跨 IPC 边界，因此不放在 `ipc-contracts.ts`。
+- `analysis-drawer.tsx`：线索头部展示 `dataSourceType` 彩色徽标、决策人数量徽标、海关数据徽标、展会足迹数量徽标。
+- `data-center.tsx`：概览统计新增"海关数据覆盖"和"决策人覆盖"统计卡；新增"多源数据覆盖"面板，包含海关数据、决策人信息、展会足迹 3 个覆盖指标卡片及来源分布水平条形图。
+- `search-engine.tsx`：已下线"搜索数据源"渠道下拉选择器，改为 Omni-Search 盲搜模型。搜索按钮文案改为 `正在搜索...`，知识库切换标签改为 `企业知识库`。前端实现循环分页（SEARCH_PAGE_SIZE=30），`intentMutatedKeywordsRef` 持有 B2B 纯净英文变种词替代用户原始 keyword 映射至 industry 字段。
+- `leads-table.tsx`：线索推荐区域标题改为 `已评分高潜线索推荐`，描述改为 `仅展示已完成评分且最值得优先跟进的线索`。
+- `app-sidebar.tsx`：`canAccessPremiumWorkspace` 包含 `enterprise` 判定；Pro 徽标已中文化为 `高级`。
+- `google_organic` 已作为 AnySearch 的 Organic-only 路径具备回归测试：不触发 Maps 请求，仍返回 Scout 基础候选并完整 stream close。
+
+仍为占位或受限项：
+
+- `customs_shipment`、`trade_show`、`yellow_pages`、`linkedin_search`、`facebook_search` 目前部分由 AnySearch 路由承载，正在逐步落地完整 provider。
+- LinkedIn / Facebook 搜索入口属于基于搜索语法的站点限定，不等同于官方数据库接入。
+- AnySearch 已作为第零级整合进四级弹性搜索协议，不能以多源名义跳过原有降级链路。
+- `file:export-pdf` IPC 合约：该功能为 V1.3 高级版核心待恢复/待实现功能。本期仅预留契约定义（IPC channels、preload、shared contract、renderer wrapper 均已闭环），不激活主进程实现（V1.2 revert 移除后尚未恢复）。
+
 ### 1.4 套餐与功能边界
 
 Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> 基础版(收费) -> 高级版(收费/企业延展)`。
@@ -198,8 +223,11 @@ Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> �
 - 全量搜索与高上限结果集
 - 网页深度分析与 ICP 深度判断
 - AI 深度分析抽屉、开发信生成、回信拆解
-- 后台伴随式巡航（Autopilot）
+- 数据中心（线索大盘、多源覆盖率统计、来源分布图表）
+- 后台伴随式巡航数据抓取队列（Autopilot Scout + Brain 管道）
 - 本地导出闭环
+
+> ⚠️ **V1.3 变更**：左侧导航栏下方 `💎 Kone AI 自航拓客特权港` 分区按授权层级展示真实能力。Trial 只显示升级引导；Paid Basic 可使用 Email 与低量 WhatsApp Web 本地能力；Premium/Enterprise 解锁 WhatsApp Cloud API、LinkedIn Profile 只读辅助、账号多开与团队协作。任何层级都不得展示虚假运行指标。
 
 前端搜索限制也已与 Basic 对齐：
 
@@ -211,10 +239,11 @@ Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> �
 
 高级版是 Kone 的团队资产与自动化引擎版本，严格承载“云端自动化 + 团队协同”价值。
 
-基于 `src/lib/feature-gate.ts`、`electron/security/license-guard.ts`、`electron/services/automation-service.ts`、`electron/services/supabase-service.ts`，Premium/Enterprise 独占能力已经校准为：
+基于 `src/lib/feature-gate.ts`、`electron/security/license-guard.ts`、`electron/services/automation-service.ts`、`electron/services/supabase-service.ts`、`electron/services/agent-service.ts`，Premium/Enterprise 独占能力已经校准为：
 
 - `cloud_send`
 - `team_collaboration`
+- `local_autopilot`（V1.3 起按授权层级开放：Basic 低量本地 Agent，Premium/Enterprise 全量沙箱与云端能力）
 
 对应产品价值：
 
@@ -223,6 +252,10 @@ Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> �
 - 团队实时防撞单
 - 团队线索拉取与跟进大盘
 - Realtime 订阅与团队状态联动
+- **账号管理多开沙箱**：LinkedIn、Facebook、WhatsApp 独立 `session.fromPartition` 持久化隔离沙箱
+- **AI 销售团队**：WhatsApp 拓客猎手、LinkedIn Profile 只读辅助、邮件跟进助理三大本地智能体持久化沙箱多开与实时启动控制；LinkedIn 不包含自动 Connect 或自动私信
+- **自动化序列**：N8N 云端自动化邮件序列、邮箱验证、Webhook 触发
+- **团队协作**：实时防撞单、线索拉取与跟进大盘、Realtime 订阅与团队状态联动
 
 代码层面的严格隔离点包括：
 
@@ -298,6 +331,7 @@ export type LeadItem = {
   industry: string
   source: string
   matchScore?: number | null
+  fallbackStatus?: 'social_blind_score'
   status: LeadStatus
   followUp: FollowUpStatus
   starred: boolean
@@ -315,6 +349,12 @@ export type LeadItem = {
   salesStrategy?: string
   analysisCache?: Record<string, LeadAnalysisCacheEntry>
   generatedStrategies?: Record<string, string>
+  /* V1.3 多源融合字段 */
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 ```
 
@@ -330,6 +370,12 @@ export type LeadItem = {
 - `snippet`：搜索摘要或官网抓取精简文本
 - `matchReasons`：命中理由，通常 1-2 条
 - `riskFlags`：风险标签，通常 1 条
+- `fallbackStatus`：盲评标记，值为 `'social_blind_score'` 时表示官网无法访问，基于 snippet 轻量评估
+- `dataSourceType`：数据来源类型（`google_maps` | `google_organic` | `customs_shipment` | `trade_show` | `yellow_pages` | `linkedin_search` | `facebook_search`）— 内部溯源标记，前端不再暴露为手动选择渠道
+- `exhibitionFootprints`：展会足迹名单，字符串数组
+- `customsData`：海关提单数据，包含 `annualImportVolume`、`topSuppliers`、`originCountries`、`lastShipmentDate`
+- `decisionMakers`：决策人列表，每个含 `name`、`title`、`email`、`phone`、`linkedinUrl`、`source`、`confidenceScore`
+- `agentStatus`：多渠道智能体触达状态结构体，包含 `whatsappSent`、`whatsappStatus`、`linkedinContacted`、`emailSequenceStage`。V1.3 LinkedIn 只读辅助不得把 Profile 浏览写成 `linkedinContacted = true`。
 
 ### 2.1.3 `LeadSearchResult`
 
@@ -339,6 +385,7 @@ export type LeadSearchResult = {
   company: string
   industry: string
   matchScore?: number
+  fallbackStatus?: 'social_blind_score'
   contact: string
   contactTitle: string
   email: string
@@ -357,6 +404,12 @@ export type LeadSearchResult = {
   salesStrategy?: string
   status?: LeadStatus
   analysisCache?: Record<string, LeadAnalysisCacheEntry>
+  /* V1.3 多源融合字段 */
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 ```
 
@@ -612,23 +665,48 @@ matchScore: typeof result.matchScore === 'number' ? result.matchScore : undefine
 
 目标：从前端输入搜索词，到主进程抓取候选客户，再到前端“秒出骨架/列表”，确保用户先看到基础结果，再等待 AI 评分。
 
-### 3.2.1 前端输入阶段
+### 3.2.1 前端输入阶段（Omni-Search 大一统盲搜）
 
 入口组件：`src/components/search-engine.tsx`
 
 用户输入字段：
 
-- `searchKeyword`
+- `searchKeyword`（自然语言，中英文均可）
 - `searchCountry`
 - `searchCity`
-- `searchDataSource`
 
-请求前处理逻辑：
+取消了旧版 `searchDataSource` 渠道选择器。系统在后台自动执行全渠道 Blind Search：
 
-- `buildSearchKeyword(searchKeyword, searchDataSource)`
-- 会对 `linkedin_company` 和 `facebook_pages` 自动添加：
-  - `site:linkedin.com/company`
-  - `site:facebook.com/pages`
+1. 入口对用户自然语言输入执行意图突变（见 3.2.1.a），提取英文产品词、目标国官方语言产品词、地区、B2B 属性词，并与 B2B_ROLE_TERMS 交叉生成多语言查询变体。
+2. 英文变体与目标国官方语言变体并行向 SerpApi/AnySearch/Provider Registry 发送。此策略会扩大约 `2x` API 调用量，属于已批准的高价值 B2B 扩面成本。
+3. 后端对汇聚候选执行 ICP 结构化评分（Domain 40%/行业词 30%/B端信号 20%/联系人 10%），再经 .slice(0,50) 刚性截断返回前端。
+4. 前端 30 条循环分页（SEARCH_PAGE_SIZE=30），本地缓存全量 50 条。
+
+不再需要 `buildSearchKeyword` 或 `site:linkedin.com/company` 站点限定过滤——Omni-Search 通过 B2B 角色词矩阵天然锁定目标类型。
+
+### 3.2.1.a 意图离散矩阵化与 B2B 关键词交叉相乘
+
+每次搜索入口，主进程执行四步后台工程：
+
+1. **前置意图离散矩阵化**：通过 LLM 将用户自然语言（如 `"帮我找 50 家德国做高尔夫球车电池的经销商，要求有采购邮箱"`）解析为 JSON：`{ country:"Germany", countryOfficialLanguages:["de"], pureEnglishProducts:["Golf Cart Battery"], localizedProducts:[{ language:"de", terms:["Golfwagen Batterie","Golfcart Akku"] }], b2bAttributes:["wholesaler","distributor","importer","dealer"] }`。LLM 不可达时走 `fallbackMutateB2BKeywords()` 确定性兜底，将剩余词拆为单一英文产品，并跳过本地语言扩展。
+
+2. **多语言交叉相乘**：将 `pureEnglishProducts[]` 与 `localizedProducts[].terms[]` 合并为 `allSearchProducts[]`，每项与 `B2B_ROLE_TERMS` 前 4 个角色交叉相乘，生成独立查询变体（如 `"Golf Cart Battery dealer Germany"`, `"Golfwagen Batterie Händler Deutschland"`, `"Golfcart Akku Importeur Deutschland"` 等）。每个变体必须携带 `{ language, sourceProduct, b2bRole }` 元数据，用于 Provider Query、stage 文案和后续调试。
+
+3. **多源 Provider 聚合**：采用 `Promise.allSettled` 驱动所有语言变体并行推送 SerpApi Maps、SerpApi Organic、AnySearch，以及已启用的 `linkedin_search`、`customs_shipment`、`trade_show`、`yellow_pages`、`facebook_search` Provider。任一 Provider 失败只返回空结果并记录日志，不得中断主链路。
+
+4. **硬核 ICP 标准评分算法**：对合并后的候选集执行确定性权重评分——域名存在 40%、核心产品词命中 30%（匹配英文或本地语言产品词任意一项）、B2B 信号词 20%、联系人资产 10%。`customsData`、`exhibitionFootprints`、`decisionMakers` 只能作为同分排序、解释徽标和 LLM 输入，不得绕过 40/30/20/10 基线权重。
+
+5. **局部渲染分页**：前端锁死 50 条限额，按 30 条 / 页 Local Pagination 平滑翻页，保障 4G-8G 轻量运行。
+
+### 3.2.1.b 多语言搜索成本与体验边界
+
+多语言扩展是明确批准的高价值搜索策略，但必须保持成本透明和体验稳定：
+
+- 英文变体始终执行，不得被本地语言变体替换。
+- 目标国家明确时，本地官方语言变体必须执行；国家未知时，不得臆造语言。
+- `search:stage` 必须展示简体中文状态，例如：`正在追加德国本地语言搜索变体...`。
+- 单个语言或单个 Provider 失败时，前端只显示降级提示，不清空现有结果。
+- 多语言扩展不得提高 LLM 评分与官网富化并发上限，仍固定为 `2`。
 
 ### 3.2.2 前端触发阶段
 
@@ -704,7 +782,7 @@ https://serpapi.com/search.json?engine=google_maps&type=search&q=...&location=..
 - 去重规则：
   - 优先域名 `extractDomainFromUrl(normalizedWebsite)`
   - 其次 `company + address`
-- 限制：`MAX_SEARCH_CANDIDATES = 100`
+- 限制：`MAX_SEARCH_CANDIDATES = 200`（Omni-Search 迭代由 100 扩容至 200）
 
 ### 3.2.6 相关度预筛（Relevance Pre-filter）
 
@@ -777,18 +855,46 @@ const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item
 
 评分并发常量：
 
-- `SEARCH_LLM_CONCURRENCY = 3`
+- `SEARCH_LLM_CONCURRENCY = 2`
 
 它被用于：
 
 - 初轮评分：`runLimitedConcurrency(candidates, SEARCH_LLM_CONCURRENCY, ...)`
-- 深探补全：`runLimitedConcurrency(baseResults, SEARCH_LLM_CONCURRENCY, ...)`
+
+深探补全并发常量：
+
+- `SEARCH_ENRICH_CONCURRENCY = 2`
+
+它被用于：
+
+- 深探补全：`runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, ...)`
 
 性能守卫要求：
 
 - 面向 `4G-8G RAM`、低功耗 CPU 的办公电脑，评分与官网补全并发都必须保持极低
 - 规范红线是：搜索评分与官网补全并发上限严格固定为 `2`
 - 任何只在高配机器上稳定的实现都不符合 Kone 的生产标准
+
+### 3.3.1.a JobID 时空隔离契约
+
+每次 `handleSearchExecute` 入口生成 `crypto.randomUUID()` 写入模块级 `currentActiveJobId`。所有异步回调（`emitBasicResults`、`emitDecisionMakers`、`computeLeadScore`、`enrichLeadWebsite` 及每个 `.then()` / `await` 续传）入口均执行 `if (myJobId !== currentActiveJobId) return`。
+
+- **同步洗舱**：新搜索立即覆写 `currentActiveJobId`，旧回调后续抵达时自动丢弃。
+- **跨行业防护**：解决前一个搜索的慢回调污染后一个搜索结果的问题。
+- **模块级单例**：当前适用于单窗口单用户。未来多窗口并发搜索需升级为 `Map<窗口ID, string>`。
+
+### 3.3.1.b ICP 结构化预评分（computeIcpMatchScore）
+
+在 `mergeLlmResultsWithCandidates` 之后、`emitLeadScored` 之前，对每个候选执行确定性预评分（无需 LLM 调用）：
+
+- **权重分配（硬编码）**：
+  - Domain 存在（website 非空，命中有效域名格式）— 40%
+  - 行业词匹配（product 关键词在 snippet / company / website 中命中）— 30%
+  - B2B 信号词（dealer/distributor/importer/wholesaler/supplier/manufacturer 在 snippet / snippet_lang 中命中）— 20%
+  - 联系人资产（email 或 phone 非空）— 10%
+- **匹配逻辑**：`extractDomainFromUrl(website)` 判定 domain 有效性；`keyword 逐词匹配 snippet` 算行业词得分；`B2B_ROLE_TERMS.some(t => snippet.includes(t))` 算 B 端信号得分。
+- **写入字段**：`lead.matchScore = computedScore`，在 `LEAD_BASIC_ARRIVED` 阶段即可排序展示。
+- **低配友好**：纯字符串匹配，零 LLM 推理开销，4G-8G 机器无压力。
 
 ### 3.3.2 LLM 评分 Prompt 输入
 
@@ -1405,6 +1511,203 @@ Autopilot 依托以下本地资源：
 
 ---
 
+## 3.7 Search-to-Agent 数据管道（V1.3 规划宪章）
+
+目标：在搜索完成评分后，自动将高价值线索分发至各智能体（WhatsApp/LinkedIn/Email）执行触达，并将执行结果写回线索状态，形成"搜索→评分→触达→回写"的完整闭环。
+
+### 3.7.1 管道架构总览
+
+整个管道由四层构成：
+
+| 层级 | 组件 | 职责 |
+|---|---|---|
+| L1 数据源层 | `Provider Plugin` 体系 | 统一 SearchProvider 接口 + registry，支持 `linkedin_search`/`customs_shipment`/`trade_show`/`facebook_search` 等扩展 |
+| L2 搜索评分层 | `search-service.ts` | 执行 4 级弹性搜索协议 + Omni-Search + ICP 评分 + 官网深探，产出含 `decisionMakers[]`/`agentStatus` 的 `SearchExecuteResult` |
+| L3 管道分发层 | `agent-pipeline.ts`（待实现） | 监听 `search:stream-complete`，过滤合格线索，生成 `AgentTask` 队列，分发至各 Agent |
+| L4 智能体执行层 | `agent-service.ts` | 消费 `AgentTask`，执行真实触达（WhatsApp/LinkedIn/Email），写回 `agentStatus` |
+
+### 3.7.2 管道触发与过滤规则（宪法级）
+
+```
+搜索完成 (`search:stream-complete`)
+  │
+  ▼
+Pipeline-Orchestrator 拾取本次搜索的所有 `SearchExecuteResult`
+  │
+  ▼
+过滤规则（同时满足）：
+  1. `matchScore >= 60`（高价值线索阈值）
+  2. 拥有至少一项可触达资产：`phone` 或 `email` 或 `linkedinUrl` 非空
+  │
+  ▼
+生成 `AgentTask` 对象：
+  { leadId, company, phone?, email?, linkedinUrl?, preferredAgent?, createdAt, priority }
+  │
+  ▼
+按 Agent 类型分发（每个 Agent 消费对应字段）：
+  - WhatsApp Agent → `phone`
+  - LinkedIn Agent → `linkedinUrl`
+  - Email Agent → `email`
+  │
+  ▼
+Agent 执行完毕后调用 `writeBackAgentStatus(leadId, agentType, result)`
+  写回路径：`SearchExecuteResult.agentStatus` → `LeadItem.agentStatus`
+```
+
+### 3.7.3 Agent Task 队列宪法
+
+`AgentTask` 是管道最小任务单元：
+
+```typescript
+type AgentTask = {
+  id: string                     // crypto.randomUUID()
+  leadId: number                 // 关联的 LeadItem.id
+  company: string                // 公司名（Agent 执行时用于消息模板）
+  phone?: string                 // WhatsApp Agent 消费
+  email?: string                 // Email Agent 消费
+  linkedinUrl?: string           // LinkedIn Agent 消费
+  preferredAgent?: 'whatsapp' | 'linkedin' | 'email'  // 人工指定优先渠道
+  createdAt: number              // Date.now()
+  priority: number               // 0-100，来自 matchScore
+}
+```
+
+### 3.7.4 Agent 状态双管道写回模型
+
+**管道 A — `agentStatus`（线索态）**：持久化写入 `SearchExecuteResult.agentStatus` → `LeadItem.agentStatus`
+
+| Agent 类型 | 写入字段 | 值 |
+|---|---|---|
+| WhatsApp | `whatsappSent: boolean` | `true` 当发送完成 |
+| WhatsApp | `whatsappStatus?: 'pending'\|'delivered'\|'replied'\|'failed'` | 投递状态 |
+| LinkedIn | `linkedinContacted: boolean` | V1.3 只读 Profile 辅助阶段保持 `false`；仅未来明确批准真实触达动作后才可写 `true` |
+| Email | `emailSequenceStage: 0\|1\|2\|3` | 当前触达轮次 |
+
+**管道 B — `AgentState`（运行态）**：内存 `Map<string, AgentState>`，通过 `AGENT.STATUS_CHANGED` IPC 推送
+
+```typescript
+type AgentState = {
+  id: string
+  name: string
+  type: 'whatsapp' | 'linkedin' | 'email'
+  status: 'idle' | 'running' | 'paused' | 'error'
+  progress: number          // 当前任务进度 0-100
+  completedCount: number    // 已完成的触达次数
+  failedCount: number       // 失败次数
+  dailyUsed: number         // 今日已使用配额
+}
+```
+
+**宪法约束**：Agent 执行完毕后必须同步更新两管道。`agentStatus` 写入通过 `ipcMain` 直接操作 `store`（Zustand 线索池）；`AgentState` 推送通过 `AGENT.STATUS_CHANGED` 发送至前端面板。
+
+### 3.7.5 搜索 API 密钥提供方等级隔离
+
+| 等级 | 提供方 | 密钥来源 | 适用场景 |
+|---|---|---|---|
+| P0 | AnySearch 垂直 B2B 实体 API | `userConfig.providers[anysearch]` | 全局搜 + 决策人穿透 + 海关/展会/社媒多源融合 |
+| P1 | SerpApi LinkedIn Search | 复用 `userConfig.providers[google-maps]` 中同一 SerpApi Key | LinkedIn 公司/人物定向挖掘 |
+| P2 | 海关数据爬虫 | 用户自备（如有） | 提单数据补充 |
+| P3 | 展会名录爬虫 | 免费公开数据 | 展会足迹补充 |
+
+### 3.7.6 Provider 注册表规范（待实现 V1.3）
+
+`electron/services/provider-registry.ts` 负责统一管理 SearchProvider 枚举与调度：
+
+```typescript
+interface SearchProvider {
+  id: DataSourceType                          // 'google_maps' | 'google_organic' | 'customs_shipment' | ...
+  name: string                                // 人类可读标签
+  execute(query: ProviderQuery): Promise<SearchExecuteResult[]>
+  isAvailable(): boolean                      // 密钥/配置检查
+}
+
+type ProviderQuery = {
+  keyword: string
+  language: string
+  country?: string
+  city?: string
+  intentProducts?: string[]                   // 来自 LLM 意图提取
+  b2bAttributes?: string[]
+  myJobId: string
+}
+
+class ProviderRegistry {
+  register(provider: SearchProvider): void
+  get(id: DataSourceType): SearchProvider | undefined
+  getAll(): SearchProvider[]
+  getAvailable(): SearchProvider[]
+  executeAll(query: ProviderQuery): Promise<{ providerId: DataSourceType; results: SearchExecuteResult[] }[]>
+}
+```
+
+**每个 Provider 实现以下行为契约**：
+- 文件位置：`electron/services/providers/<id>-provider.ts`
+- 构造函数注入所有配置（API Key、Base URL 等），运行期不可变
+- `execute()` 内部必须执行 `myJobId !== currentActiveJobId` 时空隔离检查
+- 失败时不得抛出异常：返回空数组 + 日志记录
+- `isAvailable()` 返回 `false` 时，`executeAll()` 跳过该 Provider
+- Provider 只负责采集和归一化，不得直接写 Zustand、不得发送 IPC、不得保存线索
+
+### 3.7.7 Agent 真实执行与反爬边界
+
+V1.3 三个智能体必须从模拟函数升级为真实本地执行，但必须遵守平台风控边界：
+
+| Agent | 真实执行范围 | 明确禁止 | 默认频率 |
+|---|---|---|---|
+| WhatsApp | Basic: `whatsapp-web.js` 本地扫码 + Web WA 低量发送；Premium: WhatsApp Cloud API | 宣称绝对免风控；无间隔批量轰炸；session 失效后假成功 | Basic 3-5/day |
+| LinkedIn | 导入用户授权 Session Cookie，Profile 只读浏览，公开信息提取，AI 破冰文案生成 | 自动 Connect、自动私信、批量点击、绕过验证码 | ≤30 profile view/day |
+| Email | Nodemailer SMTP 真实发信 + IMAP 回复检测 + 3 轮序列 | DNS 不合格仍强制发送；无退订/无节流群发 | Basic 20/day |
+
+实现约束：
+
+- `agent-service.ts` 中任何 `setTimeout` 模拟成功逻辑必须被真实 HTTP、SMTP/IMAP 或浏览器自动化替换。
+- 登录失效、验证码、平台限流、账号异常、网络超时必须写入 `AgentLogEntry[]` 并推送 `AGENT.STATUS_CHANGED`。
+- WhatsApp Web session 通常可能在 1-2 小时内断开，断开后必须进入 `paused` 或 `error`，前端提示重新扫码。
+- LinkedIn 只能提供半自动人工确认路径：AI 生成文案后，用户自行复制或确认，不允许无人值守发起社交动作。
+- Email Agent 是最低风险主通道，必须优先保证可用性和 DNS 健康前置拦截。
+
+### 3.7.8 `writeBackAgentStatus` 实现规范
+
+`writeBackAgentStatus(leadId, agentType, result)` 是本地获客闭环的强制函数：
+
+```typescript
+type AgentExecutionResult = {
+  ok: boolean
+  status: 'pending' | 'delivered' | 'replied' | 'failed'
+  detail?: string
+  timestamp: number
+}
+
+async function writeBackAgentStatus(
+  leadId: number,
+  agentType: 'whatsapp' | 'linkedin' | 'email',
+  result: AgentExecutionResult,
+): Promise<void>
+```
+
+写回规则：
+
+- WhatsApp 成功发送：`agentStatus.whatsappSent = true`，`agentStatus.whatsappStatus = result.status`。
+- LinkedIn Profile 浏览成功：`agentStatus.linkedinContacted = false` 仍保持不变；必须新增日志说明 `Profile 已浏览，破冰文案已生成，等待人工触达`。除非未来明确批准自动 Connect，否则不得把只读浏览写成 `linkedinContacted = true`。
+- Email 第 N 轮发送成功：`agentStatus.emailSequenceStage = N`。
+- 任何失败必须写入运行态 `AgentState.failedCount`，并保留 `LeadItem.agentStatus` 的既有成功状态，不得用失败覆盖历史成功。
+
+前后端一致性约束：
+
+- 前端线索表/详情抽屉读取 `LeadItem.agentStatus` 展示持久化触达状态。
+- `/agents` 面板读取 `SalesAgentState` 展示运行态进度。
+- 二者都必须来自真实后端状态，不得硬编码假数据、不得前端自行推导成功。
+
+### 3.7.9 Tier 隔离：Basic vs Premium
+
+| 能力 | Basic | Premium |
+|---|---|---|
+| 搜索管道（Provider 体系） | `google_maps` + `google_organic` + 用户自带 SerpApi/AnySearch | 全量 Provider + 可配置自定义 Provider |
+| Agent 管道 | Email + WhatsApp Web 低量本地执行；LinkedIn 只读辅助可按授权开放 | WhatsApp Cloud API + LinkedIn Profile 辅助 + Email/N8N 全渠道 |
+| ICP 评分 | 确定性评分 + LLM 评分 | 同 Basic + 自定义评分权重 |
+| Agent 写回 `agentStatus` | ✅（本地执行成功后必须写回） | ✅ |
+---
+
 ## 四、异常处理与 UI 韧性规范
 
 ## 4.1 搜索主链路异常处理标准
@@ -1526,6 +1829,13 @@ type SearchExecutePayload = {
   keyword: string
   country?: string
   city?: string
+  dataSourceType?: DataSourceType
+  filterOptions?: {
+    priorityWebsite?: boolean
+    localDomainOnly?: boolean
+    highRelevanceOnly?: boolean
+    b2bRoleOnly?: boolean
+  }
 }
 ```
 
@@ -1536,6 +1846,13 @@ export type SearchExecuteRequest = {
   keyword: string
   country?: string
   city?: string
+  dataSourceType?: DataSourceType
+  filterOptions?: {
+    priorityWebsite?: boolean
+    localDomainOnly?: boolean
+    highRelevanceOnly?: boolean
+    b2bRoleOnly?: boolean
+  }
 }
 ```
 
@@ -1559,6 +1876,12 @@ type SearchExecuteResult = {
   snippet?: string
   inferredRole?: string
   salesStrategy?: string
+  fallbackStatus?: 'social_blind_score'
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 ```
 
@@ -1576,10 +1899,12 @@ export type SearchLeadScoredPayload = {
 
 ```ts
 export type SearchStagePayload = {
-  stage: 'fetching' | 'normalizing' | 'scoring' | 'enriching' | 'complete'
+  stage: 'anysearch' | 'localized_search' | 'fetching' | 'normalizing' | 'prefiltering' | 'scoring' | 'blind_scoring' | 'enriching' | 'complete'
   message: string
 }
 ```
+
+阶段事件约束：多语言搜索、本地语言补充、Provider 降级、Snippet 盲评都必须通过后端 stage 事件向前端表达，前端不得自行根据国家字段猜测语言或阶段。
 
 ## 5.5 Analysis 请求结构
 
@@ -1670,8 +1995,18 @@ export type CampaignStartRequest = {
 - 展示策略化分析结果
 - 复制开发信、回信策略
 - 将缓存写回 `analysisCache` / `generatedStrategies`
+- V1.3 多源字段展示：在线索头部区域显示 `dataSourceType` 彩色徽标（海关提单-绿色、展会名录-琥珀色、行业黄页-紫色、LinkedIn-蓝色、网页搜索-灰色、Google Maps-蓝色）、决策人数量徽标、海关数据存在性徽标、展会足迹数量徽标
 
-### 6.4 `automation-workflow.tsx`
+### 6.4 `data-center.tsx`
+
+职责：
+
+- 展示本地线索库的数据看板
+- 概览统计：总线索数、已联系数、高评分线索数、今日新增数
+- V1.3 多源 KPI：海关数据覆盖数（及百分比）、决策人覆盖数（及百分比）
+- "多源数据覆盖"面板：包含海关数据、决策人信息、展会足迹 3 个覆盖指标卡片，以及来源分布水平条形图（按 `source` 字段聚合计数与占比）
+
+### 6.5 `automation-workflow.tsx`
 
 职责：
 
@@ -1681,7 +2016,7 @@ export type CampaignStartRequest = {
 - 触发 `startCampaign(...)`
 - 追踪打开状态
 
-### 6.5 `dashboard-page.tsx`
+### 6.6 `dashboard-page.tsx`
 
 职责：
 
@@ -1704,14 +2039,15 @@ export type CampaignStartRequest = {
 - 自动化发信前做 Fail-Closed 权限拦截
 - 上云 payload 明显做了裁剪与字段白名单收缩
 - 低配办公环境下必须优先保证稳定性，而不是盲目堆高并发
+- V1.3 多源融合字段已在 `leads-store.ts` 中定义类型，在 `analysis-drawer.tsx` 和 `data-center.tsx` 中实现 UI 展示
 
 ### 7.2 当前代码中值得产品侧注意的现状
 
-以下是“代码现状”，不是建议：
+以下是"代码现状"，不是建议：
 
-- `useFeatureGate()` 中 `basic` feature alias 含有 `cloud_send` 与 `analysis_advanced`
-- 这与规范文档中“高级版云端自动化隔离”的描述不完全一致
-- 如果商业策略要求更严格的高级版隔离，需要后续核对 `license-service`、`feature-gate.ts` 与 License claims 生成逻辑
+- `FEATURE_ALIASES.basic` 已正确限定为本地能力集合：`search_basic`、`search_deep`、`analysis_basic`、`analysis_advanced`、`lead_export`、`export_full`，不包含任何云端能力
+- `cloud_send` 与 `team_collaboration` 严格限定在 `premium` / `enterprise` 别名中
+- Trial plan 映射到 Basic 别名（获得 Basic 完整能力集的 7 天体验），与 PRD 描述一致
 
 ---
 
@@ -1739,5 +2075,6 @@ Kone 当前已经形成一条较完整的 B2B 出海获客闭环：
 - Snippet 盲评容错
 - 深度开发信
 - 云端发信交接
+- V1.3 多源数据融合展示（`analysis-drawer` 字段徽标 / `data-center` 覆盖 KPI 与来源分布）
 
 串成了一条可渐进增强、可授权分层、可失败保底、可在低配办公电脑稳定运行的工业级 B2B 获客流水线。

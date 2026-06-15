@@ -1,17 +1,20 @@
 import * as crypto from 'crypto'
-import { app } from 'electron'
+import { app } from './electron-bridge'
 import { IPC_CHANNELS } from '../ipc/channels'
-import type { AnalysisSemanticMeta, AnalysisSemanticCode } from '../../src/shared/ipc-contracts'
+import type { AnalysisSemanticMeta, AnalysisSemanticCode, DataSourceType, DecisionMaker, CustomsData, AgentStatus } from '../../src/shared/ipc-contracts'
 import { isCircuitBreakerOpenError, resetCircuitBreaker } from '../utils/http-client'
 import { ConfigStore, DEFAULT_SEARCH_TIMEOUT_MS, getGoogleConfig, getPublicUserConfig, getUserLlmApiKey, SECRET_KEYS } from './config-service'
 import { createLicenseService, registerSecureFeatureIpc } from './license-service'
 import { buildLlmEndpoint, buildSearchEndpoint, fetchWithRetry, fetchWithTimeout, getDefaultSerpApiTimeoutMs, isTimeoutError } from './proxy-service'
 import { getSecret } from './secret-manager'
+import { buildAgentTaskQueue, withPipelineIsolation } from './agent-pipeline'
+import { dispatchAgentsFromPipeline } from './agent-service'
 
 type SearchExecutePayload = {
   keyword: string
   country?: string
   city?: string
+  dataSourceType?: DataSourceType
   filterOptions?: {
     priorityWebsite?: boolean
     localDomainOnly?: boolean
@@ -31,6 +34,7 @@ type SearchExecuteResult = {
   address: string
   isB2B?: boolean | null
   source?: string
+  reason?: string
   matchReasons?: string[]
   riskFlags?: string[]
   matchScore?: number | null
@@ -38,12 +42,62 @@ type SearchExecuteResult = {
   inferredRole?: string
   salesStrategy?: string
   fallbackStatus?: 'social_blind_score'
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 
-const MAX_SEARCH_CANDIDATES = 100
+type SearchIntentMutation = {
+  country: string
+  city: string
+  pureEnglishProducts: string[]
+  keywords: string[]
+  countryOfficialLanguages?: string[]
+  localizedProducts?: Record<string, string[]>
+  localizedKeywords?: Record<string, string[]>
+}
+
+const COUNTRY_LANGUAGE_MAP: Record<string, string[]> = {
+  germany: ['de', 'en'],
+  france: ['fr', 'en'],
+  italy: ['it', 'en'],
+  spain: ['es', 'en'],
+  netherlands: ['nl', 'en'],
+  belgium: ['nl', 'fr', 'en'],
+  poland: ['pl', 'en'],
+  portugal: ['pt', 'en'],
+  austria: ['de', 'en'],
+  switzerland: ['de', 'fr', 'it', 'en'],
+  uk: ['en'],
+  'united kingdom': ['en'],
+  usa: ['en'],
+  'united states': ['en'],
+  canada: ['en', 'fr'],
+  australia: ['en'],
+  japan: ['ja', 'en'],
+  china: ['zh', 'en'],
+  'south korea': ['ko', 'en'],
+  brazil: ['pt', 'en'],
+  mexico: ['es', 'en'],
+  india: ['hi', 'en'],
+  russia: ['ru', 'en'],
+  turkey: ['tr', 'en'],
+  vietnam: ['vi', 'en'],
+  thailand: ['th', 'en'],
+  indonesia: ['id', 'en'],
+  malaysia: ['ms', 'en'],
+  singapore: ['en', 'zh', 'ms', 'ta'],
+}
+
+const MAX_SEARCH_CANDIDATES = 200
+const SEARCH_CHANNEL_FETCH_LIMIT = 100
+const SEARCH_TARGETED_LEAD_LIMIT = 50
+const SEARCH_LLM_SCORE_LIMIT = 20
 const SEARCH_LLM_CONCURRENCY = 2
 const SEARCH_ENRICH_CONCURRENCY = 2
-const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])
+const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 const SEARCH_LLM_TIMEOUT_MS = 20_000
 const WEBSITE_PROBE_TIMEOUT_MS = 15_000
 const MAX_WEBSITE_TEXT_FOR_LLM = 3000
@@ -54,6 +108,36 @@ const SCOUT_B2B_TERMS = [
   'dealer', 'wholesale', 'supplier', 'distributor', 'manufacturer', 'factory', 'industrial', 'commercial', 'b2b',
 ]
 const KEYWORD_STOP_TERMS = new Set(['the', 'and', 'for', 'with', 'from', 'usa', 'us', 'global', 'company', 'companies'])
+
+let currentActiveJobId: string | null = null
+export const getCurrentActiveJobId = () => currentActiveJobId
+const OMNI_CONTROL_TERMS = [
+  /请搜索/g, /帮我找/g, /帮我寻找/g, /搜索/g, /查找/g, /寻找/g, /必须包含/g, /包含/g, /客户的/g, /核心信息/g,
+  /条/g, /家/g, /please\s*(search|find)/gi, /must\s*include/gi, /with\s*(email|phone|website)/gi, /\b\d+\s*(results|leads|items)?\b/gi,
+]
+const TRASH_LEAD_PATTERNS = [
+  /reddit\.com/i, /wikipedia\.org/i, /\.edu(?:\/|$)/i, /\.gov(?:\/|$)/i, /imf\.org/i, /worldbank\.org/i,
+  /招生简章/i, /人才简章/i, /招聘/i, /白皮书/i, /行业白皮书/i, /论坛/i, /报告/i, /reddit/i, /forum/i,
+]
+
+const COUNTRY_TLD_MAP: Record<string, string[]> = {
+  germany: ['.de'],
+  france: ['.fr'],
+  italy: ['.it'],
+  spain: ['.es'],
+  netherlands: ['.nl'],
+  belgium: ['.be'],
+  poland: ['.pl'],
+  portugal: ['.pt'],
+  austria: ['.at'],
+  switzerland: ['.ch'],
+  uk: ['.uk', '.co.uk'],
+  'united kingdom': ['.uk', '.co.uk'],
+  usa: ['.us', '.com'],
+  'united states': ['.us', '.com'],
+  canada: ['.ca'],
+  australia: ['.au'],
+}
 
 const emitBasicResults = (sender: Electron.WebContents, candidates: Array<Partial<SearchExecuteResult>>) => {
   sender.send(
@@ -68,11 +152,12 @@ const emitStreamStart = (sender: Electron.WebContents, total: number) => {
 
 const emitStage = (
   sender: Electron.WebContents,
-  stage: 'fetching' | 'normalizing' | 'scoring' | 'enriching' | 'complete',
+  stage: 'anysearch' | 'fetching' | 'normalizing' | 'prefiltering' | 'scoring' | 'blind_scoring' | 'enriching' | 'complete' | 'localized_search',
   message: string,
-  searchMode?: 'maps' | 'maps-keyword-fallback' | 'organic-fallback'
+  searchMode?: 'anysearch' | 'maps' | 'maps-keyword-fallback' | 'organic-fallback',
+  extra?: Record<string, unknown>
 ) => {
-  sender.send(IPC_CHANNELS.SEARCH.STAGE, { stage, message, searchMode })
+  sender.send(IPC_CHANNELS.SEARCH.STAGE, { stage, message, searchMode, ...extra })
 }
 
 const emitLeadScored = (
@@ -243,7 +328,7 @@ const runLimitedConcurrency = async <T>(
   await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
 }
 
-const fetchSerpApiWithRetry = (url: string, timeoutMs: number) =>
+export const fetchSerpApiWithRetry = (url: string, timeoutMs: number) =>
   fetchWithRetry(
     url,
     { method: 'GET' },
@@ -298,7 +383,7 @@ const normalizeLlmJsonText = (raw: string) => {
   return text
 }
 
-const normalizeOrganicCandidate = (item: any) => ({
+export const normalizeOrganicCandidate = (item: any) => ({
   company: String(item?.company || item?.name || item?.title || '').trim(),
   website: String(item?.website || item?.url || item?.link || '').trim(),
   phone: String(item?.phone || item?.phoneNumber || '').trim(),
@@ -306,9 +391,14 @@ const normalizeOrganicCandidate = (item: any) => ({
   source: String(item?.source || '').trim() || 'Google Organic',
   reason: String(item?.reason || item?.snippet || '').trim(),
   snippet: String(item?.snippet || item?.summary || item?.description || '').trim(),
+  dataSourceType: item?.dataSourceType,
+  exhibitionFootprints: item?.exhibitionFootprints,
+  customsData: item?.customsData,
+  decisionMakers: item?.decisionMakers,
+  agentStatus: item?.agentStatus,
 })
 
-const normalizeLocalCandidate = (item: any) => ({
+export const normalizeLocalCandidate = (item: any) => ({
   company: String(item?.title || item?.name || item?.company || '').trim(),
   website: String(item?.website || item?.links?.website || item?.link || item?.url || '').trim(),
   phone: String(item?.phone || item?.links?.phone || item?.phoneNumber || '').trim(),
@@ -358,6 +448,245 @@ const normalizeSearchCandidates = (raw: any) => {
   return uniqueCandidates.slice(0, MAX_SEARCH_CANDIDATES)
 }
 
+const normalizeIntentCountry = (value?: string) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) return ''
+  const lower = normalized.toLowerCase()
+  if (/美国|usa|u\.s\.|united states|america/.test(lower)) return 'USA'
+  if (/英国|uk|u\.k\.|united kingdom/.test(lower)) return 'UK'
+  if (/德国|germany|deutschland/.test(lower)) return 'Germany'
+  if (/法国|france/.test(lower)) return 'France'
+  if (/意大利|italy/.test(lower)) return 'Italy'
+  if (/西班牙|spain/.test(lower)) return 'Spain'
+  if (/加拿大|canada/.test(lower)) return 'Canada'
+  if (/澳大利亚|australia/.test(lower)) return 'Australia'
+  return normalized
+}
+
+const stripOmniControlTerms = (keyword: string) => {
+  let cleaned = String(keyword || '').trim()
+  for (const pattern of OMNI_CONTROL_TERMS) {
+    cleaned = cleaned.replace(pattern, ' ')
+  }
+  return cleaned
+    .replace(/[，。；：、]/g, ' ')
+    .replace(/\b(email|phone|website|contact|information|info)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const fallbackMutateB2BKeywords = (keyword: string): { pureEnglishProducts: string[]; keywords: string[] } => {
+  const cleaned = stripOmniControlTerms(keyword)
+  const lower = cleaned.toLowerCase()
+  const rawProduct = /高尔夫|golf\s*cart/.test(lower)
+    ? 'Golf cart'
+    : cleaned
+        .replace(/在?美国|usa|united states|品牌|经销商|批发商|独立站|批发|dealer|distributor|wholesaler|supplier|manufacturer|importer/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (char) => char.toUpperCase()) || cleaned || keyword
+
+  const raw = rawProduct.replace(/\s+/g, ' ').trim()
+  const products = raw.split(/[,，、\/]/).map((p) => p.trim()).filter(Boolean)
+  const pureEnglishProducts = products.length > 0 ? products : [raw]
+  return {
+    pureEnglishProducts,
+    keywords: Array.from(new Set(
+      pureEnglishProducts.flatMap((p) =>
+        B2B_ROLE_TERMS.map((role) => `${p} ${role}`)
+      )
+    )).filter(Boolean).slice(0, 4),
+  }
+}
+
+const B2B_ROLE_TERMS = ['dealer', 'distributor', 'importer', 'wholesaler', 'supplier', 'manufacturer']
+
+const crossProductB2BKeywords = (products: string[], country: string): string[] =>
+  Array.from(new Set(
+    products.flatMap((product) =>
+      B2B_ROLE_TERMS.slice(0, 4).map((role) =>
+        country ? `${product} ${role} ${country}` : `${product} ${role}`
+      )
+    )
+  )).filter(Boolean).slice(0, 4)
+
+const buildIntentMutationPrompt = (payload: { keyword: string; country: string; city: string }) => ({
+  system: mergePromptParts(
+    'You are an intent parser for a B2B lead search engine. ',
+    'Never pass the raw user sentence downstream. ',
+    'Remove control words such as search, find, 50 leads, must include email, phone, website. ',
+    'Extract ALL discrete CORE PRODUCT terms and TARGET LOCATION from the user input. ',
+    'Split compound or multi-product input into separate product entries. ',
+    'Return pureEnglishProducts as an ARRAY of individual product terms, never concatenated. ',
+    'Then cross-multiply each core product with exactly 3 B2B role suffixes from: dealer, distributor, importer, wholesaler, supplier, manufacturer. ',
+    'Optionally append location as a qualifier for natural keyword phrasing. ',
+    'If a country is specified, detect its official language(s). For each official language (other than English), translate pureEnglishProducts into that language and generate localized B2B keywords. Use distributor/dealer/importer/wholesaler equivalents in the local language. ',
+    'Return ONLY valid JSON with the following structure: {"country":"USA","city":"","pureEnglishProducts":["Golf cart","car monitor"],"b2bAttributes":["wholesaler","distributor","importer","dealer"],"keywords":["Golf cart dealer","Golf cart distributor","car monitor wholesaler","car monitor importer"],"countryOfficialLanguages":["en"],"localizedProducts":{"es":["carro de golf","monitor de coche"]},"localizedKeywords":{"es":["carro de golf distribuidor","carro de golf importador","monitor de coche mayorista"]}}. ',
+    'countryOfficialLanguages must be an array of ISO language codes (en, fr, de, es, it, ja, zh, etc). ',
+    'localizedProducts maps each non-English language code to translated product term arrays. ',
+    'localizedKeywords maps each non-English language code to translated B2B keyword arrays. ',
+    'If country is empty or English-only, set countryOfficialLanguages to ["en"] and omit localizedProducts/localizedKeywords. ',
+    'Never use raw user control words like "50条", "必须包含邮箱", "search", "find", "帮我找" in keywords. ',
+    'pureEnglishProducts must always be an array, never a single string. ',
+    'localizedProducts and localizedKeywords must also be arrays, never single strings.'
+  ),
+  user: JSON.stringify(payload),
+})
+
+const parseIntentMutation = (raw: string): Partial<SearchIntentMutation> | null => {
+  try {
+    const parsed = JSON.parse(normalizeLlmJsonText(raw))
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+const mutateSearchIntent = async (payload: {
+  keyword: string
+  country: string
+  city: string
+  llmEndpoint: string
+  llmKey: string
+  model: string
+  timeoutMs: number
+}): Promise<SearchIntentMutation> => {
+  const fallbackResult = fallbackMutateB2BKeywords(payload.keyword)
+  const fallbackCountry = normalizeIntentCountry(payload.country || (/(美国|usa|united states|america)/i.test(payload.keyword) ? 'USA' : ''))
+  const fallbackLanguages = fallbackCountry ? (COUNTRY_LANGUAGE_MAP[fallbackCountry.toLowerCase()] || ['en']) : ['en']
+  const fallback: SearchIntentMutation = {
+    country: fallbackCountry,
+    city: payload.city,
+    pureEnglishProducts: fallbackResult.pureEnglishProducts,
+    keywords: fallbackResult.keywords,
+    countryOfficialLanguages: fallbackLanguages,
+  }
+
+  if (!payload.llmEndpoint || !payload.llmKey) return fallback
+
+  try {
+    const { system, user } = buildIntentMutationPrompt({ keyword: payload.keyword, country: payload.country, city: payload.city })
+    const response = await withTimeoutGuard(
+      fetchWithTimeout(
+        payload.llmEndpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${payload.llmKey}` },
+          body: JSON.stringify({
+            model: payload.model,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+            response_format: { type: 'json_object' },
+          }),
+        },
+        Math.min(payload.timeoutMs, SEARCH_LLM_TIMEOUT_MS)
+      ),
+      Math.min(payload.timeoutMs, SEARCH_LLM_TIMEOUT_MS),
+      'Omni intent mutation'
+    )
+    if (!response.ok) return fallback
+    const llmJson: any = await response.json().catch(() => ({}))
+    const content = llmJson?.choices?.[0]?.message?.content || llmJson?.choices?.[0]?.text || ''
+    const parsed = typeof content === 'string' ? parseIntentMutation(content) : null
+    const rawKeywords = Array.isArray(parsed?.keywords)
+      ? parsed.keywords.map((item) => String(item || '').trim()).filter(Boolean)
+      : []
+    const rawProducts = Array.isArray(parsed?.pureEnglishProducts)
+      ? parsed.pureEnglishProducts.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      : []
+    const llmKeywords = rawKeywords.length > 0 ? rawKeywords : []
+    const llmProducts = rawProducts.length > 0 ? rawProducts : []
+    const keywords = llmKeywords.length > 0 ? llmKeywords.slice(0, 4) : fallback.keywords
+    const pureEnglishProducts = llmProducts.length > 0 ? llmProducts : fallback.pureEnglishProducts
+
+    const normalizedCountry = normalizeIntentCountry(String(parsed?.country || fallback.country || '').trim())
+
+    const countryOfficialLanguages = Array.isArray(parsed?.countryOfficialLanguages)
+      ? parsed.countryOfficialLanguages.map(String).filter(Boolean)
+      : (normalizedCountry ? (COUNTRY_LANGUAGE_MAP[normalizedCountry.toLowerCase()] || ['en']) : ['en'])
+
+    const localizedProducts: Record<string, string[]> = {}
+    const localizedKeywords: Record<string, string[]> = {}
+    if (parsed?.localizedProducts && typeof parsed.localizedProducts === 'object') {
+      for (const lang of Object.keys(parsed.localizedProducts)) {
+        const terms = parsed.localizedProducts[lang]
+        if (Array.isArray(terms)) {
+          localizedProducts[lang] = terms.map(String).filter(Boolean)
+        }
+      }
+    }
+    if (parsed?.localizedKeywords && typeof parsed.localizedKeywords === 'object') {
+      for (const lang of Object.keys(parsed.localizedKeywords)) {
+        const terms = parsed.localizedKeywords[lang]
+        if (Array.isArray(terms)) {
+          localizedKeywords[lang] = terms.map(String).filter(Boolean)
+        }
+      }
+    }
+
+    return {
+      country: normalizedCountry,
+      city: String(parsed?.city || fallback.city || '').trim(),
+      pureEnglishProducts,
+      keywords: keywords.length > 0 ? keywords : fallback.keywords,
+      countryOfficialLanguages: countryOfficialLanguages.length > 0 ? countryOfficialLanguages : undefined,
+      localizedProducts: Object.keys(localizedProducts).length > 0 ? localizedProducts : undefined,
+      localizedKeywords: Object.keys(localizedKeywords).length > 0 ? localizedKeywords : undefined,
+    }
+  } catch (error) {
+    probeLog('[Probe-Intent] Intent mutation fallback engaged:', error instanceof Error ? error.message : String(error || ''))
+    return fallback
+  }
+}
+
+const isTrashLead = (candidate: Partial<SearchExecuteResult> & { reason?: string }) => {
+  const haystack = [candidate.company, candidate.website, candidate.source, candidate.reason, candidate.snippet, candidate.address]
+    .filter(Boolean)
+    .join(' ')
+  return TRASH_LEAD_PATTERNS.some((pattern) => pattern.test(haystack))
+}
+
+const mergeDecisionMakers = (current?: DecisionMaker[], incoming?: DecisionMaker[]) => {
+  const merged = new Map<string, DecisionMaker>()
+  for (const item of [...(current || []), ...(incoming || [])]) {
+    const key = item.email || `${item.name}|${item.title}`.toLowerCase()
+    if (!key.trim()) continue
+    const existing = merged.get(key)
+    if (!existing || Number(item.confidenceScore || 0) >= Number(existing.confidenceScore || 0)) {
+      merged.set(key, item)
+    }
+  }
+  return Array.from(merged.values())
+}
+
+const mergeLeadFacts = <T extends Partial<SearchExecuteResult>>(items: T[]) => {
+  const merged = new Map<string, T>()
+  for (const item of items) {
+    const normalizedWebsite = normalizeWebsiteUrl(item.website)
+    const domain = extractDomainFromUrl(normalizedWebsite)
+    const key = domain || `${String(item.company || '').trim().toLowerCase()}|${String(item.address || '').trim().toLowerCase()}`
+    if (!key.trim()) continue
+    const existing = merged.get(key)
+    if (!existing) {
+      merged.set(key, { ...item, website: normalizedWebsite || item.website })
+      continue
+    }
+    merged.set(key, {
+      ...existing,
+      ...item,
+      website: normalizeWebsiteUrl(item.website || existing.website) || item.website || existing.website,
+      decisionMakers: mergeDecisionMakers(existing.decisionMakers, item.decisionMakers),
+      exhibitionFootprints: Array.from(new Set([...(existing.exhibitionFootprints || []), ...(item.exhibitionFootprints || [])])),
+      customsData: Object.keys(item.customsData || {}).length > 0 ? item.customsData : existing.customsData,
+      agentStatus: item.agentStatus || existing.agentStatus,
+    })
+  }
+  return Array.from(merged.values())
+}
+
 const extractKeywordAnchors = (keyword: string) => {
   const normalized = String(keyword || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ')
   return Array.from(
@@ -393,6 +722,26 @@ const computeScoutRelevance = (
   }
 }
 
+const computeIcpMatchScore = (
+  candidate: Partial<SearchExecuteResult>,
+  coreProductTerms: string[]
+): number => {
+  let score = 0
+  const domain = extractDomainFromUrl(candidate.website)
+  const hasWebsite = Boolean(domain)
+  score += hasWebsite ? 40 : 10
+  const text = `${candidate.company || ''} ${candidate.snippet || ''} ${candidate.reason || ''} ${(candidate.matchReasons || []).join(' ')}`.toLowerCase()
+  const productMatch = coreProductTerms.some((term) => text.includes(term.toLowerCase()))
+  score += productMatch ? 30 : 0
+  const b2bSignals = ['wholesale', 'distribute', 'import', 'b2b', 'shop', 'dealer', 'supplier', 'manufacturer']
+  const b2bHits = b2bSignals.filter((signal) => text.includes(signal))
+  if (b2bHits.length >= 3) score += 20
+  else if (b2bHits.length >= 1) score += 10
+  const hasContact = Boolean(candidate.contact || candidate.email || candidate.phone)
+  score += hasContact ? 10 : 0
+  return Math.min(100, Math.max(0, score))
+}
+
 const trimWebsiteTextForLlm = (value: string) =>
   sanitizePlainText(
     String(value || '')
@@ -401,15 +750,15 @@ const trimWebsiteTextForLlm = (value: string) =>
     MAX_WEBSITE_TEXT_FOR_LLM
   )
 
-const buildSerpApiMapsEndpoint = (query: string, apiKey: string, location?: string, start = 0) => {
+type SerpSearchMode = 'maps-location' | 'maps-keyword' | 'organic-keyword'
+
+export const buildSerpApiMapsEndpoint = (query: string, apiKey: string, location?: string, start = 0) => {
   const locationParams = location ? `&location=${encodeURIComponent(location)}&z=12` : ''
-  return `https://serpapi.com/search.json?engine=google_maps&type=search&q=${encodeURIComponent(query)}${locationParams}&api_key=${encodeURIComponent(apiKey)}&start=${start}`
+  return `https://serpapi.com/search.json?engine=google_maps&type=search&q=${encodeURIComponent(query)}${locationParams}&api_key=${encodeURIComponent(apiKey)}&start=${start}&num=${SEARCH_CHANNEL_FETCH_LIMIT}`
 }
 
-const buildSerpApiOrganicEndpoint = (query: string, apiKey: string, start = 0) =>
-  `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${encodeURIComponent(apiKey)}&start=${start}`
-
-type SerpSearchMode = 'maps-location' | 'maps-keyword' | 'organic-keyword'
+export const buildSerpApiOrganicEndpoint = (query: string, apiKey: string, start = 0) =>
+  `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${encodeURIComponent(apiKey)}&start=${start}&num=10`
 
 export const buildFallbackAwareMapsQuery = (keyword: string, locationString: string) =>
   locationString ? `${keyword} in ${locationString}` : keyword
@@ -428,8 +777,9 @@ export const resolveSerpSearchPlan = async (payload: {
   country?: string
   googleKey: string
   timeoutMs: number
+  dataSourceType?: string
   attemptSearch: (mode: SerpSearchMode, modeQuery: string, modeLocation: string) => Promise<{ nextOrganic: any[]; nextLocal: any[] }>
-  onStage?: (message: string, searchMode?: 'maps' | 'maps-keyword-fallback' | 'organic-fallback') => void
+  onStage?: (message: string, searchMode?: 'anysearch' | 'maps' | 'maps-keyword-fallback' | 'organic-fallback') => void
   onFallback?: (event: 'location-rejected' | 'zero-local-organic', detail: Record<string, unknown>) => void
 }) => {
   const keyword = String(payload.keyword || '').trim()
@@ -483,7 +833,10 @@ export const resolveSerpSearchPlan = async (payload: {
     return result
   }
 
-  if (city) {
+  if (payload.dataSourceType === 'google_organic') {
+    payload.onStage?.('🔍 正在通过 Google 网页搜索引擎进行全局线索采集...', 'organic-fallback')
+    await runOrganicFallbackSearch()
+  } else if (city) {
     const levelOneSucceeded = await runMapsLocationSearch()
     if (!levelOneSucceeded) {
       const levelTwoResult = await runMapsKeywordSearch()
@@ -524,6 +877,7 @@ const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchExecuteR
   address: String(item.address || '').trim(),
   isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : item.isB2B ?? undefined,
   source: String(item.source || '').trim() || 'Google Maps',
+  reason: item.reason ? String(item.reason).trim() : '',
   matchReasons: Array.isArray(item.matchReasons)
     ? item.matchReasons.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 2)
     : [],
@@ -533,6 +887,15 @@ const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchExecuteR
   matchScore: Number.isFinite(Number(item.matchScore)) ? Math.max(0, Math.min(100, Number(item.matchScore))) : undefined,
   snippet: item.snippet ? String(item.snippet).trim() : undefined,
   fallbackStatus: item.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
+  dataSourceType: item.dataSourceType || 'google_maps',
+  exhibitionFootprints: Array.isArray(item.exhibitionFootprints) ? item.exhibitionFootprints : [],
+  customsData: item.customsData && typeof item.customsData === 'object' && Object.keys(item.customsData as Record<string, unknown>).length > 0
+    ? item.customsData
+    : {},
+  decisionMakers: Array.isArray(item.decisionMakers) ? item.decisionMakers : [],
+  agentStatus: item.agentStatus && typeof item.agentStatus === 'object' && Object.keys(item.agentStatus as Record<string, unknown>).length > 0
+    ? item.agentStatus
+    : { whatsappSent: false, linkedinContacted: false, emailSequenceStage: 0 as const },
 })
 
 const sanitizePlainText = (value: string, maxLen = 2800) =>
@@ -934,7 +1297,7 @@ const fetchSocialFallbackSnippet = async (query: string, googleKey: string, time
 }
 
 const buildSocialFallbackEnrichedText = async (company: string, country: string | undefined, googleKey: string, timeoutMs: number) => {
-  console.log("📊 [Probe-403-Fallback] 使用 LinkedIn/Kompass/Europages 平替 for:", company)
+  probeLog('[Probe-403-Fallback] 使用 LinkedIn/Kompass/Europages 平替 for:', company)
   const snippets: string[] = []
   for (const query of buildSocialFallbackQueries(company, country)) {
     const result = await fetchSocialFallbackSnippet(query, googleKey, timeoutMs).catch(() => '')
@@ -1372,6 +1735,111 @@ const mergeLlmResultsWithCandidates = (
   })
 }
 
+const getAnySearchConfig = (store: ConfigStore) => {
+  const userConfig = getLatestUserConfigSnapshot(store)
+  const providers: Array<{ id?: string; baseUrl?: string; apiKey?: string }> = Array.isArray(userConfig?.providers) ? userConfig.providers : []
+  const anysearchCfg = providers.find((p) => p.id === 'anysearch')
+  const apiKey = anysearchCfg?.apiKey?.trim() || getSecret('anysearch-api-key')?.trim() || ''
+  const baseUrl = anysearchCfg?.baseUrl?.trim() || ''
+  return { apiKey, baseUrl }
+}
+
+const normalizeAnySearchDecisionMaker = (dm: any) => ({
+  name: String(dm?.name || '').trim(),
+  title: String(dm?.title || '').trim(),
+  email: String(dm?.email || '').trim(),
+  phone: String(dm?.phone || '').trim(),
+  linkedinUrl: dm?.linkedinUrl ? String(dm.linkedinUrl).trim() : undefined,
+  source: String(dm?.source || 'AnySearch').trim(),
+  confidenceScore: Number.isFinite(Number(dm?.confidenceScore)) ? Math.max(0, Math.min(100, Number(dm.confidenceScore))) : 0,
+})
+
+const normalizeAnySearchResult = (item: any) => ({
+  company: String(item?.company || item?.name || item?.title || '').trim(),
+  website: String(item?.website || item?.url || item?.link || '').trim(),
+  phone: String(item?.phone || item?.phoneNumber || '').trim(),
+  address: String(item?.address || item?.location || '').trim(),
+  source: 'AnySearch',
+  reason: String(item?.reason || item?.snippet || item?.description || '').trim(),
+  snippet: String(item?.snippet || item?.description || '').trim(),
+  dataSourceType: (['customs_shipment', 'trade_show', 'yellow_pages', 'linkedin_search', 'facebook_search', 'google_maps', 'google_organic'].includes(String(item?.dataSourceType || '')) ? String(item?.dataSourceType) as DataSourceType : undefined),
+  exhibitionFootprints: Array.isArray(item?.exhibitionFootprints) ? item.exhibitionFootprints : undefined,
+  customsData: item?.customsData ? {
+    annualImportVolume: String(item.customsData.annualImportVolume || '').trim() || undefined,
+    topSuppliers: Array.isArray(item.customsData.topSuppliers) ? item.customsData.topSuppliers : undefined,
+    originCountries: Array.isArray(item.customsData.originCountries) ? item.customsData.originCountries : undefined,
+    lastShipmentDate: String(item.customsData.lastShipmentDate || '').trim() || undefined,
+  } : undefined,
+  decisionMakers: Array.isArray(item?.decisionMakers) ? item.decisionMakers.map(normalizeAnySearchDecisionMaker) : undefined,
+  agentStatus: item?.agentStatus ? {
+    whatsappSent: Boolean(item.agentStatus.whatsappSent),
+    whatsappStatus: ['pending', 'delivered', 'replied', 'failed'].includes(String(item.agentStatus.whatsappStatus || '')) ? String(item.agentStatus.whatsappStatus) as 'pending' | 'delivered' | 'replied' | 'failed' : undefined,
+    linkedinContacted: Boolean(item.agentStatus.linkedinContacted),
+    emailSequenceStage: Number.isFinite(Number(item.agentStatus.emailSequenceStage)) ? Math.min(3, Math.max(0, Number(item.agentStatus.emailSequenceStage))) : 0,
+  } : undefined,
+})
+
+const attemptAnySearch = async (
+  keyword: string,
+  country: string,
+  city: string,
+  apiKey: string,
+  baseUrl: string,
+  timeoutMs: number,
+  dataSourceType?: DataSourceType
+): Promise<{ results: any[]; dataSourceType?: string }> => {
+  const endpoint = baseUrl.replace(/\/$/, '') + '/v1/search/entity'
+  const sourceMap: Partial<Record<DataSourceType, string[]>> = {
+    customs_shipment: ['customs'],
+    trade_show: ['trade_shows'],
+    yellow_pages: ['yellow_pages'],
+    linkedin_search: ['linkedin'],
+    facebook_search: ['facebook'],
+    google_maps: ['maps'],
+  }
+  const sources = dataSourceType && dataSourceType !== 'google_organic'
+    ? (sourceMap[dataSourceType] || ['customs', 'trade_shows', 'yellow_pages', 'linkedin', 'facebook', 'maps'])
+    : ['customs', 'trade_shows', 'yellow_pages', 'linkedin', 'facebook', 'maps']
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query: keyword,
+        country: country || undefined,
+        city: city || undefined,
+        sources,
+        limit: SEARCH_CHANNEL_FETCH_LIMIT,
+      }),
+    },
+    timeoutMs
+  )
+
+  if (!response.ok) {
+    const rawText = await response.text().catch(() => '')
+    probeError('[Probe-AnySearch] Request failed:', { status: response.status, preview: rawText.substring(0, 200) })
+    throw new Error(`AnySearch HTTP ${response.status}: ${rawText.substring(0, 100)}`)
+  }
+
+  const json: any = await response.json().catch(() => ({}))
+  const rawResults = Array.isArray(json?.results)
+    ? json.results
+    : Array.isArray(json?.data?.results)
+      ? json.data.results
+      : Array.isArray(json?.data?.entities)
+        ? json.data.entities
+        : []
+
+  return {
+    results: rawResults.map(normalizeAnySearchResult).filter((item: any) => item.company.length > 0),
+    dataSourceType: String(json?.dataSourceType || '').trim() || undefined,
+  }
+}
+
 export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
   const { licenseGuard } = createLicenseService(store)
 
@@ -1388,6 +1856,9 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
       const keyword = payload?.keyword?.trim()
       if (!keyword) return { success: false, error: 'Missing keyword' }
+
+      const myJobId = crypto.randomUUID()
+      currentActiveJobId = myJobId
 
       emitStreamStart(_event.sender, 0)
 
@@ -1407,24 +1878,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         llmBaseUrl: llmBaseUrl || '',
         providerCount: providers.length,
       })
-      if (!googleKey || !googleBaseUrl) {
-        throw new Error(`缺少配置. Debug: key=[${googleKey}], url=[${googleBaseUrl || ''}]`)
-      }
 
-      const isSerpApi = /serpapi\.com/i.test(googleBaseUrl)
-      const googleHost = getHostFromUrl(googleBaseUrl)
-      const llmHost = getHostFromUrl(llmBaseUrl || '')
-      if (googleHost) resetCircuitBreaker(googleHost)
-      if (llmHost) resetCircuitBreaker(llmHost)
-      const city = typeof payload?.city === 'string' ? payload.city.trim() : ''
-      const country = typeof payload?.country === 'string' ? payload.country.trim() : ''
+      const inputCity = typeof payload?.city === 'string' ? payload.city.trim() : ''
+      const inputCountry = typeof payload?.country === 'string' ? payload.country.trim() : ''
       const filterOptions = payload?.filterOptions || {}
-      const locationString = city && country
-        ? `${city}, ${country}`
-        : country
-          ? String(country)
-          : ''
-      const llmEndpoint = hasLlmConfig ? buildLlmEndpoint(llmBaseUrl || '') : ''
+      const dataSourceType = payload?.dataSourceType
       const configuredSearchTimeoutMs = Number(userConfig?.searchTimeoutMs) || DEFAULT_SEARCH_TIMEOUT_MS
       const timeoutMs = Math.max(DEFAULT_SEARCH_TIMEOUT_MS, configuredSearchTimeoutMs)
       const llmTimeoutMs = Math.max(DEFAULT_SEARCH_TIMEOUT_MS, Math.min(timeoutMs, SEARCH_LLM_TIMEOUT_MS))
@@ -1433,13 +1891,92 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         localDomainOnly: Boolean(filterOptions?.localDomainOnly),
         highRelevanceOnly: Boolean(filterOptions?.highRelevanceOnly),
         b2bRoleOnly: Boolean(filterOptions?.b2bRoleOnly),
+        dataSourceType: dataSourceType || 'default',
       })
+
+      const llmEndpoint = hasLlmConfig ? buildLlmEndpoint(llmBaseUrl || '') : ''
+      if (!googleKey || !googleBaseUrl) {
+        throw new Error(`缺少配置. Debug: key=[${googleKey}], url=[${googleBaseUrl || ''}]`)
+      }
+
+      const intentMutation = await mutateSearchIntent({
+        keyword,
+        country: inputCountry,
+        city: inputCity,
+        llmEndpoint,
+        llmKey,
+        model: userConfig?.selectedModel || 'gpt-3.5-turbo',
+        timeoutMs: llmTimeoutMs,
+      })
+      const country = intentMutation.country || inputCountry
+      const city = intentMutation.city || inputCity
+      const coreProductTerms = intentMutation.pureEnglishProducts.length > 0 ? intentMutation.pureEnglishProducts : extractKeywordAnchors(keyword)
+      const deterministicKeywords = crossProductB2BKeywords(intentMutation.pureEnglishProducts, country)
+      const intentKeywords = intentMutation.keywords.length > 0
+        ? Array.from(new Set([...intentMutation.keywords.slice(0, 2), ...deterministicKeywords])).filter(Boolean).slice(0, 4)
+        : deterministicKeywords
+      const scoringKeyword = intentKeywords.join(' | ')
+      const locationString = city && country
+        ? `${city}, ${country}`
+        : country
+          ? String(country)
+          : ''
+
+      const localizedKeywordsMap = intentMutation.localizedKeywords
+      const hasLocalizedVariants = Boolean(localizedKeywordsMap && Object.keys(localizedKeywordsMap).length > 0)
+
+      const allSearchKeywords: Array<{ keyword: string; language: string }> = [
+        ...intentKeywords.map((kw) => ({ keyword: kw, language: 'en' })),
+      ]
+      if (localizedKeywordsMap) {
+        for (const [lang, terms] of Object.entries(localizedKeywordsMap)) {
+          if (Array.isArray(terms)) {
+            for (const term of terms.slice(0, 4)) {
+              allSearchKeywords.push({ keyword: term, language: lang })
+            }
+          }
+        }
+      }
+
+      const localizedLanguages = localizedKeywordsMap
+        ? Object.keys(localizedKeywordsMap).filter((l) => l !== 'en').join(', ')
+        : ''
+
+      emitStage(
+        _event.sender,
+        'fetching',
+        hasLocalizedVariants
+          ? `🤖 AI 智能解构成功！当前目标国家 [${country || 'Global'}] 语言 [${localizedLanguages}]，正在全渠道并发穿透以下高价值 B2B 变种词（含本地语言）：${allSearchKeywords.map((item) => `[${item.keyword}]`).join(', ')}`
+          : `🤖 AI 智能解构成功！当前目标国家 [${country || 'Global'}]，正在全渠道并发穿透以下高价值 B2B 变种词：${intentKeywords.map((item) => `[${item}]`).join(', ')}`,
+        'maps',
+        { intentMutated: { country: country || 'Global', city, keywords: intentKeywords, localizedLanguages: hasLocalizedVariants ? localizedLanguages : undefined } }
+      )
+
+      if (hasLocalizedVariants) {
+        emitStage(_event.sender, 'fetching', `🌍 检测到多语言搜索需求 [${localizedLanguages}]，English + 本地语言变体并行搜索中...`, 'maps')
+        emitStage(_event.sender, 'localized_search', `🌍 本地语言搜索变体已加入搜索管道: ${localizedLanguages}`, 'maps', { localizedLanguages })
+      }
 
       let allOrganic: any[] = []
       let allLocal: any[] = []
       let activeSearchMode: 'maps' | 'maps-keyword-fallback' | 'organic-fallback' = city ? 'maps' : 'maps-keyword-fallback'
+      const anySearchDecisionMakers: any[] = []
+      let anySearchCustomsData: any | undefined = undefined
+      const anySearchExhibitionFootprints: string[] = []
+      let anySearchAgentStatus: any | undefined = undefined
 
-      emitStage(_event.sender, 'fetching', '🌐 正在抓取 Google Maps / SerpApi 搜索结果...', 'maps')
+      const anysearchCfg = getAnySearchConfig(store)
+      const anySearchEnabled = Boolean(anysearchCfg.apiKey && anysearchCfg.baseUrl && dataSourceType !== 'google_organic')
+      if (anySearchEnabled) {
+        emitStage(_event.sender, 'fetching', '🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...', 'anysearch')
+      }
+      emitStage(_event.sender, 'fetching', dataSourceType === 'google_organic' ? '🔍 正在通过 Google 网页搜索引擎进行全局线索采集...' : '🌐 正在抓取 Google Maps / SerpApi 搜索结果...', dataSourceType === 'google_organic' ? 'organic-fallback' : 'maps')
+
+      const isSerpApi = /serpapi\.com/i.test(googleBaseUrl)
+      const googleHost = getHostFromUrl(googleBaseUrl)
+      const llmHost = getHostFromUrl(llmBaseUrl || '')
+      if (googleHost) resetCircuitBreaker(googleHost)
+      if (llmHost) resetCircuitBreaker(llmHost)
 
       if (isSerpApi) {
         const attemptSearch = async (mode: SerpSearchMode, modeQuery: string, modeLocation: string) => {
@@ -1448,7 +1985,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const nextOrganic: any[] = []
           const nextLocal: any[] = []
 
-          for (let page = 0; page < 3; page += 1) {
+          for (let page = 0; page < 2; page += 1) {
             const pageEndpoint = useOrganic
               ? buildSerpApiOrganicEndpoint(modeQuery, googleKey, page * 10)
               : buildSerpApiMapsEndpoint(modeQuery, googleKey, modeLocation, page * 20)
@@ -1457,7 +1994,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             const rawText = await searchResponse.text()
             probeLog('[Probe-API] SerpApi status:', searchResponse.status, 'mode:', mode, 'page:', page, 'payload:', rawText.substring(0, 240))
             if (!searchResponse.ok) {
-              if (mode === 'maps-location' && searchResponse.status === 400) {
+              if (mode === 'maps-location' && isSerpApiUnsupportedLocationError(searchResponse.status, rawText)) {
                 if (googleHost) resetCircuitBreaker(googleHost)
                 throw new Error(`UNSUPPORTED_LOCATION::${getFriendlySerpApiError(searchResponse.status, rawText)}`)
               }
@@ -1488,76 +2025,128 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
             if (!useOrganic && pageLocal.length === 0) break
             if (useOrganic && pageOrganic.length === 0) break
-            if (nextLocal.length >= MAX_SEARCH_CANDIDATES || nextOrganic.length >= MAX_SEARCH_CANDIDATES) break
+            if (nextLocal.length >= SEARCH_CHANNEL_FETCH_LIMIT || nextOrganic.length >= SEARCH_CHANNEL_FETCH_LIMIT) break
           }
 
           return { nextOrganic, nextLocal }
         }
-        const searchPlan = await resolveSerpSearchPlan({
-          keyword,
-          city,
-          country,
-          googleKey,
-          timeoutMs,
-          attemptSearch: (mode, modeQuery, modeLocation) => attemptSearch(mode, modeQuery, modeLocation),
-          onStage: (message, searchMode) => emitStage(_event.sender, 'fetching', message, searchMode),
-          onFallback: (event, detail) => {
-            if (event === 'location-rejected') {
-              probeLog('[Probe-Fallback] Location rejected, switching to keyword-based query.', detail)
-            }
-            if (event === 'zero-local-organic') {
-              probeLog('[Probe-Fallback] Maps keyword returned zero local results, switching to Google Organic.', detail)
-            }
-          },
-        })
-        allOrganic = searchPlan.allOrganic
-        allLocal = searchPlan.allLocal
-        activeSearchMode = searchPlan.activeSearchMode
-      } else {
-        const searchResponse = await fetchWithTimeout(
-          buildSearchEndpoint(googleBaseUrl),
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${googleKey}` },
-            body: JSON.stringify({ keyword, country: payload.country, city: payload.city }),
-          },
-          timeoutMs
-        )
-
-        const rawText = await searchResponse.text()
-        probeLog('[Probe-API] Search service status:', searchResponse.status, 'payload:', rawText.substring(0, 240))
-        if (!searchResponse.ok) throw new Error(mapHttpError(searchResponse.status, '搜索服务'))
-
-        let searchJson: any = {}
-        try {
-          searchJson = rawText ? JSON.parse(rawText) : {}
-        } catch {
-          throw new Error('SerpApi 响应解析失败，请检查查询参数或稍后重试')
+        const searchPlans: Array<{ anyResult: any; serpResult: any }> = await Promise.all(allSearchKeywords.map(async ({ keyword: mutatedKeyword, language: searchLanguage }) => {
+          if (myJobId !== currentActiveJobId) return { anyResult: null, serpResult: { allOrganic: [], allLocal: [], activeSearchMode: 'organic-fallback' } }
+          const anySearchPromise = anySearchEnabled
+            ? attemptAnySearch(mutatedKeyword, country, city, anysearchCfg.apiKey, anysearchCfg.baseUrl, timeoutMs, dataSourceType).catch((error) => {
+                if (myJobId !== currentActiveJobId) return null
+                probeLog('[Probe-AnySearch] Level 0 failed, keeping SerpApi fallback:', {
+                  keyword: mutatedKeyword,
+                  message: error instanceof Error ? error.message : String(error || ''),
+                })
+                return null
+              })
+            : Promise.resolve(null)
+          const serpPromise = resolveSerpSearchPlan({
+            keyword: mutatedKeyword,
+            city,
+            country,
+            googleKey,
+            timeoutMs,
+            dataSourceType,
+            attemptSearch: (mode, modeQuery, modeLocation) => attemptSearch(mode, modeQuery, modeLocation),
+            onStage: (message, searchMode) => { if (myJobId === currentActiveJobId) emitStage(_event.sender, 'fetching', message, searchMode) },
+            onFallback: (event, detail) => {
+              if (myJobId !== currentActiveJobId) return
+              if (event === 'location-rejected') {
+                probeLog('[Probe-Fallback] Location rejected, switching to keyword-based query.', detail)
+              }
+              if (event === 'zero-local-organic') {
+                probeLog('[Probe-Fallback] Maps keyword returned zero local results, switching to Google Organic.', detail)
+              }
+            },
+          })
+          const settled = await Promise.allSettled([anySearchPromise, serpPromise])
+          const anyResult = settled[0].status === 'fulfilled' ? settled[0].value : null
+          const serpResult = settled[1].status === 'fulfilled' ? settled[1].value : { allOrganic: [], allLocal: [], activeSearchMode: 'organic-fallback' }
+          return { anyResult, serpResult }
+        }))
+        for (const plan of searchPlans) {
+          if (myJobId !== currentActiveJobId) break
+          if (plan.anyResult?.results?.length) {
+            allOrganic.push(...plan.anyResult.results.map((item: any) => ({
+              company: item.company,
+              website: item.website,
+              phone: item.phone,
+              address: item.address,
+              source: item.source,
+              reason: item.reason,
+              snippet: item.snippet,
+              dataSourceType: item.dataSourceType,
+              decisionMakers: item.decisionMakers,
+              customsData: item.customsData,
+              exhibitionFootprints: item.exhibitionFootprints,
+              agentStatus: item.agentStatus,
+            })))
+            anySearchDecisionMakers.push(...plan.anyResult.results.flatMap((item: any) => item.decisionMakers || []).filter(Boolean))
+            anySearchCustomsData = anySearchCustomsData || plan.anyResult.results.find((item: any) => item.customsData)?.customsData
+            anySearchExhibitionFootprints.push(...plan.anyResult.results.flatMap((item: any) => item.exhibitionFootprints || []).filter(Boolean))
+            anySearchAgentStatus = anySearchAgentStatus || plan.anyResult.results.find((item: any) => item.agentStatus)?.agentStatus
+          }
+          allOrganic.push(...plan.serpResult.allOrganic)
+          allLocal.push(...plan.serpResult.allLocal)
+          if (String(plan.serpResult.activeSearchMode) === 'organic-fallback') activeSearchMode = 'organic-fallback'
         }
+      } else {
+        const rawSearches = await Promise.allSettled(allSearchKeywords.map(async ({ keyword: mutatedKeyword }) => {
+          if (myJobId !== currentActiveJobId) return {}
+          const searchResponse = await fetchWithTimeout(
+            buildSearchEndpoint(googleBaseUrl),
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${googleKey}` },
+              body: JSON.stringify({ keyword: mutatedKeyword, country, city, limit: SEARCH_CHANNEL_FETCH_LIMIT }),
+            },
+            timeoutMs
+          )
 
-        allOrganic = Array.isArray(searchJson?.organic_results)
-          ? searchJson.organic_results
-          : Array.isArray(searchJson?.results)
-            ? searchJson.results
-            : Array.isArray(searchJson?.data?.results)
-              ? searchJson.data.results
-              : Array.isArray(searchJson?.items)
-                ? searchJson.items
-                : Array.isArray(searchJson?.data?.items)
-                  ? searchJson.data.items
-                  : []
-        allLocal = Array.isArray(searchJson?.local_results)
-          ? searchJson.local_results
-          : Array.isArray(searchJson?.local_results?.places)
-            ? searchJson.local_results.places
-            : []
+          const rawText = await searchResponse.text()
+          probeLog('[Probe-API] Search service status:', searchResponse.status, 'payload:', rawText.substring(0, 240))
+          if (!searchResponse.ok) throw new Error(mapHttpError(searchResponse.status, '搜索服务'))
+
+          try {
+            return rawText ? JSON.parse(rawText) : {}
+          } catch {
+            throw new Error('SerpApi 响应解析失败，请检查查询参数或稍后重试')
+          }
+        }))
+        for (const result of rawSearches) {
+          if (myJobId !== currentActiveJobId) break
+          const searchJson = result.status === 'fulfilled' ? result.value : {}
+          allOrganic.push(...(Array.isArray(searchJson?.organic_results)
+            ? searchJson.organic_results
+            : Array.isArray(searchJson?.results)
+              ? searchJson.results
+              : Array.isArray(searchJson?.data?.results)
+                ? searchJson.data.results
+                : Array.isArray(searchJson?.items)
+                  ? searchJson.items
+                  : Array.isArray(searchJson?.data?.items)
+                    ? searchJson.data.items
+                    : []))
+          allLocal.push(...(Array.isArray(searchJson?.local_results)
+            ? searchJson.local_results
+            : Array.isArray(searchJson?.local_results?.places)
+              ? searchJson.local_results.places
+              : []))
+        }
       }
 
       emitStage(_event.sender, 'normalizing', '🧩 正在整理候选客户并去重...')
       const { filteredLocalResults, normalizedCandidates } = normalizeSearchResponseCandidates(allOrganic, allLocal, city, locationString)
+      emitStage(_event.sender, 'prefiltering', '🔍 正在执行相关度预筛，剔除泛化结果...')
       probeLog('[Probe-Filter] Filter applied: Priority Website =', Boolean(filterOptions?.priorityWebsite))
       const candidates = normalizedCandidates.filter((candidate) => {
-        const relevance = computeScoutRelevance(candidate, keyword, {
+        if (isTrashLead(candidate)) {
+          probeLog(`[Probe-AntiTrash] Discarded: ${candidate.company}`)
+          return false
+        }
+        const relevance = computeScoutRelevance(candidate, scoringKeyword, {
           priorityWebsite: Boolean(filterOptions?.priorityWebsite),
           b2bRoleOnly: Boolean(filterOptions?.b2bRoleOnly),
         })
@@ -1575,39 +2164,62 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         discardedCount: normalizedCandidates.length - candidates.length,
         firstCandidate: candidates[0] || null,
         activeSearchMode,
+        anySearchEnabled,
       })
-      if (candidates.length === 0) {
+
+      /* ── V1.3 AnySearch 多源字段注入 ── */
+      const mergedLeads = mergeLeadFacts(candidates.map((candidate) => ({
+        ...candidate,
+        dataSourceType: candidate.dataSourceType || ((activeSearchMode as string) === 'organic-fallback' ? 'google_organic' as const : 'google_maps' as const),
+        decisionMakers: candidate.decisionMakers || (anySearchDecisionMakers.length ? anySearchDecisionMakers : undefined),
+        customsData: candidate.customsData || anySearchCustomsData,
+        exhibitionFootprints: candidate.exhibitionFootprints || (anySearchExhibitionFootprints.length ? anySearchExhibitionFootprints : undefined),
+        agentStatus: candidate.agentStatus || anySearchAgentStatus,
+      })))
+      const scoredMergedLeads = mergedLeads.map((lead) => ({
+        ...lead,
+        matchScore: computeIcpMatchScore(lead as Partial<SearchExecuteResult>, coreProductTerms),
+      }))
+      const targetedLeads = scoredMergedLeads.slice(0, SEARCH_TARGETED_LEAD_LIMIT)
+      const leadsForScoring = targetedLeads.slice(0, SEARCH_LLM_SCORE_LIMIT)
+
+      if (targetedLeads.length === 0) {
         probeLog('[Probe-IPC] Zero-candidate path reached, emitting complete stage and stream complete')
         emitStage(_event.sender, 'complete', '✅ 分析完成，未发现符合条件的线索')
         emitStreamComplete(_event.sender)
         return { success: true, data: { results: [] } }
       }
 
-      emitStreamStart(_event.sender, candidates.length)
-      emitBasicResults(_event.sender, candidates)
-      probeLog('[Probe-IPC] Basic results emitted:', { total: candidates.length, activeSearchMode })
+      emitStreamStart(_event.sender, targetedLeads.length)
+      emitBasicResults(_event.sender, targetedLeads)
+      probeLog('[Probe-IPC] Basic results emitted:', { total: targetedLeads.length, scoringCount: leadsForScoring.length, activeSearchMode })
 
       if (!hasLlmConfig) {
         if (!llmKey) {
           probeError('[Probe-Auth] LLM key missing, skipping scoring phase', {
-            candidateCount: candidates.length,
+            candidateCount: targetedLeads.length,
             hasLlmBaseUrl: Boolean(llmBaseUrl),
           })
         }
         if (!llmBaseUrl) {
           probeError('[Probe-Auth] LLM base URL missing, skipping scoring phase', {
-            candidateCount: candidates.length,
+            candidateCount: targetedLeads.length,
             hasLlmKey: Boolean(llmKey),
           })
         }
-        const fallbackSourceLabel = candidates.some((item) => String(item.source || '').includes('Organic')) ? '网页搜索' : 'Google Maps'
+        const fallbackSourceLabel = targetedLeads.some((item) => String(item.source || '').includes('Organic')) ? '网页搜索' : 'Google Maps'
         emitStage(_event.sender, 'complete', `✅ 已返回 ${fallbackSourceLabel} 基础结果（未启用 AI 评分）`)
         emitStreamComplete(_event.sender)
-        return { success: true, data: { results: candidates.map((item) => applySchemaDefaults(item)) } }
+        // Pipeline: auto-dispatch qualified leads to agents
+        withPipelineIsolation(async (runId) => {
+          const pipelineQueue = buildAgentTaskQueue(targetedLeads)
+          dispatchAgentsFromPipeline(pipelineQueue, _event.sender, store, runId)
+        })
+        return { success: true, data: { results: targetedLeads.map((item) => applySchemaDefaults(item)) } }
       }
 
       probeLog('[Probe-IPC] Scoring queue starting', {
-        candidateCount: candidates.length,
+        candidateCount: leadsForScoring.length,
         concurrency: SEARCH_LLM_CONCURRENCY,
       })
       emitStage(_event.sender, 'scoring', '🤖 正在进行 ICP 智能评估...')
@@ -1616,14 +2228,15 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         probeError('[Probe-Auth] LLM config inconsistent after scoring gate', {
           hasLlmKey: Boolean(llmKey),
           hasLlmEndpoint: Boolean(llmEndpoint),
-          candidateCount: candidates.length,
+          candidateCount: leadsForScoring.length,
         })
         throw new Error('未检测到有效的 LLM 鉴权配置，无法执行 ICP 智能评估')
       }
 
       const cleanedResults: SearchExecuteResult[] = []
       let completedCount = 0
-      await runLimitedConcurrency(candidates, SEARCH_LLM_CONCURRENCY, async (candidate, index) => {
+      await runLimitedConcurrency(leadsForScoring, SEARCH_LLM_CONCURRENCY, async (candidate, index) => {
+        if (myJobId !== currentActiveJobId) return
         try {
           probeLog('[Probe-LLM] Scoring candidate:', {
             index,
@@ -1632,7 +2245,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             timeoutMs: llmTimeoutMs,
           })
           const { system, user } = buildSearchScoringPrompt({
-            keyword,
+            keyword: scoringKeyword,
             icpProfile: userConfig?.icpProfile || undefined,
             candidates: [candidate],
           })
@@ -1670,7 +2283,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const nextLead = scoredLead || applySchemaDefaults(candidate)
           cleanedResults[index] = nextLead
           completedCount += 1
-          emitLeadScored(_event.sender, nextLead, completedCount, candidates.length)
+          emitLeadScored(_event.sender, nextLead, completedCount, leadsForScoring.length)
         } catch (error) {
           probeLlmCrash(error)
           probeError('[Probe-LLM-Error] Candidate:', candidate.company, 'Error:', error instanceof Error ? error.message : String(error || ''), error instanceof Error ? error.stack : '')
@@ -1686,18 +2299,16 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             company: candidate.company,
             message: error instanceof Error ? error.message : String(error || ''),
           })
-          emitLeadScored(_event.sender, fallbackLead, completedCount, candidates.length)
+          emitLeadScored(_event.sender, fallbackLead, completedCount, leadsForScoring.length)
         }
       })
-
-      emitStreamComplete(_event.sender)
-      probeLog('[Probe-IPC] Score stream complete emitted before enrichment phase')
 
       if (cleanedResults.length > 0) {
         emitStage(_event.sender, 'enriching', '🔎 正在补全官网与商业信号...')
         const baseResults = cleanedResults.filter(Boolean)
         const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
         await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
+          if (myJobId !== currentActiveJobId) return
           try {
             const enriched = await withTimeoutGuard(
               enrichLeadWithDeepProbe({
@@ -1706,7 +2317,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                 llmKey,
                 model: userConfig?.selectedModel || 'gpt-3.5-turbo',
                 timeoutMs: llmTimeoutMs,
-                keyword,
+                keyword: scoringKeyword,
                 country,
                 googleKey,
                 icpProfile: userConfig?.icpProfile || undefined,
@@ -1727,12 +2338,21 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             })
           }
         })
-        const finalResults = enrichedResults.map((item, index) => item || applySchemaDefaults(baseResults[index]))
+        const scoredResults = enrichedResults.map((item, index) => item || applySchemaDefaults(baseResults[index]))
+        const scoredByKey = new Map(scoredResults.map((item) => [extractDomainFromUrl(item.website) || `${item.company.toLowerCase()}|${item.address.toLowerCase()}`, item]))
+        const finalResults = targetedLeads.map((item) => scoredByKey.get(extractDomainFromUrl(item.website) || `${String(item.company || '').toLowerCase()}|${String(item.address || '').toLowerCase()}`) || applySchemaDefaults(item))
         emitStage(_event.sender, 'complete', '✅ 分析完成，线索已更新')
-        return { success: true, data: { results: finalResults || [] } }
+        emitStreamComplete(_event.sender)
+        // Pipeline: auto-dispatch enriched leads to agents
+        withPipelineIsolation(async (runId) => {
+          const pipelineQueue = buildAgentTaskQueue(finalResults)
+          dispatchAgentsFromPipeline(pipelineQueue, _event.sender, store, runId)
+        })
+        return { success: true, data: { results: finalResults.slice(0, SEARCH_TARGETED_LEAD_LIMIT) || [] } }
       }
 
       emitStage(_event.sender, 'complete', '✅ 分析完成，线索已更新')
+      emitStreamComplete(_event.sender)
       return { success: true, data: { results: [] } }
     } catch (error: any) {
       probeLog('[Probe-IPC] Search execute catch triggered, emitting stream:error + stream:complete', {

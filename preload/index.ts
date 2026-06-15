@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../electron/ipc/channels';
 import type {
   AnalysisGenerateRequest,
+  AccountConnectRequest,
+  AccountDisconnectRequest,
   AuthLoginRequest,
   CampaignStartRequest,
   CheckDomainsRequest,
@@ -9,6 +11,7 @@ import type {
   CreateCampaignRequest,
   ElectronApi,
   FetchModelsRequest,
+  FileExportPdfRequest,
   FileExportSaveRequest,
   LicenseSubmitRequest,
   ProxyRequest,
@@ -116,6 +119,7 @@ const electronAPI: ElectronApi = {
   },
   files: {
     saveExport: (payload: FileExportSaveRequest) => ipcRenderer.invoke(IPC_CHANNELS.FILES.EXPORT_SAVE, payload),
+    exportPdf: (payload: FileExportPdfRequest) => ipcRenderer.invoke(IPC_CHANNELS.FILES.EXPORT_PDF, payload),
   },
   cloud: {
     checkCollision: (payload: { domain: string }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_COLLISION, payload),
@@ -139,6 +143,37 @@ const electronAPI: ElectronApi = {
   automation: {
     verifyEmails: (payload: { emails: string[] }) => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.VERIFY_EMAILS, payload),
     startCampaign: (payload: CampaignStartRequest) => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN, payload),
+  },
+  accounts: {
+    connect: (payload: AccountConnectRequest) => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT.CONNECT, payload),
+    disconnect: (payload: AccountDisconnectRequest) => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT.DISCONNECT, payload),
+    getList: () => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT.GET_LIST),
+  },
+  onAccountStatusUpdate: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === 'object') {
+        callback(payload as any)
+      }
+    }
+    ipcRenderer.on(IPC_CHANNELS.ACCOUNT.STATUS_UPDATE, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.ACCOUNT.STATUS_UPDATE, listener)
+  },
+  agents: {
+    getList: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT.LIST),
+    control: (payload: { agentId: string; action: string }) => ipcRenderer.invoke(IPC_CHANNELS.AGENT.CONTROL, payload),
+    getLog: (agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT.GET_LOG, agentId),
+  },
+  onAgentStatusChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === 'object') {
+        callback(payload as any)
+      }
+    }
+    ipcRenderer.on(IPC_CHANNELS.AGENT.STATUS_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT.STATUS_CHANGED, listener)
+  },
+  dns: {
+    healthCheck: (payload: { domain: string }) => ipcRenderer.invoke(IPC_CHANNELS.DNS.HEALTH_CHECK, payload),
   },
 };
 

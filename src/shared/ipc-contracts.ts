@@ -41,7 +41,7 @@ export type LicenseVerifyData = {
   type?: 'trial' | 'license';
   isExpired?: boolean;
   machineId?: string;
-  tier?: 'unregistered' | 'basic' | 'premium';
+  tier?: LicenseTier;
 };
 
 export type LicenseStatusData = {
@@ -52,7 +52,7 @@ export type LicenseStatusData = {
   type?: 'trial' | 'license';
   isExpired?: boolean;
   machineId?: string;
-  tier?: 'unregistered' | 'basic' | 'premium';
+  tier?: LicenseTier;
 };
 
 export type LicenseTier = 'unregistered' | 'basic' | 'premium' | 'expired';
@@ -189,6 +189,7 @@ export type SearchExecuteRequest = {
   keyword: string;
   country?: string;
   city?: string;
+  dataSourceType?: DataSourceType;
   filterOptions?: {
     priorityWebsite?: boolean;
     localDomainOnly?: boolean;
@@ -219,6 +220,12 @@ export type SearchExecuteResult = {
   fallbackStatus?: 'social_blind_score';
   status?: 'new' | 'contacting' | 'replied' | 'archived';
   analysisCache?: Record<string, unknown>;
+  /* V1.3 多源融合字段 */
+  dataSourceType?: DataSourceType;
+  exhibitionFootprints?: string[];
+  customsData?: CustomsData;
+  decisionMakers?: DecisionMaker[];
+  agentStatus?: AgentStatus;
 };
 
 export type SearchExecuteData = {
@@ -233,9 +240,9 @@ export type SearchLeadScoredPayload = {
 };
 
 export type SearchStagePayload = {
-  stage: 'fetching' | 'normalizing' | 'scoring' | 'enriching' | 'complete';
+  stage: 'anysearch' | 'fetching' | 'normalizing' | 'prefiltering' | 'scoring' | 'blind_scoring' | 'enriching' | 'complete' | 'localized_search';
   message: string;
-  searchMode?: 'maps' | 'maps-keyword-fallback' | 'organic-fallback';
+  searchMode?: 'anysearch' | 'maps' | 'maps-keyword-fallback' | 'organic-fallback';
 };
 
 export type AnalysisGenerateRequest = {
@@ -290,6 +297,168 @@ export type FileExportSaveRequest = {
 export type FileExportSaveData = {
   filePath?: string;
   canceled?: boolean;
+};
+
+export type FileExportPdfRequest = {
+  html?: string;
+  fileName?: string;
+  company?: string;
+  website?: string;
+  country?: string;
+  customsData?: Record<string, unknown>;
+  exhibitionFootprints?: string[];
+  decisionMakers?: Array<Record<string, unknown>>;
+  strategies?: Array<{ scenario: string; subject: string; body: string }>;
+};
+
+export type FileExportPdfData = {
+  filePath?: string;
+  canceled?: boolean;
+  trialRemaining?: number;
+};
+
+/* ── V1.3 Multi-Source Fusion Types ── */
+
+export type DataSourceType = 'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search' | 'anysearch';
+
+export type DecisionMaker = {
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  linkedinUrl?: string;
+  source: string;
+  confidenceScore: number;
+};
+
+export type CustomsData = {
+  annualImportVolume?: string;
+  topSuppliers?: string[];
+  originCountries?: string[];
+  lastShipmentDate?: string;
+};
+
+export type AgentStatus = {
+  whatsappSent: boolean;
+  whatsappStatus?: 'pending' | 'delivered' | 'replied' | 'failed';
+  linkedinContacted: boolean;
+  emailSequenceStage: 0 | 1 | 2 | 3;
+};
+
+/* ── V1.3 DNS Health Check Types ── */
+
+export type DnsHealthCheckRequest = {
+  domain: string;
+};
+
+export type DnsRecordType = 'MX' | 'A' | 'AAAA' | 'TXT' | 'CNAME' | 'NS';
+
+export type DnsRecord = {
+  type: DnsRecordType;
+  value: string;
+  ttl?: number;
+};
+
+export type DnsHealthCheckResult = {
+  domain: string;
+  hasMX: boolean;
+  hasSPF: boolean;
+  hasDKIM?: boolean;
+  hasDMARC?: boolean;
+  records: DnsRecord[];
+  valid: boolean;
+  error?: string;
+};
+
+/* ── V1.3 Agent / Sandbox Types ── */
+
+export type AgentControlRequest = {
+  agentId: string;
+  action: 'start' | 'stop' | 'pause' | 'resume';
+};
+
+export type AgentExecutionState = {
+  agentId: string;
+  agentType: 'scout' | 'brain' | 'data_center' | 'messaging';
+  status: 'idle' | 'running' | 'paused' | 'error';
+  progress?: number;
+  lastActivity?: string;
+};
+
+/* ── V1.3 Sales Agent Types ── */
+
+export type SalesAgentType = 'whatsapp' | 'linkedin' | 'email';
+
+export type SalesAgentState = {
+  agentId: string
+  agentType: SalesAgentType
+  status: 'idle' | 'running' | 'paused' | 'error'
+  label: string
+  description: string
+  progress: number
+  totalTargets: number
+  completedCount: number
+  failedCount: number
+  lastActivity?: string
+  errorMessage?: string
+  dailyLimit: number
+  dailyUsed: number
+};
+
+export type AgentListData = {
+  agents: SalesAgentState[]
+};
+
+export type AgentControlData = {
+  agentId: string
+  status: SalesAgentState['status']
+};
+
+export type AgentLogEntry = {
+  timestamp: string
+  event: string
+  detail?: string
+};
+
+export type AgentLogData = {
+  agentId: string
+  logEntries: AgentLogEntry[]
+};
+
+/* ── V1.3 Multi-Account Sandbox Types ── */
+
+export type AccountType = 'email_smtp' | 'email_imap' | 'linkedin' | 'facebook' | 'whatsapp';
+
+export type AccountSessionStatus = 'connected' | 'disconnected' | 'rate_limited' | 'error';
+
+export type AccountSessionEntry = {
+  accountId: string;
+  accountType: AccountType;
+  label: string;
+  email?: string;
+  status: AccountSessionStatus;
+  connectedAt?: string;
+  lastCheckedAt?: string;
+  errorMessage?: string;
+};
+
+export type AccountConnectRequest = {
+  accountType: AccountType;
+  label: string;
+  credentials: Record<string, string>;
+};
+
+export type AccountConnectData = {
+  accountId: string;
+  status: AccountSessionStatus;
+};
+
+export type AccountDisconnectRequest = {
+  accountId: string;
+};
+
+export type AccountListData = {
+  accounts: AccountSessionEntry[];
 };
 
 /* ── Cloud / Team Sync Types ── */
@@ -458,6 +627,7 @@ export type ElectronApi = {
   };
   files: {
     saveExport: (payload: FileExportSaveRequest) => Promise<IpcResponse<FileExportSaveData>>;
+    exportPdf: (payload: FileExportPdfRequest) => Promise<IpcResponse<FileExportPdfData>>;
   };
   cloud: {
     checkCollision: (payload: { domain: string }) => Promise<IpcResponse<DomainCollisionResult>>;
@@ -475,5 +645,20 @@ export type ElectronApi = {
   automation: {
     verifyEmails: (payload: { emails: string[] }) => Promise<IpcResponse<EmailVerifyData>>;
     startCampaign: (payload: CampaignStartRequest) => Promise<IpcResponse<CampaignStartData>>;
+  };
+  accounts: {
+    connect: (payload: AccountConnectRequest) => Promise<IpcResponse<AccountConnectData>>;
+    disconnect: (payload: AccountDisconnectRequest) => Promise<IpcResponse<null>>;
+    getList: () => Promise<IpcResponse<AccountListData>>;
+  };
+  onAccountStatusUpdate: (callback: (entry: AccountSessionEntry) => void) => () => void;
+  agents: {
+    getList: () => Promise<IpcResponse<AgentListData>>;
+    control: (payload: AgentControlRequest) => Promise<IpcResponse<AgentControlData>>;
+    getLog: (agentId: string) => Promise<IpcResponse<AgentLogData>>;
+  };
+  onAgentStatusChanged: (callback: (state: SalesAgentState) => void) => () => void;
+  dns: {
+    healthCheck: (payload: DnsHealthCheckRequest) => Promise<IpcResponse<DnsHealthCheckResult>>;
   };
 };

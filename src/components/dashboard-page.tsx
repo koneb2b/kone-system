@@ -21,6 +21,8 @@ const KnowledgeBase = lazy(() => import("@/components/knowledge-base").then((mod
 const SystemSettings = lazy(() => import("@/components/system-settings").then((module) => ({ default: module.SystemSettings })))
 const TeamDashboard = lazy(() => import("@/components/team-dashboard").then((module) => ({ default: module.TeamDashboard })))
 const AutomationWorkflow = lazy(() => import("@/components/automation-workflow").then((module) => ({ default: module.AutomationWorkflow })))
+const AccountsManagement = lazy(() => import("@/components/accounts-management").then((module) => ({ default: module.AccountsManagement })))
+const AgentsPanel = lazy(() => import("@/components/agents-panel").then((module) => ({ default: module.AgentsPanel })))
 
 type UserRole = 'trial' | 'pro' | 'enterprise'
 type UpgradeIntent = "basic" | "premium"
@@ -33,6 +35,8 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   settings: { title: "系统设置", subtitle: "API 密钥、搜索配置与账户管理" },
   "team-dashboard": { title: "团队协作看板", subtitle: "实时团队线索协同与防撞单管理" },
   automation: { title: "智能触达工作流", subtitle: "客户清洗、模板配置与云端发送的协同引擎" },
+  accounts: { title: "多账号沙箱管理", subtitle: "独立持久化沙箱隔离，安全多开 LinkedIn / Facebook / WhatsApp / 企业邮箱" },
+  agents: { title: "AI 销售团队", subtitle: "3 大原生智能体协同工作：WhatsApp 拓客 · LinkedIn 买手 · 邮件三轮跟进" },
 }
 
 function SectionSkeleton({ label = "模块加载中..." }: { label?: string }) {
@@ -151,7 +155,10 @@ export function DashboardPage() {
     })
 
     if (response.triggered === false && response.error) {
-      throw new Error(response.error)
+      const supabaseMessage = /supabase|URL.*Key|Anon|service_role|JWT/i.test(response.error)
+        ? "企业云端协同引擎暂未启用。当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。"
+        : response.error
+      throw new Error(supabaseMessage)
     }
 
     if (response.triggered === false) {
@@ -167,7 +174,9 @@ export function DashboardPage() {
   const currentPage = pageTitles[activeNav] || pageTitles.search
   const showLocalEnhancedMode = activeNav === "team-dashboard" && cloudMode === "local"
   const canAccessPremiumWorkspace = tier === "premium" || plan === "enterprise"
+  const canAccessAccountsWorkspace = !loading && (canAccessPremiumWorkspace || plan === "basic" || plan === "trial")
   const shouldBlockPremiumPage = (activeNav === "team-dashboard" || activeNav === "automation") && !loading && !canAccessPremiumWorkspace
+  const shouldBlockAccountsPage = activeNav === "accounts" && !canAccessAccountsWorkspace
 
   return (
     <div className="flex min-h-screen bg-background" data-stage="dashboard">
@@ -214,9 +223,15 @@ export function DashboardPage() {
                   onAnalyze={handleAnalyze}
                   userRole={currentRole}
                   onSendToCloud={handleSendToCloud}
+                  canUseCloudSend={canAccessPremiumWorkspace}
                   onViewAll={() => setActiveNav("leads")}
                 />
               </>
+            </Suspense>
+          )}
+          {activeNav === "agents" && (
+            <Suspense fallback={<SectionSkeleton label="AI 团队加载中..." />}>
+              <AgentsPanel />
             </Suspense>
           )}
           {activeNav === "leads" && (
@@ -249,14 +264,38 @@ export function DashboardPage() {
               <AutomationWorkflow />
             </Suspense>
           )}
+          {activeNav === "accounts" && canAccessAccountsWorkspace && (
+            <Suspense fallback={<SectionSkeleton label="账号控制台加载中..." />}>
+              <AccountsManagement />
+            </Suspense>
+          )}
           {shouldBlockPremiumPage && (
             <PremiumAccessBlocked
-              title={activeNav === "automation" ? "智能触达工作流暂未开放" : "团队协作看板暂未开放"}
-              description={
-                activeNav === "automation"
-                  ? "当前账号仍处于 Trial / Basic 范围，仅可使用本地获客与线索管理。升级后即可开启云端自动化、发送队列与追踪能力。"
-                  : "当前账号仍处于 Trial / Basic 范围，仅可使用本地线索闭环。升级后即可开启团队协作、防撞单与高级联动能力。"
+              title={
+                activeNav === "accounts"
+                  ? "多账号沙箱管理暂未开放"
+                  : activeNav === "automation"
+                    ? "智能触达工作流暂未开放"
+                    : "团队协作看板暂未开放"
               }
+              description={
+                  activeNav === "accounts"
+                    ? "当前为 Trial / Basic 方案，仅可使用单邮箱通道。升级 Premium / Enterprise 即可解锁 LinkedIn、Facebook、WhatsApp 独立持久化沙箱多开与物理隔离能力。"
+                    : activeNav === "automation"
+                    ? "当前账号仍处于 Trial / Basic 范围，仅可使用本地获客与线索管理。升级后即可开启云端自动化、发送队列与追踪能力。"
+                    : "当前账号仍处于 Trial / Basic 范围，仅可使用本地线索闭环。升级后即可开启团队协作、防撞单与高级联动能力。"
+              }
+              ctaLabel="联系顾问升级"
+              onUpgrade={() => {
+                setUpgradeIntent("premium")
+                setUpgradeModalOpen(true)
+              }}
+            />
+          )}
+          {shouldBlockAccountsPage && (
+            <PremiumAccessBlocked
+              title="多账号沙箱管理暂未开放"
+              description="当前授权状态不可用。有效试用或基础版可连接 1 个企业邮箱沙箱；升级 Premium / Enterprise 可解锁 LinkedIn、Facebook、WhatsApp 多账号物理隔离能力。"
               ctaLabel="联系顾问升级"
               onUpgrade={() => {
                 setUpgradeIntent("premium")

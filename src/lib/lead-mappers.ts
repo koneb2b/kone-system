@@ -1,6 +1,6 @@
 import { stableHash } from "@/lib/utils"
 import type { LeadAnalysisCacheEntry, LeadItem, LeadSearchResult } from "@/store/leads-store"
-import type { SearchExecuteResult } from "@/shared/ipc-contracts"
+import type { SearchExecuteResult, DataSourceType, DecisionMaker, CustomsData, AgentStatus } from "@/shared/ipc-contracts"
 
 type LeadMapperInput = Partial<Omit<SearchExecuteResult, "id">> & {
   id?: number | string
@@ -10,6 +10,12 @@ type LeadMapperInput = Partial<Omit<SearchExecuteResult, "id">> & {
   countryCode?: LeadSearchResult["countryCode"]
   status?: LeadSearchResult["status"]
   analysisCache?: Record<string, LeadAnalysisCacheEntry | unknown>
+  /* V1.3 */
+  dataSourceType?: DataSourceType
+  exhibitionFootprints?: string[]
+  customsData?: CustomsData
+  decisionMakers?: DecisionMaker[]
+  agentStatus?: AgentStatus
 }
 
 type LeadMapperContext = {
@@ -19,6 +25,74 @@ type LeadMapperContext = {
   addedDate?: string
   estimatedValue?: string
   lastActivity?: string
+}
+
+const VALID_DATASOURCE_VALUES = new Set<string>([
+  'google_maps', 'google_organic', 'customs_shipment', 'trade_show',
+  'yellow_pages', 'linkedin_search', 'facebook_search',
+])
+
+const normalizeDataSourceType = (raw?: unknown): DataSourceType | undefined => {
+  if (!raw) return undefined
+  const value = String(raw).trim()
+  return VALID_DATASOURCE_VALUES.has(value) ? (value as DataSourceType) : undefined
+}
+
+const normalizeDecisionMakers = (raw?: unknown): DecisionMaker[] | undefined => {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined
+  const sanitized: DecisionMaker[] = []
+  for (const dm of raw) {
+    if (!dm || typeof dm !== 'object') continue
+    const rec = dm as Record<string, unknown>
+    const name = String(rec.name || '').trim()
+    if (!name) continue
+    sanitized.push({
+      name,
+      title: String(rec.title || '').trim() || '未知职位',
+      email: String(rec.email || '').trim(),
+      phone: String(rec.phone || '').trim(),
+      linkedinUrl: rec.linkedinUrl ? String(rec.linkedinUrl).trim() : undefined,
+      source: String(rec.source || '').trim() || '外部数据源',
+      confidenceScore: Number.isFinite(Number(rec.confidenceScore))
+        ? Math.max(0, Math.min(100, Number(rec.confidenceScore)))
+        : 0,
+    })
+  }
+  return sanitized.length > 0 ? sanitized : undefined
+}
+
+const normalizeCustomsData = (raw?: unknown): CustomsData | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const result: CustomsData = {}
+  if (rec.annualImportVolume) result.annualImportVolume = String(rec.annualImportVolume).trim()
+  if (Array.isArray(rec.topSuppliers)) {
+    const items = rec.topSuppliers.map(s => String(s).trim()).filter(Boolean)
+    if (items.length > 0) result.topSuppliers = items
+  }
+  if (Array.isArray(rec.originCountries)) {
+    const items = rec.originCountries.map(s => String(s).trim()).filter(Boolean)
+    if (items.length > 0) result.originCountries = items
+  }
+  if (rec.lastShipmentDate) result.lastShipmentDate = String(rec.lastShipmentDate).trim()
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+const normalizeAgentStatus = (raw?: unknown): AgentStatus | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const whatsappStatus = rec.whatsappStatus
+  const validStatusValues = new Set(['pending', 'delivered', 'replied', 'failed'])
+  return {
+    whatsappSent: Boolean(rec.whatsappSent),
+    whatsappStatus: whatsappStatus && validStatusValues.has(String(whatsappStatus).trim())
+      ? String(whatsappStatus).trim() as 'pending' | 'delivered' | 'replied' | 'failed'
+      : undefined,
+    linkedinContacted: Boolean(rec.linkedinContacted),
+    emailSequenceStage: Number.isFinite(Number(rec.emailSequenceStage))
+      ? (Math.min(3, Math.max(0, Number(rec.emailSequenceStage))) as 0 | 1 | 2 | 3)
+      : (0 as 0 | 1 | 2 | 3),
+  }
 }
 
 const createNumericLeadId = (input: string) => {
@@ -80,5 +154,11 @@ export const mapSearchResultToLeadItem = (result: LeadMapperInput, context: Lead
     inferredRole: result.inferredRole ? String(result.inferredRole).trim() : undefined,
     salesStrategy: result.salesStrategy ? String(result.salesStrategy).trim() : undefined,
     analysisCache: normalizeAnalysisCache(result.analysisCache),
+    /* V1.3 多源融合字段 */
+    dataSourceType: normalizeDataSourceType(result.dataSourceType),
+    exhibitionFootprints: Array.isArray(result.exhibitionFootprints) ? result.exhibitionFootprints : undefined,
+    customsData: normalizeCustomsData(result.customsData),
+    decisionMakers: normalizeDecisionMakers(result.decisionMakers),
+    agentStatus: normalizeAgentStatus(result.agentStatus),
   }
 }

@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app } from './electron-bridge'
 import { execSync } from 'child_process'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
@@ -40,6 +40,7 @@ const TRIAL_FEATURES = [
   'analysis_advanced',
   'lead_export',
   'export_full',
+  'local_autopilot',
 ] as const
 
 type StoredLicenseClaims = {

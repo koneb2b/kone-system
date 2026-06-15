@@ -153,9 +153,10 @@ const normalizeResultKind = (result) => {
   return 'unknown'
 }
 
-const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
+const invokeWithGuard = async (handler, args, timeoutMs = 10000) => {
   const unhandled = []
   const uncaught = []
+  let timeoutId
   const onUnhandled = (reason) => {
     unhandled.push(reason)
   }
@@ -168,7 +169,7 @@ const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
 
   try {
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('IPC_SWEEP_TIMEOUT')), timeoutMs)
+      timeoutId = setTimeout(() => reject(new Error('IPC_SWEEP_TIMEOUT')), timeoutMs)
     })
     const value = await Promise.race([handler(...args), timeoutPromise])
     return { status: 'returned', value, unhandled, uncaught }
@@ -180,6 +181,7 @@ const invokeWithGuard = async (handler, args, timeoutMs = 1500) => {
       uncaught,
     }
   } finally {
+    if (timeoutId) clearTimeout(timeoutId)
     process.removeListener('unhandledRejection', onUnhandled)
     process.removeListener('uncaughtException', onUncaught)
   }

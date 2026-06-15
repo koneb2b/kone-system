@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { getLeadUniqueKey, LeadItem, useLeadsStore } from "@/store/leads-store"
+import { getDataSourceMeta } from "@/lib/data-source-meta"
 import { saveExportFile } from "@/lib/electron-api"
 
 const formatErrorMessage = (error: unknown, fallback: string) => {
@@ -30,6 +31,7 @@ interface LeadsTableProps {
   onAnalyze: (lead: Lead) => void
   userRole?: UserRole | null
   onSendToCloud?: (lead: Lead) => Promise<{ skipped: boolean; reason?: string } | void>
+  canUseCloudSend?: boolean
   onViewAll?: () => void
 }
 
@@ -59,14 +61,14 @@ const escapeCsvValue = (value: string | number | boolean | undefined | null) => 
   return text
 }
 
-export function LeadsTable({ onAnalyze, userRole, onSendToCloud, onViewAll }: LeadsTableProps) {
+export function LeadsTable({ onAnalyze, userRole, onSendToCloud, canUseCloudSend = false, onViewAll }: LeadsTableProps) {
   const [sendingCloud, setSendingCloud] = useState<number | null>(null)
   const [savedLeadIds, setSavedLeadIds] = useState<Set<number>>(new Set())
   const [filterOpen, setFilterOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState<number | null>(null)
   const { leads, addLead, hydrateFromConfig, hydrated } = useLeadsStore()
-  const [filters, setFilters] = useState({ highMatch: false, unlocked: false, hasEmail: false })
+  const [filters, setFilters] = useState({ highMatch: false, unlocked: false, hasEmail: false, hasDecisionMakers: false, hasCustomsData: false, hasExhibition: false })
   const { toast } = useToast()
   useEffect(() => {
     if (!hydrated) {
@@ -81,18 +83,28 @@ export function LeadsTable({ onAnalyze, userRole, onSendToCloud, onViewAll }: Le
   const displayLeads = useMemo(
     () =>
       leads
-        .filter(hasNumericMatchScore)
         .filter((lead) => {
-          if (filters.highMatch && lead.matchScore < 85) return false
+          if (filters.highMatch && (!hasNumericMatchScore(lead) || lead.matchScore < 85)) return false
           if (filters.unlocked && !lead.unlocked) return false
           if (filters.hasEmail && !lead.email) return false
+          if (filters.hasDecisionMakers && (!lead.decisionMakers || lead.decisionMakers.length === 0)) return false
+          if (filters.hasCustomsData && !lead.customsData) return false
+          if (filters.hasExhibition && (!lead.exhibitionFootprints || lead.exhibitionFootprints.length === 0)) return false
           return true
         })
-        .sort((a, b) => b.matchScore - a.matchScore),
+        .sort((a, b) => (hasNumericMatchScore(b) ? b.matchScore : -1) - (hasNumericMatchScore(a) ? a.matchScore : -1)),
     [filters, leads]
   )
 
   const handleSendToCloud = async (lead: Lead) => {
+    if (!canUseCloudSend) {
+      toast({
+        title: "高级版锁定",
+        description: "云端发送队列属于高级版能力，请升级后再提交线索。",
+        variant: "destructive",
+      })
+      return
+    }
     setSendingCloud(lead.id)
     try {
       const result = await onSendToCloud?.(lead)
@@ -131,19 +143,24 @@ export function LeadsTable({ onAnalyze, userRole, onSendToCloud, onViewAll }: Le
       <div className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-[radial-gradient(circle_at_center,rgba(0,21,41,0.12),rgba(0,21,41,0))]" />
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 relative z-10">
         <div className="flex flex-col gap-0.5">
-          <h3 className="text-base font-semibold text-slate-900">高潜线索推荐</h3>
-          <p className="text-xs text-slate-500">优先展示最值得跟进的高潜线索</p>
+          <h3 className="text-base font-semibold text-slate-900">已评分高潜线索推荐</h3>
+          <p className="text-xs text-slate-500">仅展示已完成评分且最值得优先跟进的线索</p>
         </div>
         <div className="flex items-center gap-2">
           {onViewAll ? <Button variant="ghost" size="sm" className="text-xs text-slate-600 hover:text-slate-900" onClick={onViewAll}>查看全部</Button> : null}
           <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
             <SheetTrigger asChild><Button variant="outline" size="sm" className="btn-action"><Filter className="size-3.5" />筛选</Button></SheetTrigger>
-            <SheetContent className="w-[300px]">
+              <SheetContent className="w-[300px]">
               <SheetHeader><SheetTitle className="text-slate-800">筛选条件</SheetTitle></SheetHeader>
               <div className="mt-6 space-y-4">
                 <div className="flex items-center space-x-2"><Checkbox id="highMatch" checked={filters.highMatch} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, highMatch: checked as boolean }))} /><Label htmlFor="highMatch" className="text-slate-700">仅显示高匹配度 (&gt;80%)</Label></div>
                 <div className="flex items-center space-x-2"><Checkbox id="unlocked" checked={filters.unlocked} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, unlocked: checked as boolean }))} /><Label htmlFor="unlocked" className="text-slate-700">仅显示已解锁</Label></div>
                 <div className="flex items-center space-x-2"><Checkbox id="hasEmail" checked={filters.hasEmail} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, hasEmail: checked as boolean }))} /><Label htmlFor="hasEmail" className="text-slate-700">仅显示有邮箱</Label></div>
+                <hr className="border-slate-200" />
+                <p className="text-xs font-medium text-slate-500">数据源筛选</p>
+                <div className="flex items-center space-x-2"><Checkbox id="hasDecisionMakers" checked={filters.hasDecisionMakers} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, hasDecisionMakers: checked as boolean }))} /><Label htmlFor="hasDecisionMakers" className="text-slate-700">有决策人数据</Label></div>
+                <div className="flex items-center space-x-2"><Checkbox id="hasCustomsData" checked={filters.hasCustomsData} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, hasCustomsData: checked as boolean }))} /><Label htmlFor="hasCustomsData" className="text-slate-700">有海关数据</Label></div>
+                <div className="flex items-center space-x-2"><Checkbox id="hasExhibition" checked={filters.hasExhibition} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, hasExhibition: checked as boolean }))} /><Label htmlFor="hasExhibition" className="text-slate-700">有展会足迹</Label></div>
               </div>
             </SheetContent>
           </Sheet>
@@ -176,7 +193,19 @@ export function LeadsTable({ onAnalyze, userRole, onSendToCloud, onViewAll }: Le
             ) : (
               displayLeads.map((lead, index) => (
                 <tr key={stableHash(`${lead.id}-${index}`)} className="border-b border-slate-100 last:border-b-0 hover:bg-[hsl(var(--background))] transition-colors h-16">
-                  <td className="px-5 py-4"><button onClick={() => { window.location.hash = `/data-center/${lead.id}` }} className="flex items-center gap-3 hover:opacity-80 transition-opacity"><div className="w-10 h-10 rounded-lg bg-[hsl(var(--background))] border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">{lead.company.charAt(0)}</div><span className="font-medium text-slate-800">{lead.company}</span></button></td>
+                  <td className="px-5 py-4">
+                    <button onClick={() => { window.location.hash = `/data-center/${lead.id}` }} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                      <div className="w-10 h-10 rounded-lg bg-[hsl(var(--background))] border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">{lead.company.charAt(0)}</div>
+                      <div className="flex flex-col gap-1">
+                        <span className="font-medium text-slate-800">{lead.company}</span>
+                        {lead.dataSourceType ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                            {getDataSourceMeta(lead.dataSourceType).shortLabel || lead.dataSourceType}
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+                  </td>
                   <td className="px-5 py-4"><MatchBar score={lead.matchScore} /></td>
                   <td className="px-5 py-4">{lead.unlocked ? <div className="flex flex-col gap-1"><span className="font-medium text-slate-700">{lead.contact || "暂无数据"}</span><div className="flex items-center gap-3 text-xs text-slate-500"><span className="flex items-center gap-1"><Mail className="size-3" />{lead.email || "暂无数据"}</span><span className="flex items-center gap-1"><Phone className="size-3" />{lead.phone || "暂无数据"}</span></div></div> : <button className="flex items-center gap-1.5 text-[hsl(var(--deep-blue))] text-sm font-medium hover:underline"><Lock className="size-3.5" />点击解锁</button>}</td>
                   <td className="px-5 py-4 text-right"><div className="flex items-center justify-end gap-2"><Button size="sm" className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700" disabled={analysisLoading === lead.id} isLoading={analysisLoading === lead.id} onClick={async () => {
@@ -199,7 +228,7 @@ export function LeadsTable({ onAnalyze, userRole, onSendToCloud, onViewAll }: Le
                     } finally {
                       setAnalysisLoading(null)
                     }
-                  }}>{!analysisLoading || analysisLoading !== lead.id ? <Sparkles className="size-3.5" /> : null}{analysisLoading === lead.id ? "加载中" : savedLeadIds.has(lead.id) ? "查看分析" : "AI 深度分析"}</Button><Button size="sm" className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700" onClick={() => void handleSendToCloud(lead)} disabled={sendingCloud === lead.id || !onSendToCloud} isLoading={sendingCloud === lead.id}>{sendingCloud !== lead.id ? <Rocket className="size-3.5" /> : null}{sendingCloud === lead.id ? "发送中" : "发送至云端"}</Button></div></td>
+                  }}>{!analysisLoading || analysisLoading !== lead.id ? <Sparkles className="size-3.5" /> : null}{analysisLoading === lead.id ? "加载中" : savedLeadIds.has(lead.id) ? "查看分析" : "AI 深度分析"}</Button><Button size="sm" className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400" onClick={() => void handleSendToCloud(lead)} disabled={sendingCloud === lead.id || !onSendToCloud || !canUseCloudSend} isLoading={sendingCloud === lead.id}>{sendingCloud !== lead.id ? <Rocket className="size-3.5" /> : null}{sendingCloud === lead.id ? "发送中" : canUseCloudSend ? "发送至云端" : "高级版锁定"}</Button></div></td>
                 </tr>
               ))
             )}

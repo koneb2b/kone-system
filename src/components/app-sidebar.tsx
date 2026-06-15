@@ -16,6 +16,8 @@ import {
   Workflow,
   Lock,
   ArrowUpRight,
+  ShieldCheck,
+  Bot,
 } from "lucide-react"
 import { useLicenseStore } from "@/store/licenseStore"
 
@@ -38,8 +40,10 @@ const navItems: NavItem[] = [
 ]
 
 const premiumNavItems: NavItem[] = [
-  { id: "team-dashboard", label: "团队协作", icon: UsersRound, premium: true, badge: "Pro" },
-  { id: "automation", label: "自动化序列", icon: Workflow, premium: true, badge: "Pro" },
+  { id: "accounts", label: "账号管理", icon: ShieldCheck, premium: true, badge: "高级" },
+  { id: "agents", label: "AI 销售团队", icon: Bot, premium: true, badge: "高级" },
+  { id: "automation", label: "自动化序列", icon: Workflow, premium: true, badge: "高级" },
+  { id: "team-dashboard", label: "团队协作", icon: UsersRound, premium: true, badge: "高级" },
 ]
 
 const navTestIds: Partial<Record<string, string>> = {
@@ -166,14 +170,14 @@ export function AppSidebar({
           ? "正式版授权"
           : "待激活"
 
-  const isPremium = tier === "premium"
+  const canAccessPremiumWorkspace = tier === "premium" || plan === "enterprise"
 
   useEffect(() => {
     void refreshLicenseStatus()
   }, [refreshLicenseStatus])
 
   const handleNavClick = (item: NavItem) => {
-    if (item.premium && !isPremium) {
+    if (item.premium && !canAccessPremiumWorkspace) {
       onPremiumNavClick?.(item.id)
       return
     }
@@ -183,7 +187,7 @@ export function AppSidebar({
   const renderNavButton = (item: NavItem) => {
     const Icon = item.icon
     const isActive = activeNav === item.id
-    const isLocked = item.premium && !isPremium
+    const isLocked = item.premium && !canAccessPremiumWorkspace
 
     return (
       <button
@@ -228,8 +232,8 @@ export function AppSidebar({
       <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
         {navItems.map(renderNavButton)}
         <div className="my-2 mx-2 border-t border-white/[0.06]" />
-        <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">高级功能</span>
+        <div className="hidden md:flex items-center gap-1.5 px-3 py-2">
+          <span className="text-[10px] font-semibold tracking-wide text-slate-500">💎 Kone AI 自航拓客特权港 [高级版本]</span>
         </div>
         {premiumNavItems.map(renderNavButton)}
       </nav>
