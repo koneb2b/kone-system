@@ -1,6 +1,13 @@
 node_modules/
 dist/
 release/
+dist-electron/
+.vite/
+.tmp-*/
+.playwright-mcp/
+.codenomad/
+*.log
 .kone-anchor/
 nul
+$null
 *.pem

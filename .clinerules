@@ -58,18 +58,21 @@
 ## 5. Error Bridge and User Asset Protection
 1. Silent failure is forbidden.
 2. Any main-process async failure must return structured error payloads and, for stream flows, must emit error and completion signals so the renderer can unlock loading state.
-3. Search resilience is governed by the mandatory `三级弹性搜索协议`:
+3. Search resilience is governed by the mandatory `四级弹性搜索协议`:
+   - level 0 (V1.3): AnySearch B2B entity API resolves natural-language input, queries multi-source databases, extracts company + decision maker network graphs
    - level 1: Google Maps with independent `location` parameter
    - level 2: on location-related `400`, retry immediately with empty `location` and geography folded into `q`
    - level 3: if level 2 yields `localCount === 0`, switch silently to Google Organic and normalize results for Scout
-4. Every search stream must end with an explicit `complete` or `error + complete` closure. Silent termination that leaves UI loading state unresolved is forbidden.
-5. Missing AI key is a recoverable degraded state and must be returned through dedicated IPC semantics or fields so renderer can show a non-blocking notice.
-6. On `429`, quota exhaustion, timeout, or network interruption:
+4. V1.3 AnySearch source selection is allowed only as an acquisition-layer extension. It must not skip stream closure, Scout normalization, pre-filtering, or the validated downgrade guarantees.
+5. `customs_shipment`、`trade_show`、`yellow_pages`、`linkedin_search`、`facebook_search` source names are routed through AnySearch and must be backed by real providers; UI and docs must not market unimplemented sources as completed integrations.
+6. Every search stream must end with an explicit `complete` or `error + complete` closure. Silent termination that leaves UI loading state unresolved is forbidden.
+7. Missing AI key is a recoverable degraded state and must be returned through dedicated IPC semantics or fields so renderer can show a non-blocking notice.
+8. On `429`, quota exhaustion, timeout, or network interruption:
     - preserve current `searchResults`
     - preserve current saved leads
     - surface toast/banner guidance
     - never clear user-visible results just because AI enhancement failed
-7. Trial expiration must block execution cleanly without wiping prior user work.
+9. Trial expiration must block execution cleanly without wiping prior user work.
 
 ## 6. Autopilot Constitution
 1. Autopilot is a local companion workflow, not a cloud daemon.
@@ -115,13 +118,15 @@
 3. Production logging must remain minimal; only irrecoverable `console.error` is acceptable.
 
 ## 11. Mandatory AI Routing & Document Chain
-Before analyzing, planning, or executing ANY task, the AI Agent MUST proactively read and strictly obey the following document chain in this exact order. Skipping any of these files is a critical violation of the Kone architecture:
+Before analyzing, planning, or executing ANY task, the AI Agent MUST proactively read and strictly obey the following 8-document chain in this exact order. `kone-PRD.md` is the global authoritative requirements source (全局唯一权威需求主源头). Skipping any of these files is a critical violation of the Kone architecture:
 
-1. `PROJECT-PRD.md` (Root Business Logic, 7-Day Trial, ICP Scoring, and Autopilot boundaries)
-2. `ARCH-STANDARDS.md` (Root Architecture, Local Edge vs. Cloud boundaries, Fail-Closed Security)
-3. `.opencode/agents/ui-agent.md` (UI/UX constraints, Z-index guards, and the strict **Simplified Chinese Localization Law**)
-4. `.opencode/agents/ipc-agent.md` (Backend Proxy, Stream Flow, and Error Bridge)
-5. `.opencode/agents/system-blueprint.md` (Lead Pipelines, Gold Filter, and Autopilot flow)
-6. `.opencode/agents/build-agent.md` (Packaging, Security, and Build hygiene)
+1. `kone-PRD.md` (V1.3 全局唯一权威需求主源头 — Global Authoritative Requirements Source)
+2. `PROJECT-PRD.md` (Root Business Logic, 7-Day Trial, ICP Scoring, and Autopilot boundaries)
+3. `ARCH-STANDARDS.md` (Root Architecture, Local Edge vs. Cloud boundaries, Fail-Closed Security)
+4. `.opencode/agents/ui-agent.md` (UI/UX constraints, Z-index guards, and the strict **Simplified Chinese Localization Law**)
+5. `.opencode/agents/ipc-agent.md` (Backend Proxy, Stream Flow, and Error Bridge)
+6. `.opencode/agents/system-blueprint.md` (Lead Pipelines, Gold Filter, and Autopilot flow)
+7. `.opencode/agents/build-agent.md` (Packaging, Security, and Build hygiene)
+8. `V1.2-商业版交付与运维手册.md` (Delivery & Operations Manual, License Issuance, Security Audit SOP)
 
 The AI must explicitly acknowledge parsing this chain in its thoughts before proposing any code changes.
