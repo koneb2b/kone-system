@@ -35,6 +35,8 @@ Forbidden:
 ### `electron/` - Main process and privileged services
 Allowed:
 - IPC handler registration
+- IPC contract validation (see `electron/ipc/registry.ts`)
+- IPC type-safe contract definitions (see `electron/ipc/contracts/`)
 - license and trial enforcement
 - external API access
 - cloud webhook delivery
@@ -42,6 +44,26 @@ Allowed:
 
 Mandatory principle:
 - any high-value operation must default to Fail-Closed authorization
+- all IPC channel registration must go through `electron/ipc/registry.ts` (single source of truth at runtime)
+
+### `electron/ipc/contracts/` - IPC type-safe contract definitions
+Allowed:
+- channel payload schema definitions via `defineContract()`
+- input validation using `validateContractInput()`
+- channel contract objects with `channelName`, `schema`, and `validate` fields
+
+Forbidden:
+- IPC handler registration (belongs in handler files)
+- business logic
+- network access
+- preload exposure
+
+### `electron/ipc/registry.ts` - IPC channel runtime registry
+Responsibilities:
+- single source of truth for all registered IPC channels at runtime
+- channel whitelist enforcement (unknown channels rejected)
+- contract-aware validation via `registerHandler()` wrapper
+- testable gateway: `dumpRegistry()` for debug, `resetRegistry()` for test isolation
 
 ### `preload/` - Minimal secure bridge
 Allowed:
@@ -184,7 +206,70 @@ By contrast, Premium n8n automation may continue remotely after payload handoff,
 
 ---
 
-## 11. Definition of Done for Architecture Changes
+## 11. Electron Bridge Fallback Protocol
+
+### 11.1 Trigger Condition
+- `electron/services/electron-bridge.ts` activates fallback stubs when the `electron` module cannot be loaded (known Electron 33+ Windows bug #49034)
+- Detection: `isUsingStubs` flag at module load time
+
+### 11.2 Fallback Behavior (P0 hard requirement)
+When fallback stubs are activated, the application MUST:
+1. Write a critical error log to `$userData/.fallback-critical.log` with timestamp and error context
+2. Attempt to display a Windows message box via `msg.exe` (child_process) with Chinese-language error
+3. Call `process.exit(1)` after 5 seconds via `setTimeout`
+4. **NOT** keep the process alive silently with `setInterval` or any other mechanism
+
+### 11.3 Packaging Boundary
+- Fallback stubs must remain in the production build (Electron module loading can fail in packaged environments)
+- The `setTimeout(exit, 5000)` ensures the process terminates even if the dialog fails
+- All user-facing messages must be in Simplified Chinese
+
+---
+
+## 12. Crash Reporter
+
+### 12.1 Implementation
+- File: `electron/services/crash-reporter.ts`
+- Exported function: `initCrashReporter()` called from `electron/main.ts` at startup
+- Source map support: `source-map-support` integrated for packaged stack trace symbolication
+
+### 12.2 Capture Scope
+- `process.on('uncaughtException')` — writes crash dump, shows error dialog, exits after 5s
+- `process.on('unhandledRejection')` — writes crash dump, console.error (does not exit)
+
+### 12.3 Crash Dump Format
+- JSON file stored at `$userData/crash-reports/crash-{YYYYMMDD-HHmmss}-{random4}.json`
+- Fields: `timestamp`, `type`, `message`, `stack`, `version`, `platform`, `arch`, `userData`, `notes`
+
+### 12.4 Remote Upload (Optional)
+- Default: disabled
+- Configurable via `$userData/crash-reporter-config.json`: `{ enabled: boolean, remoteUrl?: string }`
+- User must explicitly opt in from Settings
+
+---
+
+## 13. User Data Backup
+
+### 13.1 Implementation
+- File: `electron/services/backup-service.ts`
+- Exported functions: `initBackupService()`, `triggerBackup()`, `getBackupList()`
+
+### 13.2 Backup Scope
+- Source: `$userData/config.json`, anchor/license files, user settings
+- Target: `$userData/backups/backup-{YYYYMMDD-HHmmss}.json`
+- Frequency: auto every 24 hours (checked at startup)
+
+### 13.3 Integrity
+- Pre-write: JSON.stringify + MD5 checksum stored with data
+- On restore: checksum verification + JSON.parse validation
+
+### 13.4 Rotation
+- Maximum 7 backup files retained; oldest auto-deleted
+- Files larger than 50MB are skipped with a log warning
+
+---
+
+## 14. Definition of Done for Architecture Changes
 An architecture-affecting change is complete only when all are true:
 1. renderer, preload, IPC contracts, and main handlers are aligned
 2. billing and trial boundaries remain Fail-Closed

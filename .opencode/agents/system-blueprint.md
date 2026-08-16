@@ -226,6 +226,7 @@ Contrast rule:
 4. Trial expiry blocks new privileged work, not historical user assets.
 5. Cloud failure must not poison local Data Center state.
 6. Website fetch failure should prefer blind scoring over immediate total downgrade when snippet/title data is still available.
+7. **HTTP Circuit Breaker (`electron/utils/http-client.ts`)**: Each external API host has an independent circuit breaker. After 3 consecutive failures (4xx status codes), the circuit opens for 60 seconds. While open, requests are rejected immediately with a `CIRCUIT_BREAKER_OPEN` error. A successful request closes the circuit and resets the failure count. This applies at the HTTP client layer and is consumed by `proxy-service.ts` via `safeFetch()`. Provider-level failures are further isolated by `ProviderRegistry.executeAll()` using `Promise.allSettled`.
 
 ### 7.1 V1.3 Source Expansion Boundary
 

@@ -86,7 +86,34 @@ Any build candidate that exceeds the `2` concurrency ceiling or the `3000`-chara
 
 ---
 
-## 9. Definition of Build Done
+## 9. Production Fallback Detection
+
+### 9.1 Electron Bridge Fallback
+- `electron/services/electron-bridge.ts` includes a stub fallback mode for when the Electron module cannot be loaded (Electron 33+ Windows bug #49034)
+- In production builds, the fallback MUST:
+  1. Write a critical error log to `$userData/.fallback-critical.log`
+  2. Attempt a `msg.exe` dialog with Chinese-language error
+  3. Exit via `process.exit(1)` after 5 seconds
+- The `setTimeout(exit, 5000)` ensures termination even if dialog and log both fail
+- The fallback code is NOT a dev-only stub; it must be included in packaging
+- Production builds must never keep an invisible process alive silently
+
+### 9.2 Crash Reporter
+- `electron/services/crash-reporter.ts` initializes at app startup via `initCrashReporter()`
+- Captures `uncaughtException` and `unhandledRejection`
+- Writes crash dumps to `$userData/crash-reports/`
+- Remote upload disabled by default; user opts in
+- `source-map-support` must be bundled for packaged stack trace symbolication
+
+### 9.3 Backup Service
+- `electron/services/backup-service.ts` provides automatic daily backups
+- Backups stored at `$userData/backups/`
+- Maximum 7 backups retained; integrity verified via checksum
+- Initialized at startup; does not block app boot
+
+---
+
+## 10. Definition of Build Done
 A build-oriented task is complete only when:
 1. authoring residue is excluded
 2. stale outputs are cleaned
