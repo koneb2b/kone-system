@@ -11,3 +11,12 @@ dist-electron/
 nul
 $null
 *.pem
+*.bak
+
+# local content-generation and test scaffolds (not part of the app source)
+marketing-video-*/
+b2b-content-os-optimization/
+electron-test-app/
+electron-v33-test.js
+gen_article.js
+gen_article2.js
