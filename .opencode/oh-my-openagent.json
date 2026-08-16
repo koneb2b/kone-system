@@ -1,0 +1,20 @@
+{
+    "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/master/assets/oh-my-opencode.schema.json",
+    "sisyphus": {
+      "max_concurrent_tasks": 2,
+      "model": "amux/gpt-5.5"
+    },
+    "agents": {
+      "prometheus": { "model": "amux/gpt-5.5" },
+      "atlas": { "model": "amux/gpt-5.5" },
+      "hephaestus": { "model": "amux/gpt-5.5" },
+      "oracle": { "model": "amux/gpt-5.5" },
+      "momus": { "model": "amux/gpt-5.5" },
+      "metis": { "model": "amux/gpt-5.5", "temperature": 0.3 }
+    },
+    "categories": {
+      "visual-engineering": { "model": "amux/gpt-5.5" },
+      "deep": { "model": "amux/gpt-5.4" },
+      "quick": { "model": "amux/gpt-5.5" }
+    }
+  }
