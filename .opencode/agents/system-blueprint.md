@@ -246,7 +246,7 @@ Current verified boundary:
 Three built-in sales agents run locally under the `/agents` panel:
 
 ### WhatsApp Hunter
-- Basic path uses `whatsapp-web.js` with local QR login, real session health checks, low-volume 3-5/day sends, and explicit reconnect prompts
+- Basic path uses Puppeteer + Web WhatsApp DOM automation (`data-testid` selectors, experimental·Beta — NOT the `whatsapp-web.js` protocol layer) with local QR login, real session health checks, low-volume 3-5/day sends, and explicit reconnect prompts
 - Premium path uses official WhatsApp Cloud API where configured
 - Validates phone numbers from discovered decision makers when platform state allows
 - Must never claim immunity from platform anti-fraud systems

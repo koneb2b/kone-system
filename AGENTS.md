@@ -37,7 +37,7 @@ Skipping any document in this chain is a protocol violation.
 
 ## Anti-Regression Protocol
 
-- Read the full 7-document chain before changing existing logic.
+- Read the full 8-document chain before changing existing logic.
 - Preserve all validated behavior, especially the mandatory `四级弹性搜索协议`.
 - Never fix a new bug by breaking a previously working path.
 - Any change that may affect existing logic must be verified with local test scripts after modification.
@@ -85,7 +85,7 @@ Agent 执行管道 (agent-pipeline.ts)
 ### Agent 类型与能力矩阵
 | Agent | 消费字段 | 执行通道 | 日频上限 | 技术实现 |
 |---|---|---|---|---|
-| WhatsApp 拓客猎手 | `phone` | whatsapp-web.js (Basic) / Cloud API (Premium) | 3-5/day Basic | 本地扫码 Web WA / 官方 Cloud API |
+| WhatsApp 拓客猎手 | `phone` | Puppeteer + Web WA DOM 自动化（实验性·Beta，Basic）/ Cloud API (Premium) | 3-5/day Basic | 本地扫码 + DOM `data-testid` 选择器 / 官方 Cloud API |
 | LinkedIn 商务猎手 | `linkedinUrl` | 本地 Session Cookie 只读 Profile 辅助 | ≤30 profile view/day | 公开资料提取 + AI 文案生成，人工触达 |
 | 邮件长效跟随助理 | `email` | Nodemailer SMTP+IMAP (Basic) / N8N Cloud (Premium) | 20/day Basic | 本地 SMTP 直连 / Webhook 云端 |
 
@@ -150,6 +150,7 @@ Agent 执行管道 (agent-pipeline.ts)
 - Agent execution must not fake completion. Real external effects or real platform state changes are required before incrementing `completedCount` or writing `agentStatus`.
 
 ### Provider Expansion Priority
+> 状态更新：下表 P1-P4 中的 `linkedin_search`/`customs_shipment`/`trade_show`/`facebook_search` **已在代码中落地**（真实能力与宣传边界详见 `PROVIDER-CAPABILITY.md`，唯一事实源）。本表保留为历史优先级参考，不代表待办项。
 | Priority | Provider | Effort | Dependency |
 |---|---|---|---|
 | P1 | SerpApi LinkedIn Search | 1 day | Reuses existing SerpApi Key |

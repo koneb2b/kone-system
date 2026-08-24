@@ -198,7 +198,6 @@ Autopilot is a background companion panel, not the hero surface.
 8. Daily quota badge visible at panel top; WhatsApp Basic low-volume limit and Email Basic 20/day must be displayed clearly.
 9. Autopilot physical boundary warning banner: `本地 AI 智能体群正在安全复用您本机的住宅网络和独立沙箱环境...`
 10. LinkedIn UI must never show `自动加好友`、`自动私信` or equivalent wording. Approved wording: `浏览 Profile`、`生成破冰文案`、`复制文案人工触达`。
-7. Autopilot physical boundary warning banner: `本地 AI 智能体群正在安全复用您本机的住宅网络和独立沙箱环境...`
 
 ### 9.2 AccountsManagement (`/accounts`)
 1. "Add account sandbox" cards display 5 account types: SMTP, IMAP, LinkedIn, Facebook, WhatsApp.

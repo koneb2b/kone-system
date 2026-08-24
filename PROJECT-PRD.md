@@ -1,6 +1,8 @@
 # Kone 终极全景 PRD 与开发白皮书
 
 > 📌 **V1.3 最新需求与架构扩展请参见:** `kone-PRD.md` — 该文档是 V1.3 的唯一权威开发需求来源，包含 AnySearch 四级弹性搜索协议、决策人穿透数据结构、智能体本地多开矩阵及 DNS 防火墙等全新功能模块。
+>
+> 📎 **版本与权威说明**：本文正文中出现的 "Kone V1.2" 均指**已交付的商业闭环基线（其规则在 V1.3 仍然生效）**，并非"当前版本为 V1.2"。当前发布版本为 `1.3.0`；版本真相与宪法常量（并发 2 / 3000 字 / ICP 40·30·20·10 / 四级搜索 / Trial 7 天等）统一以 `kone-PRD.md §零` 为准。本文所有 IPC 通道、类型与字段以 `src/shared/ipc-contracts.ts` 及代码现状为准。
 
 ## 0. 文档说明
 
@@ -176,12 +178,12 @@ V1.3 扩展层已在 UI 层面落地多源字段展示与覆盖率统计，但�
 - `app-sidebar.tsx`：`canAccessPremiumWorkspace` 包含 `enterprise` 判定；Pro 徽标已中文化为 `高级`。
 - `google_organic` 已作为 AnySearch 的 Organic-only 路径具备回归测试：不触发 Maps 请求，仍返回 Scout 基础候选并完整 stream close。
 
-仍为占位或受限项：
+边界与宣传口径约束（Provider 已落地，以下为口径限制而非占位）：
 
-- `customs_shipment`、`trade_show`、`yellow_pages`、`linkedin_search`、`facebook_search` 目前部分由 AnySearch 路由承载，正在逐步落地完整 provider。
+- `customs_shipment`、`trade_show`、`linkedin_search`、`facebook_search` **已作为独立 SerpApi Provider 落地**；`yellow_pages` 已弃用，由 AnySearch 统一路由。各源真实能力与宣传边界以 `PROVIDER-CAPABILITY.md` 为唯一事实源。注意 `customs_shipment`/`trade_show` 底层为公开网页近似检索，**非官方数据库直连**。
 - LinkedIn / Facebook 搜索入口属于基于搜索语法的站点限定，不等同于官方数据库接入。
 - AnySearch 已作为第零级整合进四级弹性搜索协议，不能以多源名义跳过原有降级链路。
-- `file:export-pdf` IPC 合约：该功能为 V1.3 高级版核心待恢复/待实现功能。本期仅预留契约定义（IPC channels、preload、shared contract、renderer wrapper 均已闭环），不激活主进程实现（V1.2 revert 移除后尚未恢复）。
+- `file:export-pdf` IPC 合约：**已落地**。主进程通过 `webContents.printToPDF` 在本地生成客户全景白皮书 PDF（`export-service.ts`），Trial 受 3 次高价值 PDF 导出配额限制，生成过程 100% 本地、不上传公有云（详见 `V1.2-商业版交付与运维手册.md §八.3`）。
 
 ### 1.4 套餐与功能边界
 
@@ -1511,7 +1513,7 @@ Autopilot 依托以下本地资源：
 
 ---
 
-## 3.7 Search-to-Agent 数据管道（V1.3 规划宪章）
+## 3.7 Search-to-Agent 数据管道（V1.3 宪章 · 已落地）
 
 目标：在搜索完成评分后，自动将高价值线索分发至各智能体（WhatsApp/LinkedIn/Email）执行触达，并将执行结果写回线索状态，形成"搜索→评分→触达→回写"的完整闭环。
 
@@ -1523,7 +1525,7 @@ Autopilot 依托以下本地资源：
 |---|---|---|
 | L1 数据源层 | `Provider Plugin` 体系 | 统一 SearchProvider 接口 + registry，支持 `linkedin_search`/`customs_shipment`/`trade_show`/`facebook_search` 等扩展 |
 | L2 搜索评分层 | `search-service.ts` | 执行 4 级弹性搜索协议 + Omni-Search + ICP 评分 + 官网深探，产出含 `decisionMakers[]`/`agentStatus` 的 `SearchExecuteResult` |
-| L3 管道分发层 | `agent-pipeline.ts`（待实现） | 监听 `search:stream-complete`，过滤合格线索，生成 `AgentTask` 队列，分发至各 Agent |
+| L3 管道分发层 | `agent-pipeline.ts`（**已落地**） | 监听 `search:stream-complete`，过滤合格线索，生成 `AgentTask` 队列，`withPipelineIsolation()` 时空隔离；stage 暂存待人工确认后触达（非自动外发） |
 | L4 智能体执行层 | `agent-service.ts` | 消费 `AgentTask`，执行真实触达（WhatsApp/LinkedIn/Email），写回 `agentStatus` |
 
 ### 3.7.2 管道触发与过滤规则（宪法级）
@@ -1598,7 +1600,7 @@ type AgentState = {
 }
 ```
 
-**宪法约束**：Agent 执行完毕后必须同步更新两管道。`agentStatus` 写入通过 `ipcMain` 直接操作 `store`（Zustand 线索池）；`AgentState` 推送通过 `AGENT.STATUS_CHANGED` 发送至前端面板。
+**宪法约束**：Agent 执行完毕后必须同步更新两管道。`agentStatus` 由主进程 `writeBackAgentStatus` 持久化写入 `agent_status` 配置键（主进程无法直接操作渲染端 Zustand 线索池）；渲染端须通过只读 IPC 读取该持久化状态并合并回线索表格/抽屉的触达徽标。`AgentState` 推送通过 `AGENT.STATUS_CHANGED` 发送至前端面板。
 
 ### 3.7.5 搜索 API 密钥提供方等级隔离
 
@@ -1609,7 +1611,9 @@ type AgentState = {
 | P2 | 海关数据爬虫 | 用户自备（如有） | 提单数据补充 |
 | P3 | 展会名录爬虫 | 免费公开数据 | 展会足迹补充 |
 
-### 3.7.6 Provider 注册表规范（待实现 V1.3）
+### 3.7.6 Provider 注册表规范（已落地 · 接口以 kone-PRD §0.8 为准）
+
+> ⚠️ 契约以 `kone-PRD.md §0.8` 与 `electron/services/provider-registry.ts` 现状为准：实际 `execute()` 返回 `ProviderExecuteResult { results, error }`、`executeAll()` 返回 `Map<DataSourceType, ProviderExecuteResult>`，并含 `isAvailable(config)` 与 `ProviderConfig`。以下 TS 为早期草案示意，签名细节均以 §0.8 为准，请勿据此草案实现。
 
 `electron/services/provider-registry.ts` 负责统一管理 SearchProvider 枚举与调度：
 
@@ -1654,7 +1658,7 @@ V1.3 三个智能体必须从模拟函数升级为真实本地执行，但必须
 
 | Agent | 真实执行范围 | 明确禁止 | 默认频率 |
 |---|---|---|---|
-| WhatsApp | Basic: `whatsapp-web.js` 本地扫码 + Web WA 低量发送；Premium: WhatsApp Cloud API | 宣称绝对免风控；无间隔批量轰炸；session 失效后假成功 | Basic 3-5/day |
+| WhatsApp | Basic: **Puppeteer + Web WhatsApp DOM 自动化（`data-testid` 选择器，实验性·Beta，非 whatsapp-web.js 协议层）** 本地扫码 + 低量发送；Premium: WhatsApp Cloud API | 宣称绝对免风控；无间隔批量轰炸；session 失效后假成功 | Basic 3-5/day |
 | LinkedIn | 导入用户授权 Session Cookie，Profile 只读浏览，公开信息提取，AI 破冰文案生成 | 自动 Connect、自动私信、批量点击、绕过验证码 | ≤30 profile view/day |
 | Email | Nodemailer SMTP 真实发信 + IMAP 回复检测 + 3 轮序列 | DNS 不合格仍强制发送；无退订/无节流群发 | Basic 20/day |
 

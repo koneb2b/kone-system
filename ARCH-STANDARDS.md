@@ -192,7 +192,7 @@ By contrast, Premium n8n automation may continue remotely after payload handoff,
 2. `setTimeout`-only simulation is forbidden for WhatsApp, LinkedIn, and Email agents.
 3. LinkedIn automation is limited to user-authorized Session Cookie import, Profile read-only browsing, public data extraction, and AI icebreaker generation for manual user action.
 4. LinkedIn automatic Connect requests, automatic direct messages, and batch social actions are prohibited unless this standard and `kone-PRD.md` are explicitly revised.
-5. WhatsApp Basic execution is limited to low-volume `whatsapp-web.js` with QR/session health handling; Premium execution may use official WhatsApp Cloud API.
+5. WhatsApp Basic execution is limited to low-volume Puppeteer + Web WhatsApp DOM automation (`data-testid` selectors, labeled experimental·Beta — NOT the `whatsapp-web.js` protocol layer) with QR/session health handling; Premium execution may use official WhatsApp Cloud API.
 6. Email execution must use SMTP/IMAP plus DNS deliverability checks; high-risk SPF/DKIM/DMARC states must soft-lock sends.
 7. Agent completion must update both persistent lead `agentStatus` and runtime `AgentState`; UI must not infer success locally.
 
