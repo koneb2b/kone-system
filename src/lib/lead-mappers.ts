@@ -1,14 +1,20 @@
-import { stableHash } from "@/lib/utils"
-import type { LeadAnalysisCacheEntry, LeadItem, LeadSearchResult } from "@/store/leads-store"
-import type { SearchExecuteResult, DataSourceType, DecisionMaker, CustomsData, AgentStatus } from "@/shared/ipc-contracts"
+import { stableHash } from '@/lib/utils'
+import type { LeadAnalysisCacheEntry, LeadItem, LeadSearchResult } from '@/store/leads-store'
+import type {
+  SearchExecuteResult,
+  DataSourceType,
+  DecisionMaker,
+  CustomsData,
+  AgentStatus,
+} from '@/shared/ipc-contracts'
 
-type LeadMapperInput = Partial<Omit<SearchExecuteResult, "id">> & {
+type LeadMapperInput = Partial<Omit<SearchExecuteResult, 'id'>> & {
   id?: number | string
   company: string
-  industry?: LeadSearchResult["industry"]
-  unlocked?: LeadSearchResult["unlocked"]
-  countryCode?: LeadSearchResult["countryCode"]
-  status?: LeadSearchResult["status"]
+  industry?: LeadSearchResult['industry']
+  unlocked?: LeadSearchResult['unlocked']
+  countryCode?: LeadSearchResult['countryCode']
+  status?: LeadSearchResult['status']
   analysisCache?: Record<string, LeadAnalysisCacheEntry | unknown>
   /* V1.3 */
   dataSourceType?: DataSourceType
@@ -28,8 +34,14 @@ type LeadMapperContext = {
 }
 
 const VALID_DATASOURCE_VALUES = new Set<string>([
-  'google_maps', 'google_organic', 'customs_shipment', 'trade_show',
-  'yellow_pages', 'linkedin_search', 'facebook_search',
+  'google_maps',
+  'google_organic',
+  'customs_shipment',
+  'trade_show',
+  'yellow_pages',
+  'linkedin_search',
+  'facebook_search',
+  'anysearch',
 ])
 
 const normalizeDataSourceType = (raw?: unknown): DataSourceType | undefined => {
@@ -67,11 +79,11 @@ const normalizeCustomsData = (raw?: unknown): CustomsData | undefined => {
   const result: CustomsData = {}
   if (rec.annualImportVolume) result.annualImportVolume = String(rec.annualImportVolume).trim()
   if (Array.isArray(rec.topSuppliers)) {
-    const items = rec.topSuppliers.map(s => String(s).trim()).filter(Boolean)
+    const items = rec.topSuppliers.map((s) => String(s).trim()).filter(Boolean)
     if (items.length > 0) result.topSuppliers = items
   }
   if (Array.isArray(rec.originCountries)) {
-    const items = rec.originCountries.map(s => String(s).trim()).filter(Boolean)
+    const items = rec.originCountries.map((s) => String(s).trim()).filter(Boolean)
     if (items.length > 0) result.originCountries = items
   }
   if (rec.lastShipmentDate) result.lastShipmentDate = String(rec.lastShipmentDate).trim()
@@ -85,9 +97,10 @@ const normalizeAgentStatus = (raw?: unknown): AgentStatus | undefined => {
   const validStatusValues = new Set(['pending', 'delivered', 'replied', 'failed'])
   return {
     whatsappSent: Boolean(rec.whatsappSent),
-    whatsappStatus: whatsappStatus && validStatusValues.has(String(whatsappStatus).trim())
-      ? String(whatsappStatus).trim() as 'pending' | 'delivered' | 'replied' | 'failed'
-      : undefined,
+    whatsappStatus:
+      whatsappStatus && validStatusValues.has(String(whatsappStatus).trim())
+        ? (String(whatsappStatus).trim() as 'pending' | 'delivered' | 'replied' | 'failed')
+        : undefined,
     linkedinContacted: Boolean(rec.linkedinContacted),
     emailSequenceStage: Number.isFinite(Number(rec.emailSequenceStage))
       ? (Math.min(3, Math.max(0, Number(rec.emailSequenceStage))) as 0 | 1 | 2 | 3)
@@ -101,52 +114,63 @@ const createNumericLeadId = (input: string) => {
 }
 
 const resolveCountryCode = (countryCode?: string, country?: string) => {
-  const normalizedCode = String(countryCode || "").trim().toUpperCase()
+  const normalizedCode = String(countryCode || '')
+    .trim()
+    .toUpperCase()
   if (normalizedCode) return normalizedCode.slice(0, 2)
 
-  const normalizedCountry = String(country || "").trim()
-  if (!normalizedCountry) return "GL"
+  const normalizedCountry = String(country || '').trim()
+  if (!normalizedCountry) return 'GL'
   return normalizedCountry.slice(0, 2).toUpperCase()
 }
 
 const normalizeAnalysisCache = (analysisCache?: Record<string, LeadAnalysisCacheEntry | unknown>) => {
-  if (!analysisCache || typeof analysisCache !== "object") return undefined
+  if (!analysisCache || typeof analysisCache !== 'object') return undefined
   return analysisCache as Record<string, LeadAnalysisCacheEntry>
 }
 
 export const mapSearchResultToLeadItem = (result: LeadMapperInput, context: LeadMapperContext = {}): LeadItem => {
-  const company = String(result.company || "").trim()
-  const website = String(result.website || "").trim()
-  const country = String(context.country || result.country || "Global").trim() || "Global"
-  const industry = String(context.industry || result.industry || "").trim()
+  const company = String(result.company || '').trim()
+  const website = String(result.website || '').trim()
+  const country = String(context.country || result.country || 'Global').trim() || 'Global'
+  const industry = String(context.industry || result.industry || '').trim()
   const addedDate = context.addedDate || new Date().toISOString().slice(0, 10)
   const numericId = Number(result.id)
-  const id = Number.isFinite(numericId) && numericId > 0
-    ? numericId
-    : createNumericLeadId(`${company}::${website}::${country}::${industry}`)
+  const id =
+    Number.isFinite(numericId) && numericId > 0
+      ? numericId
+      : createNumericLeadId(`${company}::${website}::${country}::${industry}`)
 
   return {
     id,
+    /* P0-1：保留搜索产物稳定 UUID（字符串 id），供 agentStatus 写回关联 */
+    leadKey: typeof result.id === 'string' && result.id.trim() ? result.id.trim() : undefined,
     company,
-    contact: String(result.contact || "").trim(),
-    contactTitle: String(result.contactTitle || "").trim(),
-    email: String(result.email || "").trim(),
-    phone: String(result.phone || "").trim(),
+    contact: String(result.contact || '').trim(),
+    contactTitle: String(result.contactTitle || '').trim(),
+    email: String(result.email || '').trim(),
+    phone: String(result.phone || '').trim(),
     country,
     countryCode: resolveCountryCode(context.countryCode || result.countryCode, country),
     industry,
-    source: String(result.source || "Google Maps").trim() || "Google Maps",
+    source: String(result.source || 'Google Maps').trim() || 'Google Maps',
     matchScore: typeof result.matchScore === 'number' ? result.matchScore : undefined,
     fallbackStatus: result.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
-    status: "new",
-    followUp: "new",
+    /* P1-1 置信标识透传：区分 LLM 评分与确定性预筛分 */
+    scoreSource:
+      result.scoreSource === 'ai' ? 'ai' : result.scoreSource === 'deterministic' ? 'deterministic' : undefined,
+    /* P2-3 结构化机会分透传 */
+    opportunityScore:
+      result.opportunityScore && typeof result.opportunityScore === 'object' ? result.opportunityScore : undefined,
+    status: 'new',
+    followUp: 'new',
     starred: false,
-    lastActivity: context.lastActivity || "刚刚",
+    lastActivity: context.lastActivity || '刚刚',
     addedDate,
     tags: [],
     unlocked: Boolean(result.unlocked),
     website,
-    estimatedValue: context.estimatedValue || "-",
+    estimatedValue: context.estimatedValue || '-',
     address: result.address ? String(result.address).trim() : undefined,
     snippet: result.snippet ? String(result.snippet).trim() : undefined,
     matchReasons: Array.isArray(result.matchReasons) ? result.matchReasons.filter(Boolean) : [],

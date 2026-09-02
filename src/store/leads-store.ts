@@ -1,8 +1,28 @@
-import { create } from "zustand"
-import { fetchClaimedDomains as fetchClaimedDomainsApi, checkDomainsCollision } from "@/lib/electron-api"
-import type { DataSourceType, DecisionMaker, CustomsData, AgentStatus } from "@/shared/ipc-contracts"
+import { create } from 'zustand'
+import {
+  fetchClaimedDomains as fetchClaimedDomainsApi,
+  checkDomainsCollision,
+  configGet,
+  configSet,
+} from '@/lib/electron-api'
+import type { DataSourceType, DecisionMaker, CustomsData, AgentStatus } from '@/shared/ipc-contracts'
 
-export type LeadStatus = "new" | "contacting" | "replied" | "archived"
+// Durable persistence key for the SAVED lead pool. Only `leads` (the operator's
+// curated, long-lived asset) is persisted — NEVER `searchResults`, which is a
+// volatile candidate batch (ARCH-STANDARDS §4.3: config storage must not absorb
+// volatile business payloads). The main-process NativeStore debounces disk writes.
+const LEADS_CONFIG_KEY = 'leads'
+
+// Fire-and-forget persistence of the saved lead pool to the local config store.
+// Failures degrade silently (offline/disk-protected env) so the UI never blocks;
+// the in-memory Zustand state remains the live source of truth for the session.
+const persistLeads = (leads: LeadItem[]): void => {
+  void configSet({ key: LEADS_CONFIG_KEY, value: leads }).catch(() => {
+    // disk-protected / non-electron env → keep session state, drop persistence
+  })
+}
+
+export type LeadStatus = 'new' | 'contacting' | 'replied' | 'archived'
 export type FollowUpStatus = LeadStatus
 
 export type LeadAnalysisCacheEntry = {
@@ -41,6 +61,16 @@ export type LeadItem = {
   source: string
   matchScore?: number | null
   fallbackStatus?: 'social_blind_score'
+  /* P1-1 置信标识: ai = LLM 评分；deterministic = 确定性预筛分 */
+  scoreSource?: 'ai' | 'deterministic'
+  /* P2-3 Stage-2 结构化机会分 */
+  opportunityScore?: {
+    icpFit: number
+    intent: number
+    evidence: number
+    riskPenalty: number
+    finalScore: number
+  }
   status: LeadStatus
   followUp: FollowUpStatus
   starred: boolean
@@ -64,6 +94,8 @@ export type LeadItem = {
   customsData?: CustomsData
   decisionMakers?: DecisionMaker[]
   agentStatus?: AgentStatus
+  /* P0-1：搜索产物稳定 UUID（SearchExecuteResult.id），用于 agentStatus 写回关联 */
+  leadKey?: string
 }
 
 export type LeadSearchResult = {
@@ -72,6 +104,16 @@ export type LeadSearchResult = {
   industry: string
   matchScore?: number | null
   fallbackStatus?: 'social_blind_score'
+  /* P1-1 置信标识: ai = LLM 评分；deterministic = 确定性预筛分 */
+  scoreSource?: 'ai' | 'deterministic'
+  /* P2-3 Stage-2 结构化机会分 */
+  opportunityScore?: {
+    icpFit: number
+    intent: number
+    evidence: number
+    riskPenalty: number
+    finalScore: number
+  }
   contact: string
   contactTitle: string
   email: string
@@ -90,38 +132,49 @@ export type LeadSearchResult = {
   salesStrategy?: string
   status?: LeadStatus
   analysisCache?: Record<string, LeadAnalysisCacheEntry>
+  dataSourceNote?: string
   /* V1.3 多源融合字段 */
   dataSourceType?: DataSourceType
   exhibitionFootprints?: string[]
   customsData?: CustomsData
   decisionMakers?: DecisionMaker[]
   agentStatus?: AgentStatus
+  /* P0-1：搜索产物稳定 UUID，用于 agentStatus 写回关联 */
+  leadKey?: string
 }
 
 const normalizeLeadWebsite = (website?: string) => {
-  const value = String(website || "").trim().toLowerCase()
-  return value.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "")
+  const value = String(website || '')
+    .trim()
+    .toLowerCase()
+  return value
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/$/, '')
 }
 
-const normalizeLeadCompany = (company?: string) => String(company || "").trim().toLowerCase()
+const normalizeLeadCompany = (company?: string) =>
+  String(company || '')
+    .trim()
+    .toLowerCase()
 
 export const normalizeLeadStatus = (status?: string): LeadStatus => {
   switch (status) {
-    case "contacting":
-    case "replied":
-    case "archived":
-    case "new":
+    case 'contacting':
+    case 'replied':
+    case 'archived':
+    case 'new':
       return status
-    case "contacted":
-    case "qualified":
-    case "negotiation":
-      return "contacting"
-    case "closed":
-      return "replied"
-    case "lost":
-      return "archived"
+    case 'contacted':
+    case 'qualified':
+    case 'negotiation':
+      return 'contacting'
+    case 'closed':
+      return 'replied'
+    case 'lost':
+      return 'archived'
     default:
-      return "new"
+      return 'new'
   }
 }
 
@@ -134,13 +187,16 @@ const normalizeLeadItem = (lead: LeadItem): LeadItem => {
   }
 }
 
-export const getLeadUniqueKey = (lead: Pick<LeadItem, "website" | "company">) => {
+export const getLeadUniqueKey = (lead: Pick<LeadItem, 'website' | 'company'>) => {
   const websiteKey = normalizeLeadWebsite(lead.website)
   if (websiteKey) return `website:${websiteKey}`
   return `company:${normalizeLeadCompany(lead.company)}`
 }
 
-const mergeDecisionMakers = (existing: DecisionMaker[] | undefined, incoming: DecisionMaker[] | undefined): DecisionMaker[] | undefined => {
+const mergeDecisionMakers = (
+  existing: DecisionMaker[] | undefined,
+  incoming: DecisionMaker[] | undefined,
+): DecisionMaker[] | undefined => {
   if (!incoming?.length) return existing
   if (!existing?.length) return incoming
 
@@ -165,9 +221,10 @@ const mergeDecisionMakers = (existing: DecisionMaker[] | undefined, incoming: De
       result[matchIdx] = {
         ...result[matchIdx],
         ...dm,
-        confidenceScore: existingScore !== undefined && incomingScore !== undefined
-          ? Math.max(existingScore, incomingScore)
-          : (existingScore ?? incomingScore),
+        confidenceScore:
+          existingScore !== undefined && incomingScore !== undefined
+            ? Math.max(existingScore, incomingScore)
+            : (existingScore ?? incomingScore),
       }
     } else {
       result.push(dm)
@@ -190,31 +247,32 @@ export const mergeLeads = (current: LeadItem[], incoming: LeadItem[]) => {
     merged.set(
       key,
       existing
-          ? {
-              ...existing,
-              ...lead,
-              id: existing.id,
-              company: lead.company || existing.company,
-              website: lead.website || existing.website,
-              tags: lead.tags?.length ? lead.tags : existing.tags,
-              decisionMakers: mergeDecisionMakers(existing.decisionMakers, lead.decisionMakers),
-              exhibitionFootprints: Array.from(new Set([
-                ...(existing.exhibitionFootprints || []),
-                ...(lead.exhibitionFootprints || []),
-              ])),
-              generatedStrategies: {
-                ...(existing.generatedStrategies || {}),
-                ...(lead.generatedStrategies || {}),
-              },
-            }
-        : lead
+        ? {
+            ...existing,
+            ...lead,
+            id: existing.id,
+            company: lead.company || existing.company,
+            website: lead.website || existing.website,
+            tags: lead.tags?.length ? lead.tags : existing.tags,
+            decisionMakers: mergeDecisionMakers(existing.decisionMakers, lead.decisionMakers),
+            exhibitionFootprints: Array.from(
+              new Set([...(existing.exhibitionFootprints || []), ...(lead.exhibitionFootprints || [])]),
+            ),
+            generatedStrategies: {
+              ...(existing.generatedStrategies || {}),
+              ...(lead.generatedStrategies || {}),
+            },
+          }
+        : lead,
     )
   })
 
   return Array.from(merged.values()).sort((a, b) => {
     const dateDelta = new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime()
     if (dateDelta !== 0) return dateDelta
-    return (typeof b.matchScore === 'number' ? b.matchScore : -1) - (typeof a.matchScore === 'number' ? a.matchScore : -1)
+    return (
+      (typeof b.matchScore === 'number' ? b.matchScore : -1) - (typeof a.matchScore === 'number' ? a.matchScore : -1)
+    )
   })
 }
 
@@ -245,17 +303,31 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
   hydrated: false,
   teamClaimedDomains: new Set<string>(),
   hydrateFromConfig: async () => {
+    // Re-hydrate the saved lead pool from the local config store so leads
+    // survive app restarts (P1 durability fix). Failures degrade to an empty
+    // pool rather than blocking boot. searchResults stay ephemeral by design.
+    try {
+      const persisted = await configGet<LeadItem[] | null>(LEADS_CONFIG_KEY)
+      if (Array.isArray(persisted) && persisted.length > 0) {
+        set({ leads: persisted.map((lead) => normalizeLeadItem(lead)) })
+      }
+    } catch {
+      // non-electron / disk-protected env → start with in-memory empty pool
+    }
     set({ hydrated: true })
     probeLeadStore(get().leads.length)
   },
   saveLeads: async (leads) => {
-    set({ leads: leads.map((lead) => normalizeLeadItem(lead)) })
+    const next = leads.map((lead) => normalizeLeadItem(lead))
+    set({ leads: next })
+    persistLeads(next)
     probeLeadStore(get().leads.length)
     return leads
   },
   mergeLeads: async (incoming) => {
     const next = mergeLeads(get().leads, incoming)
     set({ leads: next })
+    persistLeads(next)
     probeLeadStore(get().leads.length)
     return next
   },
@@ -265,12 +337,14 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
   updateLead: async (id, patch) => {
     const next = get().leads.map((lead) => (lead.id === id ? normalizeLeadItem({ ...lead, ...patch }) : lead))
     set({ leads: next })
+    persistLeads(next)
     probeLeadStore(get().leads.length)
     return next
   },
   deleteLead: async (id) => {
     const next = get().leads.filter((lead) => lead.id !== id)
     set({ leads: next })
+    persistLeads(next)
     probeLeadStore(get().leads.length)
     return next
   },
@@ -301,7 +375,12 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
     }
   },
   isDomainClaimed: (domain: string) => {
-    const normalized = domain.trim().toLowerCase().replace(/^www\./, "").replace(/^https?:\/\//, "").replace(/\/$/, "")
+    const normalized = domain
+      .trim()
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, '')
     return get().teamClaimedDomains.has(normalized)
   },
 }))

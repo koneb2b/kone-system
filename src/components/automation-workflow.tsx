@@ -1,6 +1,6 @@
-"use client"
+'use client'
 
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   Zap,
   Mail,
@@ -17,35 +17,55 @@ import {
   ChevronRight,
   Crown,
   AlertTriangle,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { verifyEmails, startCampaign, fetchTrackingStatus, dnsHealthCheck } from "@/lib/electron-api"
-import type { EmailVerifyResult, DnsHealthCheckResult } from "@/shared/ipc-contracts"
-import { useToast } from "@/hooks/use-toast"
-import { useLicenseStore } from "@/store/licenseStore"
-import { UpgradeModal } from "@/components/upgrade-modal"
-import { useLeadsStore } from "@/store/leads-store"
-import { getUserConfig } from "@/lib/user-config"
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { verifyEmails, startCampaign, fetchTrackingStatus, dnsHealthCheck } from '@/lib/electron-api'
+import type { EmailVerifyResult, DnsHealthCheckResult } from '@/shared/ipc-contracts'
+import { useToast } from '@/hooks/use-toast'
+import { useLicenseStore } from '@/store/licenseStore'
+import { UpgradeModal } from '@/components/upgrade-modal'
+import { useLeadsStore } from '@/store/leads-store'
+import { getUserConfig, updateUserConfig } from '@/lib/user-config'
 
 const TEMPLATES = [
-  { id: "intro", name: "首次触达", subject: "合作探讨 — {{company}}", body: "Hi {{contact}},\n\n我们注意到贵司在 {{country}} 市场的出色表现，希望就 B2B 合作方案与您交流。\n\n期待回复。" },
-  { id: "followup", name: "二次跟进", subject: "Re: 合作探讨 — {{company}}", body: "Hi {{contact}},\n\n上次沟通后未收到回复，特此跟进。如果时间方便，我们可以安排一次 15 分钟的快速通话。" },
-  { id: "value", name: "价值案例", subject: "{{company}} 的同行正在这样做", body: "Hi {{contact}},\n\n近期帮助贵司同行业的 XX 公司实现了 30% 的线索转化率提升。附上案例供参考。" },
+  {
+    id: 'intro',
+    name: '首次触达',
+    subject: '合作探讨 — {{company}}',
+    body: 'Hi {{contact}},\n\n我们注意到贵司在 {{country}} 市场的出色表现，希望就 B2B 合作方案与您交流。\n\n期待回复。',
+  },
+  {
+    id: 'followup',
+    name: '二次跟进',
+    subject: 'Re: 合作探讨 — {{company}}',
+    body: 'Hi {{contact}},\n\n上次沟通后未收到回复，特此跟进。如果时间方便，我们可以安排一次 15 分钟的快速通话。',
+  },
+  {
+    id: 'value',
+    name: '价值案例',
+    subject: '{{company}} 的同行正在这样做',
+    body: 'Hi {{contact}},\n\n近期帮助贵司同行业的 XX 公司实现了 30% 的线索转化率提升。附上案例供参考。',
+  },
 ]
 
 const normalizeVerifyReason = (reason?: string) => {
-  const text = String(reason || "").trim().toLowerCase()
-  if (!text) return "暂未通过校验"
-  if (text.includes("smtp") || text.includes("handshake") || text.includes("timeout")) return "邮箱服务器暂未响应"
-  if (text.includes("invalid") || text.includes("format")) return "邮箱格式异常"
-  if (text.includes("mx")) return "域名邮件能力异常"
-  if (text.includes("disposable")) return "疑似临时邮箱"
-  if (text.includes("unknown")) return "邮箱状态待确认"
-  return "连接异常，请稍后重试"
+  const text = String(reason || '')
+    .trim()
+    .toLowerCase()
+  if (!text) return '暂未通过校验'
+  if (text.includes('smtp') || text.includes('handshake') || text.includes('timeout')) return '邮箱服务器暂未响应'
+  if (text.includes('invalid') || text.includes('format')) return '邮箱格式异常'
+  if (text.includes('mx')) return '域名邮件能力异常'
+  if (text.includes('disposable')) return '疑似临时邮箱'
+  if (text.includes('unknown')) return '邮箱状态待确认'
+  return '连接异常，请稍后重试'
 }
 
-const normalizeEmail = (value: string) => String(value || "").trim().toLowerCase()
+const normalizeEmail = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
 
 export function AutomationWorkflow() {
   const { toast } = useToast()
@@ -55,22 +75,27 @@ export function AutomationWorkflow() {
   const tier = useLicenseStore((state) => state.tier)
   const plan = useLicenseStore((state) => state.plan)
 
-  const [rawEmails, setRawEmails] = useState("")
+  const [rawEmails, setRawEmails] = useState('')
   const [verifyResults, setVerifyResults] = useState<EmailVerifyResult[]>([])
   const [verifying, setVerifying] = useState(false)
   const [verifyProgress, setVerifyProgress] = useState(0)
   const [selectedTemplate, setSelectedTemplate] = useState(TEMPLATES[0].id)
   const [sending, setSending] = useState(false)
   const [campaignResult, setCampaignResult] = useState<{ triggered: boolean; message: string } | null>(null)
-  const [trackingData, setTrackingData] = useState<Record<string, { isOpened: boolean; openedAt?: string; openedGeo?: string }>>({})
+  const [trackingData, setTrackingData] = useState<
+    Record<string, { isOpened: boolean; openedAt?: string; openedGeo?: string }>
+  >({})
   const [trackingOffline, setTrackingOffline] = useState(false)
   const [loadingTracking, setLoadingTracking] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [dnsResult, setDnsResult] = useState<DnsHealthCheckResult | null>(null)
   const [dnsChecking, setDnsChecking] = useState(false)
-  const [senderDomain, setSenderDomain] = useState("")
+  const [senderDomain, setSenderDomain] = useState('')
+  /* P2-4：自定义 DKIM selector（与默认列表合并探测，防有限列表误报） */
+  const [dkimSelectors, setDkimSelectors] = useState('')
+  const [dkimSaved, setDkimSaved] = useState(false)
 
-  const canUseCloudSend = tier === "premium" || plan === "enterprise"
+  const canUseCloudSend = tier === 'premium' || plan === 'enterprise'
 
   const leadLookup = useMemo(() => {
     const map = new Map<string, Record<string, unknown>>()
@@ -85,7 +110,10 @@ export function AutomationWorkflow() {
   }, [leads, searchResults])
 
   const handleVerifyEmails = useCallback(async () => {
-    const emails = rawEmails.split(/[\n,;]+/).map((e) => e.trim()).filter(Boolean)
+    const emails = rawEmails
+      .split(/[\n,;]+/)
+      .map((e) => e.trim())
+      .filter(Boolean)
     if (!emails.length) return
     setVerifying(true)
     setVerifyProgress(0)
@@ -98,9 +126,18 @@ export function AutomationWorkflow() {
       const data = await verifyEmails(emails)
       setVerifyResults(data.results)
       setVerifyProgress(100)
-      toast({ title: "邮箱清洗完成", description: `已完成 ${data.results.length} 个邮箱校验。`, variant: "default", className: "bg-emerald-50 border-emerald-200 text-emerald-800" })
+      toast({
+        title: '邮箱清洗完成',
+        description: `已完成 ${data.results.length} 个邮箱校验。`,
+        variant: 'default',
+        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+      })
     } catch (error) {
-      toast({ title: "邮箱校验失败", description: error instanceof Error ? error.message : "邮箱校验失败", variant: "destructive" })
+      toast({
+        title: '邮箱校验失败',
+        description: error instanceof Error ? error.message : '邮箱校验失败',
+        variant: 'destructive',
+      })
     } finally {
       clearInterval(timer)
       setVerifying(false)
@@ -109,11 +146,33 @@ export function AutomationWorkflow() {
 
   const validEmails = verifyResults.filter((r) => r.valid)
   const invalidEmails = verifyResults.filter((r) => !r.valid)
+  /* P2-1 五级差异化队列：主队列（verified/probable）→ 限频（catch_all）→
+     降权（risky：disposable/role）→ 抑制建议（invalid）。
+     云端 campaign 只携带 primary + throttled（risky/invalid 被 valid=false 排除）。 */
+  const verificationQueues = useMemo(() => {
+    const queues = {
+      primary: [] as EmailVerifyResult[],
+      throttled: [] as EmailVerifyResult[],
+      deprioritized: [] as EmailVerifyResult[],
+      suppressionCandidates: [] as EmailVerifyResult[],
+    }
+    for (const r of verifyResults) {
+      if (r.grade === 'verified' || r.grade === 'probable') queues.primary.push(r)
+      else if (r.grade === 'catch_all') queues.throttled.push(r)
+      else if (r.grade === 'risky') queues.deprioritized.push(r)
+      else if (r.grade === 'invalid') queues.suppressionCandidates.push(r)
+      else (r.valid ? queues.primary : queues.suppressionCandidates).push(r)
+    }
+    return queues
+  }, [verifyResults])
 
   const removeInvalid = useCallback(() => {
     const validSet = new Set(validEmails.map((r) => normalizeEmail(r.email)))
-    const lines = rawEmails.split(/[\n,;]+/).map((e) => e.trim()).filter((e) => validSet.has(normalizeEmail(e)))
-    setRawEmails(lines.join("\n"))
+    const lines = rawEmails
+      .split(/[\n,;]+/)
+      .map((e) => e.trim())
+      .filter((e) => validSet.has(normalizeEmail(e)))
+    setRawEmails(lines.join('\n'))
     setVerifyResults(validEmails)
   }, [rawEmails, validEmails])
 
@@ -121,99 +180,154 @@ export function AutomationWorkflow() {
     setUpgradeOpen(true)
   }, [])
 
-  const buildLeadPayloads = useCallback(async (emails: string[], verificationStatus: "verified" | "unverified") => {
-    const config = await getUserConfig()
-    return emails.map((email) => {
-      const normalized = normalizeEmail(email)
-      const lead = leadLookup.get(normalized) || {}
-      const analysisCache = typeof lead.analysisCache === "object" && lead.analysisCache ? lead.analysisCache as Record<string, any> : {}
-      const bestAnalysis = analysisCache.direct_quote || analysisCache.competitor_switch || analysisCache.factory_strength || {}
-      return {
-        email: normalized,
-        company: String(lead.company || "").trim(),
-        website: String(lead.website || "").trim(),
-        domain: String(lead.website || lead.domain || "").trim(),
-        country: String(lead.country || "").trim(),
-        contact: String(lead.contact || "").trim(),
-        contactTitle: String(lead.contactTitle || lead.inferredRole || "").trim(),
-        phone: String(lead.phone || "").trim(),
-        address: String(lead.address || "").trim(),
-        source: String(lead.source || "").trim(),
-        matchScore: typeof lead.matchScore === "number" ? lead.matchScore : undefined,
-        matchReasons: Array.isArray(lead.matchReasons) ? lead.matchReasons : [],
-        riskFlags: Array.isArray(lead.riskFlags) ? lead.riskFlags : [],
-        inferredRole: String(lead.inferredRole || "").trim(),
-        snippet: String(lead.snippet || "").trim(),
-        aiAnalysis: {
-          companyProfile: String(bestAnalysis.companyProfile || "").trim(),
-          painPoints: String(bestAnalysis.painPoints || "").trim(),
-          valueMapping: String(bestAnalysis.valueMapping || "").trim(),
-          confidence: typeof bestAnalysis.confidence === "number" ? bestAnalysis.confidence : undefined,
-          source: String(bestAnalysis.source || "").trim(),
-        },
-        aiGeneratedPitch: {
-          emailSubject: String(bestAnalysis.emailSubject || "").trim(),
-          emailBody: String(bestAnalysis.emailBody || "").trim(),
-        },
-        verificationStatus,
-        userSettings: {
-          templateId: selectedTemplate,
-          selectedModel: String(config.selectedModel || "").trim(),
-          icpProfile: config.icpProfile || {},
-        },
-      }
-    })
-  }, [leadLookup, selectedTemplate])
+  const buildLeadPayloads = useCallback(
+    async (emails: string[], verificationStatus: 'verified' | 'unverified') => {
+      const config = await getUserConfig()
+      return emails.map((email) => {
+        const normalized = normalizeEmail(email)
+        const lead = leadLookup.get(normalized) || {}
+        const analysisCache =
+          typeof lead.analysisCache === 'object' && lead.analysisCache
+            ? (lead.analysisCache as Record<string, any>)
+            : {}
+        const bestAnalysis =
+          analysisCache.direct_quote || analysisCache.competitor_switch || analysisCache.factory_strength || {}
+        return {
+          email: normalized,
+          company: String(lead.company || '').trim(),
+          website: String(lead.website || '').trim(),
+          domain: String(lead.website || lead.domain || '').trim(),
+          country: String(lead.country || '').trim(),
+          contact: String(lead.contact || '').trim(),
+          contactTitle: String(lead.contactTitle || lead.inferredRole || '').trim(),
+          phone: String(lead.phone || '').trim(),
+          address: String(lead.address || '').trim(),
+          source: String(lead.source || '').trim(),
+          matchScore: typeof lead.matchScore === 'number' ? lead.matchScore : undefined,
+          matchReasons: Array.isArray(lead.matchReasons) ? lead.matchReasons : [],
+          riskFlags: Array.isArray(lead.riskFlags) ? lead.riskFlags : [],
+          inferredRole: String(lead.inferredRole || '').trim(),
+          snippet: String(lead.snippet || '').trim(),
+          aiAnalysis: {
+            companyProfile: String(bestAnalysis.companyProfile || '').trim(),
+            painPoints: String(bestAnalysis.painPoints || '').trim(),
+            valueMapping: String(bestAnalysis.valueMapping || '').trim(),
+            confidence: typeof bestAnalysis.confidence === 'number' ? bestAnalysis.confidence : undefined,
+            source: String(bestAnalysis.source || '').trim(),
+          },
+          aiGeneratedPitch: {
+            emailSubject: String(bestAnalysis.emailSubject || '').trim(),
+            emailBody: String(bestAnalysis.emailBody || '').trim(),
+          },
+          verificationStatus,
+          userSettings: {
+            templateId: selectedTemplate,
+            selectedModel: String(config.selectedModel || '').trim(),
+            icpProfile: config.icpProfile || {},
+          },
+        }
+      })
+    },
+    [leadLookup, selectedTemplate],
+  )
 
   const handleStartCampaign = useCallback(async () => {
     if (!canUseCloudSend) {
       handleOpenUpgrade()
-      toast({ title: "企业云端协同引擎暂未启用", description: "当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。", variant: "destructive" })
+      toast({
+        title: '企业云端协同引擎暂未启用',
+        description: '当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。',
+        variant: 'destructive',
+      })
       return
     }
 
-    const emails = (validEmails.length ? validEmails.map((r) => r.email) : rawEmails.split(/[\n,;]+/).map((e) => e.trim()).filter(Boolean)).map(normalizeEmail)
+    const emails = (
+      validEmails.length
+        ? validEmails.map((r) => r.email)
+        : rawEmails
+            .split(/[\n,;]+/)
+            .map((e) => e.trim())
+            .filter(Boolean)
+    ).map(normalizeEmail)
     if (!emails.length) return
     if (!senderDomain.trim()) {
-      toast({ title: "请先完成域名信誉检测", description: "请输入发信域名并完成 DNS 健康检测后，再提交云端发送队列。", variant: "destructive" })
+      toast({
+        title: '请先完成域名信誉检测',
+        description: '请输入发信域名并完成 DNS 健康检测后，再提交云端发送队列。',
+        variant: 'destructive',
+      })
       return
     }
-    if (!dnsResult || dnsResult.domain !== senderDomain.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '')) {
-      toast({ title: "请先完成域名信誉检测", description: "当前发信域名尚未完成 DNS 审计，请先点击“域名信誉检测”。", variant: "destructive" })
+    if (
+      !dnsResult ||
+      dnsResult.domain !==
+        senderDomain
+          .trim()
+          .replace(/^https?:\/\//i, '')
+          .replace(/\/.*$/, '')
+          .replace(/^www\./i, '')
+    ) {
+      toast({
+        title: '请先完成域名信誉检测',
+        description: '当前发信域名尚未完成 DNS 审计，请先点击“域名信誉检测”。',
+        variant: 'destructive',
+      })
       return
     }
     if (!dnsResult.valid || dnsResult.error) {
-      toast({ title: "发信域名存在安全风险", description: dnsResult.error || "DNS 健康检测未通过，发送按钮已软锁定。", variant: "destructive" })
+      toast({
+        title: '发信域名存在安全风险',
+        description: dnsResult.error || 'DNS 健康检测未通过，发送按钮已软锁定。',
+        variant: 'destructive',
+      })
       return
     }
     setSending(true)
     setCampaignResult(null)
     try {
-      const payloadLeads = await buildLeadPayloads(emails, validEmails.length ? "verified" : "unverified")
+      const payloadLeads = await buildLeadPayloads(emails, validEmails.length ? 'verified' : 'unverified')
       const data = await startCampaign({ leads: payloadLeads, templateId: selectedTemplate })
-      const message = data.message || (data.triggered ? `已成功同步 ${data.accepted || 0} 条线索至云端发送队列` : (data.error || "推送失败"))
+      const message =
+        data.message ||
+        (data.triggered ? `已成功同步 ${data.accepted || 0} 条线索至云端发送队列` : data.error || '推送失败')
       setCampaignResult({ triggered: data.triggered, message })
       toast({
-        title: data.triggered ? "发送任务已受理" : "发送任务未完成",
+        title: data.triggered ? '发送任务已受理' : '发送任务未完成',
         description: message,
-        variant: data.triggered ? "default" : "destructive",
-        className: data.triggered ? "bg-emerald-50 border-emerald-200 text-emerald-800" : undefined,
+        variant: data.triggered ? 'default' : 'destructive',
+        className: data.triggered ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : undefined,
       })
     } catch (err) {
-      const rawMessage = err instanceof Error ? err.message : "发送失败"
+      const rawMessage = err instanceof Error ? err.message : '发送失败'
       const supabaseMessage = /supabase|URL.*Key|Anon|service_role|JWT/i.test(rawMessage)
-        ? "企业云端协同引擎暂未启用。当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。"
+        ? '企业云端协同引擎暂未启用。当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。'
         : rawMessage
       setCampaignResult({ triggered: false, message: supabaseMessage })
-      toast({ title: "发送失败", description: supabaseMessage, variant: "destructive" })
+      toast({ title: '发送失败', description: supabaseMessage, variant: 'destructive' })
     } finally {
       setSending(false)
     }
-  }, [buildLeadPayloads, canUseCloudSend, dnsResult, handleOpenUpgrade, rawEmails, selectedTemplate, senderDomain, toast, validEmails])
+  }, [
+    buildLeadPayloads,
+    canUseCloudSend,
+    dnsResult,
+    handleOpenUpgrade,
+    rawEmails,
+    selectedTemplate,
+    senderDomain,
+    toast,
+    validEmails,
+  ])
 
   const loadTracking = useCallback(async () => {
-    const emails = validEmails.length ? validEmails.map((r) => r.email) : rawEmails.split(/[\n,;]+/).map((e) => e.trim()).filter(Boolean)
-    const domains = [...new Set(emails.map((e) => e.split("@")[1]).filter(Boolean))]
+    const emails = validEmails.length
+      ? validEmails.map((r) => r.email)
+      : rawEmails
+          .split(/[\n,;]+/)
+          .map((e) => e.trim())
+          .filter(Boolean)
+    const domains = [...new Set(emails.map((e) => e.split('@')[1]).filter(Boolean))]
     if (!domains.length) return
     setLoadingTracking(true)
     try {
@@ -222,11 +336,57 @@ export function AutomationWorkflow() {
       setTrackingOffline(data.offline)
     } catch (error) {
       setTrackingOffline(true)
-      toast({ title: "追踪刷新失败", description: error instanceof Error ? error.message : "追踪刷新失败", variant: "destructive" })
+      toast({
+        title: '追踪刷新失败',
+        description: error instanceof Error ? error.message : '追踪刷新失败',
+        variant: 'destructive',
+      })
     } finally {
       setLoadingTracking(false)
     }
   }, [rawEmails, toast, validEmails])
+
+  useEffect(() => {
+    let cancelled = false
+    getUserConfig()
+      .then((config) => {
+        if (!cancelled) {
+          const shield = (config as { dnsShield?: { dkimSelectors?: string[] } }).dnsShield
+          if (Array.isArray(shield?.dkimSelectors)) setDkimSelectors(shield.dkimSelectors.join(', '))
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleSaveDkimSelectors = useCallback(async () => {
+    const selectors = dkimSelectors
+      .split(/[,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    try {
+      await updateUserConfig((current) => ({
+        ...current,
+        dnsShield: { ...(current as { dnsShield?: object }).dnsShield, dkimSelectors: selectors },
+      }))
+      setDkimSaved(true)
+      toast({
+        title: 'DKIM Selector 已保存',
+        description: selectors.length
+          ? `已追加 ${selectors.length} 个自定义选择器`
+          : '已清空自定义选择器，仅使用默认列表',
+      })
+      setTimeout(() => setDkimSaved(false), 2000)
+    } catch (error) {
+      toast({
+        title: '保存失败',
+        description: error instanceof Error ? error.message : '配置写入异常',
+        variant: 'destructive',
+      })
+    }
+  }, [dkimSelectors, toast])
 
   useEffect(() => {
     if (campaignResult?.triggered) void loadTracking()
@@ -243,17 +403,24 @@ export function AutomationWorkflow() {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">Kone 协同引擎</p>
               <h3 className="mt-1 text-base font-semibold text-foreground">三步完成高质量触达流程</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Step 1 邮箱清洗 · Step 2 模板配置 · Step 3 云端发送队列</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Step 1 邮箱清洗 · Step 2 模板配置 · Step 3 云端发送队列
+              </p>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
-                { step: "Step 1", title: "邮箱清洗", desc: "先筛掉死邮箱与高风险地址" },
-                { step: "Step 2", title: "模板配置", desc: "选择最适合当前客户的沟通脚本" },
-                { step: "Step 3", title: "云端发送队列", desc: "交由 Kone 协同引擎完成批量触达" },
+                { step: 'Step 1', title: '邮箱清洗', desc: '先筛掉死邮箱与高风险地址' },
+                { step: 'Step 2', title: '模板配置', desc: '选择最适合当前客户的沟通脚本' },
+                { step: 'Step 3', title: '云端发送队列', desc: '交由 Kone 协同引擎完成批量触达' },
               ].map((item) => (
-                <div key={item.step} className="rounded-xl border border-white/80 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
+                <div
+                  key={item.step}
+                  className="rounded-xl border border-white/80 bg-white/80 px-3 py-3 shadow-sm backdrop-blur"
+                >
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
-                    <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{item.step}</span>
+                    <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                      {item.step}
+                    </span>
                     <ChevronRight className="size-3 text-slate-400" />
                     <span>{item.title}</span>
                   </div>
@@ -290,13 +457,15 @@ export function AutomationWorkflow() {
               <Textarea
                 value={rawEmails}
                 onChange={(e) => setRawEmails(e.target.value)}
-                placeholder={"粘贴邮箱列表（每行一个、逗号或分号分隔）\n\nceo@hulk-energy.com\npurchasing@target-domain.com"}
+                placeholder={
+                  '粘贴邮箱列表（每行一个、逗号或分号分隔）\n\nceo@hulk-energy.com\npurchasing@target-domain.com'
+                }
                 className="min-h-36 font-mono text-xs"
               />
               <div className="flex gap-2 mt-3">
                 <Button size="sm" onClick={handleVerifyEmails} disabled={verifying || !rawEmails.trim()}>
                   {verifying ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />}
-                  {verifying ? "正在校验中..." : "一键清洗"}
+                  {verifying ? '正在校验中...' : '一键清洗'}
                 </Button>
                 {invalidEmails.length > 0 && (
                   <Button size="sm" variant="outline" onClick={removeInvalid}>
@@ -334,18 +503,31 @@ export function AutomationWorkflow() {
                       <XCircle className="size-3" /> {invalidEmails.length} 失效
                     </span>
                   </div>
+                  {/* P2-1 五级差异化队列分布 */}
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                    <span className="text-emerald-600">主队列 {verificationQueues.primary.length}</span>
+                    <span className="text-amber-600">限频(Catch-all) {verificationQueues.throttled.length}</span>
+                    <span className="text-orange-600">降权(Risky) {verificationQueues.deprioritized.length}</span>
+                    <span className="text-red-600">建议抑制 {verificationQueues.suppressionCandidates.length}</span>
+                  </div>
                 </div>
                 <div className="max-h-48 overflow-y-auto divide-y divide-border">
                   {verifyResults.map((r, i) => (
-                    <div key={i} className={`flex items-center gap-2 py-1.5 text-xs ${r.valid ? "" : "opacity-50"}`}>
+                    <div key={i} className={`flex items-center gap-2 py-1.5 text-xs ${r.valid ? '' : 'opacity-50'}`}>
                       {r.valid ? (
-                        <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                        <CheckCircle2
+                          className={`size-3.5 shrink-0 ${r.grade === 'catch_all' ? 'text-amber-500' : 'text-emerald-500'}`}
+                        />
                       ) : (
                         <XCircle className="size-3.5 text-red-500 shrink-0" />
                       )}
                       <span className="font-mono flex-1 truncate text-foreground">{r.email}</span>
-                      {r.valid ? (
-                        <span className="text-emerald-600 text-[10px] font-semibold shrink-0">连接正常</span>
+                      {r.grade === 'catch_all' ? (
+                        <span className="text-amber-600 text-[10px] font-semibold shrink-0">Catch-all 域</span>
+                      ) : r.grade === 'probable' && r.valid ? (
+                        <span className="text-sky-600 text-[10px] font-semibold shrink-0">Probable</span>
+                      ) : r.valid ? (
+                        <span className="text-emerald-600 text-[10px] font-semibold shrink-0">Verified</span>
                       ) : (
                         <span className="text-muted-foreground shrink-0">{normalizeVerifyReason(r.reason)}</span>
                       )}
@@ -367,7 +549,7 @@ export function AutomationWorkflow() {
                   <button
                     key={t.id}
                     onClick={() => setSelectedTemplate(t.id)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${selectedTemplate === t.id ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${selectedTemplate === t.id ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                   >
                     {t.name}
                   </button>
@@ -377,7 +559,7 @@ export function AutomationWorkflow() {
                 <div className="font-semibold text-foreground mb-1">Subject: {template.subject}</div>
                 <div className="text-muted-foreground whitespace-pre-wrap leading-relaxed">{template.body}</div>
               </div>
-               <div className="flex gap-2 mt-3">
+              <div className="flex gap-2 mt-3">
                 <input
                   type="text"
                   value={senderDomain}
@@ -395,12 +577,20 @@ export function AutomationWorkflow() {
                       const result = await dnsHealthCheck(senderDomain.trim())
                       setDnsResult(result)
                       if (result.error) {
-                        toast({ title: "域名安全警告", description: result.error, variant: "destructive" })
+                        toast({ title: '域名安全警告', description: result.error, variant: 'destructive' })
                       } else {
-                        toast({ title: "域名检测通过", description: `MX: ${result.hasMX ? '✔' : '✗'} SPF: ${result.hasSPF ? '✔' : '✗'} DKIM: ${result.hasDKIM ? '✔' : '✗'} DMARC: ${result.hasDMARC ? '✔' : '✗'}`, variant: "default" })
+                        toast({
+                          title: '域名检测通过',
+                          description: `MX: ${result.hasMX ? '✔' : '✗'} SPF: ${result.hasSPF ? '✔' : '✗'} DKIM: ${result.hasDKIM ? '✔' : '✗'} DMARC: ${result.hasDMARC ? '✔' : '✗'}`,
+                          variant: 'default',
+                        })
                       }
                     } catch (error) {
-                      toast({ title: "DNS 检测失败", description: error instanceof Error ? error.message : '检测异常', variant: "destructive" })
+                      toast({
+                        title: 'DNS 检测失败',
+                        description: error instanceof Error ? error.message : '检测异常',
+                        variant: 'destructive',
+                      })
                     } finally {
                       setDnsChecking(false)
                     }
@@ -408,11 +598,32 @@ export function AutomationWorkflow() {
                   className="text-xs"
                 >
                   <ShieldCheck className="size-3 mr-1" />
-                  {dnsChecking ? "检测中..." : "域名信誉检测"}
+                  {dnsChecking ? '检测中...' : '域名信誉检测'}
+                </Button>
+              </div>
+              {/* P2-4：自定义 DKIM selector —— 与默认列表合并探测，避免有限列表误报 */}
+              <div className="flex gap-2 mt-2">
+                <input
+                  type="text"
+                  value={dkimSelectors}
+                  onChange={(e) => setDkimSelectors(e.target.value)}
+                  placeholder="自定义 DKIM selector（逗号分隔，如 selector1, s1）"
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={dkimSaved}
+                  onClick={handleSaveDkimSelectors}
+                  className="text-xs"
+                >
+                  {dkimSaved ? '已保存' : '保存'}
                 </Button>
               </div>
               {dnsResult && (
-                <div className={`mt-2 rounded-lg border px-3 py-2 text-xs flex flex-col gap-1 ${dnsResult.error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                <div
+                  className={`mt-2 rounded-lg border px-3 py-2 text-xs flex flex-col gap-1 ${dnsResult.error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}
+                >
                   <div className="flex items-center gap-1 font-semibold">
                     <ShieldCheck className="size-3" />
                     {dnsResult.error ? '域名合规告警' : '域名信誉合格'}
@@ -429,7 +640,8 @@ export function AutomationWorkflow() {
               {dnsResult?.error && canUseCloudSend && (
                 <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex items-center gap-2">
                   <AlertTriangle className="size-3.5" />
-                  发信域名存在安全风险，<strong>发送按钮已软锁定</strong>。请先修复域名配置后再执行群发，以保护公司主邮箱域名信誉。
+                  发信域名存在安全风险，<strong>发送按钮已软锁定</strong>
+                  。请先修复域名配置后再执行群发，以保护公司主邮箱域名信誉。
                 </div>
               )}
               <div className="flex gap-2 mt-3">
@@ -438,25 +650,39 @@ export function AutomationWorkflow() {
                   onClick={() => {
                     if (!canUseCloudSend) {
                       handleOpenUpgrade()
-                      toast({ title: "高级发送能力未开通", description: "当前套餐无法使用云端协同发送，请升级到高级版。", variant: "destructive" })
+                      toast({
+                        title: '高级发送能力未开通',
+                        description: '当前套餐无法使用云端协同发送，请升级到高级版。',
+                        variant: 'destructive',
+                      })
                       return
                     }
                     void handleStartCampaign()
                   }}
-                  disabled={sending || !rawEmails.trim() || loading || !dnsResult || !dnsResult.valid || (dnsResult?.error ? true : false)}
+                  disabled={
+                    sending ||
+                    !rawEmails.trim() ||
+                    loading ||
+                    !dnsResult ||
+                    !dnsResult.valid ||
+                    (dnsResult?.error ? true : false)
+                  }
                   className="bg-blue-600 text-white hover:bg-blue-700"
                 >
                   {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                  {sending ? "推送中..." : canUseCloudSend ? "提交至云端发送队列" : "联系顾问解锁高级版"}
+                  {sending ? '推送中...' : canUseCloudSend ? '提交至云端发送队列' : '联系顾问解锁高级版'}
                 </Button>
               </div>
               {!canUseCloudSend ? (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  当前为试用版 / Basic 套餐，云端协同发送已锁定。点击发送按钮即可唤起高级版升级通道，解锁 N8N / Snov.io 闭环。
+                  当前为试用版 / Basic 套餐，云端协同发送已锁定。点击发送按钮即可唤起高级版升级通道，解锁 N8N / Snov.io
+                  闭环。
                 </div>
               ) : null}
               {campaignResult && (
-                <div className={`mt-3 text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${campaignResult.triggered ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                <div
+                  className={`mt-3 text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${campaignResult.triggered ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}
+                >
                   {campaignResult.triggered ? <Sparkles className="size-3.5" /> : <XCircle className="size-3.5" />}
                   {campaignResult.message}
                 </div>
@@ -491,9 +717,12 @@ export function AutomationWorkflow() {
               ) : (
                 <div className="divide-y divide-border max-h-48 overflow-y-auto">
                   {Object.entries(trackingData).map(([domain, info]) => (
-                    <div key={domain} className={`flex items-center gap-3 py-2.5 text-xs transition-colors ${info.isOpened ? "bg-emerald-50/50" : ""}`}>
+                    <div
+                      key={domain}
+                      className={`flex items-center gap-3 py-2.5 text-xs transition-colors ${info.isOpened ? 'bg-emerald-50/50' : ''}`}
+                    >
                       <div className="relative shrink-0">
-                        <div className={`size-2.5 rounded-full ${info.isOpened ? "bg-emerald-500" : "bg-slate-300"}`} />
+                        <div className={`size-2.5 rounded-full ${info.isOpened ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                         {info.isOpened && (
                           <div className="absolute inset-0 size-2.5 rounded-full bg-emerald-500 animate-ping opacity-50" />
                         )}
@@ -503,12 +732,14 @@ export function AutomationWorkflow() {
                         <div className="flex items-center gap-3 shrink-0">
                           {info.openedGeo && (
                             <span className="inline-flex items-center gap-0.5 text-emerald-700 font-medium">
-                              <Globe className="size-2.5" />{info.openedGeo}
+                              <Globe className="size-2.5" />
+                              {info.openedGeo}
                             </span>
                           )}
                           {info.openedAt && (
                             <span className="inline-flex items-center gap-0.5 text-emerald-600">
-                              <Clock className="size-2.5" />{new Date(info.openedAt).toLocaleString()}
+                              <Clock className="size-2.5" />
+                              {new Date(info.openedAt).toLocaleString()}
                             </span>
                           )}
                         </div>
