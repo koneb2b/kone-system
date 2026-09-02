@@ -1,5 +1,11 @@
 import { fetchWithRetry, getDefaultSerpApiTimeoutMs } from '../proxy-service'
-import { ProviderQuery, type SearchProvider, type ProviderExecuteResult } from '../provider-registry'
+import {
+  ProviderQuery,
+  type ProviderConfig,
+  type SearchProvider,
+  type ProviderExecuteResult,
+  type ProviderResult,
+} from '../provider-registry'
 
 const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 const FETCH_LIMIT = 50
@@ -10,13 +16,27 @@ const TRADE_SHOW_SITES = [
   'site:exhibition.globalsources.com',
 ]
 
+interface SerpApiOrganicItem {
+  title?: string
+  name?: string
+  link?: string
+  url?: string
+  phone?: string
+  address?: string
+  location?: string
+  snippet?: string
+  description?: string
+  reason?: string
+}
+
 const extractExhibitionFootprints = (snippet: string, title: string): string[] => {
   const text = `${title} ${snippet}`
   const footprints: string[] = []
 
   // Match exhibition/trade show names with year context
-  const pattern = /([A-Z][A-Za-z0-9&'\/\-]+(?:\s+[A-Z][A-Za-z0-9&'\/\-]+){1,6})\s*(\d{4})?/g
-  const exhibitionKeywords = /exhibition|expo|trade\s+show|fair|conference|summit|forum|show|convention|meet|exposition/i
+  const pattern = /([A-Z][A-Za-z0-9&'/-]+(?:\s+[A-Z][A-Za-z0-9&'/-]+){1,6})\s*(\d{4})?/g
+  const exhibitionKeywords =
+    /exhibition|expo|trade\s+show|fair|conference|summit|forum|show|convention|meet|exposition/i
 
   let match
   while ((match = pattern.exec(text)) !== null) {
@@ -34,49 +54,58 @@ const extractExhibitionFootprints = (snippet: string, title: string): string[] =
   return [...new Set(footprints)].slice(0, 10)
 }
 
-const normalizeTradeShowResult = (item: any, sourceSite: string) => {
+const normalizeTradeShowResult = (item: SerpApiOrganicItem, sourceSite: string) => {
   const snippet = String(item?.snippet || item?.description || '').trim()
   const title = String(item?.title || item?.name || '').trim()
   return {
-  source: 'trade_show' as const,
-  company: title.replace(/\s*\|.*$/, '').replace(/ – .*$/, '').trim(),
-  website: String(item?.link || item?.url || '').trim(),
-  phone: String(item?.phone || '').trim(),
-  address: String(item?.address || item?.location || '').trim(),
-  snippet,
-  reason: String(item?.reason || snippet || '').trim() || `Trade show/exhibition record via ${sourceSite}`,
-  contact: '',
-  contactTitle: '',
-  exhibitionFootprints: extractExhibitionFootprints(snippet, title),
+    source: 'trade_show' as const,
+    company: title
+      .replace(/\s*\|.*$/, '')
+      .replace(/ – .*$/, '')
+      .trim(),
+    website: String(item?.link || item?.url || '').trim(),
+    phone: String(item?.phone || '').trim(),
+    address: String(item?.address || item?.location || '').trim(),
+    snippet,
+    reason: String(item?.reason || snippet || '').trim() || `Trade show/exhibition record via ${sourceSite}`,
+    contact: '',
+    contactTitle: '',
+    exhibitionFootprints: extractExhibitionFootprints(snippet, title),
+    dataSourceNote: '基于 SerpApi 网页搜索的近似展会数据，来源为公开展会目录网站（非官方展会名录接口），仅供参考。',
   }
 }
 
 export class TradeShowProvider implements SearchProvider {
   readonly id = 'trade_show' as const
-  readonly label = 'SerpApi Trade Show Search'
+  readonly name = 'SerpApi Trade Show Search'
+  readonly requiredConfigKeys = ['googleKey']
 
   supportedLanguages(): string[] {
     return ['en']
+  }
+
+  isAvailable(config?: ProviderConfig): boolean {
+    return !!config?.googleKey
   }
 
   async execute(query: ProviderQuery): Promise<ProviderExecuteResult> {
     const { keyword, googleKey, timeoutMs, myJobId } = query
     if (!googleKey) return { results: [], error: 'SerpApi key not configured' }
 
-    const { getCurrentActiveJobId } = await import('../search-service')
-    if (myJobId !== getCurrentActiveJobId()) {
+    const { isKnownActiveJobId } = await import('../search-service')
+    if (!isKnownActiveJobId(myJobId)) {
       return { results: [], error: `Stale job ${myJobId} — discarded by temporal isolation` }
     }
 
     try {
-      const results: any[] = []
+      const results: ProviderResult[] = []
 
       for (const site of TRADE_SHOW_SITES) {
         if (results.length >= FETCH_LIMIT) break
         const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(`${site} ${keyword}`)}&api_key=${encodeURIComponent(googleKey)}&num=10`
         const response = await fetchWithRetry(url, { method: 'GET' }, getDefaultSerpApiTimeoutMs(timeoutMs || 30000), {
           retries: 1,
-          shouldRetry: (res: any, err: any) => {
+          shouldRetry: (res: Response | null, err: unknown) => {
             if (err) return true
             return Boolean(res && SERPAPI_RETRYABLE_STATUS.has(res.status))
           },
@@ -86,7 +115,7 @@ export class TradeShowProvider implements SearchProvider {
         const rawText = await response.text()
         const json = rawText ? JSON.parse(rawText) : {}
         const pageResults = Array.isArray(json?.organic_results) ? json.organic_results : []
-        results.push(...pageResults.map((r: any) => normalizeTradeShowResult(r, site)))
+        results.push(...pageResults.map((r: SerpApiOrganicItem) => normalizeTradeShowResult(r, site)))
       }
 
       return { results }

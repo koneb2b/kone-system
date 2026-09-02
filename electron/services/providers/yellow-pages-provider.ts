@@ -1,4 +1,9 @@
-import { ProviderQuery, type SearchProvider, type ProviderExecuteResult } from '../provider-registry'
+import {
+  ProviderQuery,
+  type ProviderConfig,
+  type SearchProvider,
+  type ProviderExecuteResult,
+} from '../provider-registry'
 
 /**
  * YellowPagesProvider — 已弃用。
@@ -16,14 +21,22 @@ import { ProviderQuery, type SearchProvider, type ProviderExecuteResult } from '
  */
 export class YellowPagesProvider implements SearchProvider {
   readonly id = 'yellow_pages' as const
-  readonly label = 'Yellow Pages (deprecated)'
+  readonly name = 'Yellow Pages (deprecated)'
+  readonly requiredConfigKeys: string[] = []
 
   supportedLanguages(): string[] {
     return ['en']
   }
 
+  isAvailable(_config?: ProviderConfig): boolean {
+    return false
+  }
+
   async execute(_query: ProviderQuery): Promise<ProviderExecuteResult> {
     // Deprecated — yellow pages data is now routed through AnySearch
-    return { results: [], error: 'DEPRECATED: Yellow Pages provider has been deprecated. AnySearch handles yellow page data routing.' }
+    return {
+      results: [],
+      error: 'DEPRECATED: Yellow Pages provider has been deprecated. AnySearch handles yellow page data routing.',
+    }
   }
 }

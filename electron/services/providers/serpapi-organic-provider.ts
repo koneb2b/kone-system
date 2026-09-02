@@ -1,9 +1,32 @@
 import { fetchWithRetry, getDefaultSerpApiTimeoutMs } from '../proxy-service'
-import { ProviderQuery, type SearchProvider, type ProviderExecuteResult } from '../provider-registry'
+import {
+  ProviderQuery,
+  type ProviderConfig,
+  type SearchProvider,
+  type ProviderExecuteResult,
+  type ProviderResult,
+} from '../provider-registry'
 
 const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 
-const normalizeOrganicResult = (item: any) => ({
+interface SerpApiOrganicItem {
+  title?: string
+  name?: string
+  company?: string
+  website?: string
+  url?: string
+  link?: string
+  phone?: string
+  phoneNumber?: string
+  address?: string
+  location?: string
+  snippet?: string
+  summary?: string
+  description?: string
+  reason?: string
+}
+
+const normalizeOrganicResult = (item: SerpApiOrganicItem) => ({
   source: 'google_organic' as const,
   company: String(item?.company || item?.name || item?.title || '').trim(),
   website: String(item?.website || item?.url || item?.link || '').trim(),
@@ -15,23 +38,28 @@ const normalizeOrganicResult = (item: any) => ({
 
 export class SerpApiOrganicProvider implements SearchProvider {
   readonly id = 'google_organic' as const
-  readonly label = 'SerpApi Google Organic'
+  readonly name = 'SerpApi Google Organic'
+  readonly requiredConfigKeys = ['googleKey']
 
   supportedLanguages(): string[] {
     return ['en']
+  }
+
+  isAvailable(config?: ProviderConfig): boolean {
+    return !!config?.googleKey
   }
 
   async execute(query: ProviderQuery): Promise<ProviderExecuteResult> {
     const { keyword, googleKey, timeoutMs, myJobId } = query
     if (!googleKey) return { results: [], error: 'SerpApi key not configured' }
 
-    const { getCurrentActiveJobId } = await import('../search-service')
-    if (myJobId !== getCurrentActiveJobId()) {
+    const { isKnownActiveJobId } = await import('../search-service')
+    if (!isKnownActiveJobId(myJobId)) {
       return { results: [], error: `Stale job ${myJobId} — discarded by temporal isolation` }
     }
 
     try {
-      const results: any[] = []
+      const results: ProviderResult[] = []
 
       for (let page = 0; page < 2; page++) {
         const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword)}&api_key=${encodeURIComponent(googleKey)}&start=${page * 10}&num=10`

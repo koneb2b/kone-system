@@ -44,7 +44,7 @@ Allowed:
 
 Mandatory principle:
 - any high-value operation must default to Fail-Closed authorization
-- all IPC channel registration must go through `electron/ipc/registry.ts` (single source of truth at runtime)
+- all IPC channel registration must go through `electron/ipc/registry.ts` (single source of truth at runtime) — **目标态**；存量迁移进度见 §`electron/ipc/registry.ts` 迁移状态注记
 
 ### `electron/ipc/contracts/` - IPC type-safe contract definitions
 Allowed:
@@ -64,6 +64,9 @@ Responsibilities:
 - channel whitelist enforcement (unknown channels rejected)
 - contract-aware validation via `registerHandler()` wrapper
 - testable gateway: `dumpRegistry()` for debug, `resetRegistry()` for test isolation
+- runtime binding via `attach(ipcMain)` — wires every registered channel to `ipcMain.handle` (called once at the end of `registerIpcHandlers()` in `main.ts`; idempotent against double-binding)
+
+> ⚠️ **迁移状态注记（P0-4）**：注册中心基础设施已完整落地（register/dispatch/lock/assert/dump/reset/attach），`main.ts` 已在启动时调用 `registry.attach(ipcMain)`。但**存量生产 handler 仍走各 `register*Handlers()` 直挂 `ipcMain.handle`，尚未迁移到 `registerIpc()`**。迁移须按服务逐批进行（每批附带契约定义 + 单测），迁移完成后 `assertAllRegistered()` 才作为启动门禁启用。在迁移完成前，"all IPC channel registration must go through registry" 是**目标态**而非现状。
 
 ### `preload/` - Minimal secure bridge
 Allowed:
@@ -195,6 +198,31 @@ By contrast, Premium n8n automation may continue remotely after payload handoff,
 5. WhatsApp Basic execution is limited to low-volume Puppeteer + Web WhatsApp DOM automation (`data-testid` selectors, labeled experimental·Beta — NOT the `whatsapp-web.js` protocol layer) with QR/session health handling; Premium execution may use official WhatsApp Cloud API.
 6. Email execution must use SMTP/IMAP plus DNS deliverability checks; high-risk SPF/DKIM/DMARC states must soft-lock sends.
 7. Agent completion must update both persistent lead `agentStatus` and runtime `AgentState`; UI must not infer success locally.
+
+---
+
+## 9.6 Precision & Differentiation Closure (P0, G1–G4)
+
+1. **Eligibility Gate (Stage 0.5, one-vote veto)** — after `computeScoutRelevance` and before ICP scoring, `computeEligibilityVeto()` applies structural hard-veto categories (B2C/retail terminal, repair services, used/refurbished, marketplace sellers, pure content/news sites). A vetoed candidate never enters ICP scoring or the Agent pipeline; the discard is recorded as `准入硬否决:<category>` in the structured probe. Sanctioned-country and CRM-protection vetoes require candidate-external data and remain documented gaps — they must not be faked.
+2. **Word-boundary product-term matching** — `computeIcpMatchScore` must match product terms via `matchesProductTerm()`: ASCII terms use `\b` word boundaries (substring false-positives like `car`→`carpet` are forbidden); non-ASCII localized variants fall back to `includes`. `coreProductTerms` must include localized language product variants from intent mutation (multi-language search constitution).
+3. **Five-grade email verification** — `electron/utils/email-verification.ts` emits `verified / probable / catch_all / risky / invalid`. Valid mapping: `verified|probable|catch_all → true`, `risky|invalid → false`. Disposable domains and role-accounts (`info@`, `sales@`, …) are `risky`. Catch-all domains require a decoy RCPT probe; greylist (421/450/451) gets exactly one backoff retry, then `probable`. SMTP-inconclusive results must degrade to `probable`, never fake `verified`. The verification layer is batch-serial, capped at 50/batch, and stays behind the `cloud_send` premium gate.
+4. **Differentiated email content chain** — `EmailAgent.executeSequence` content priority: `task.aiEmail` (AI pitch carried on the lead, Stage 0 only) → injected `emailContentProvider` (real-time LLM 150-word personalized draft, 20s timeout) → stage templates as final fallback. Every send logs `email_content_source` for auditability. Content-layer failure must never abort the send chain; suppression, DNS soft-lock, and daily-limit gates keep their existing order.
+5. **Decision-maker static validation** — collected decision makers pass zero-network static validation (`electron/utils/contact-validation.ts`): email static grading (format/disposable/role) and phone E.164 format check, annotated as `emailGrade`/`phoneValid`. Confidence must not be fabricated; the renderer shows the "AI 推测，未验证" degrade badge when `confidenceScore <= 0`. SMTP-level verification belongs to the pre-send gate, not the acquisition layer.
+
+### P1 enhancements (same closure wave)
+
+6. **Full LLM scoring coverage + confidence labeling** — `SEARCH_LLM_SCORE_LIMIT` equals `SEARCH_TARGETED_LEAD_LIMIT` (both `50`): every displayed lead receives LLM scoring + website enrichment under the unchanged concurrency-2 ceiling. `scoreSource` (`'ai' | 'deterministic'`) travels from the scoring path through `applySchemaDefaults`/mappers to the renderer, where the leads table and search cards label "AI" vs "规则" so users can always tell the two precision tiers apart.
+7. **Real LLM icebreaker generation** — `LinkedinAgent` accepts an injected `icebreakerProvider`; generated copy must be grounded in actually extracted profile fields (name/headline/industry/about) and logged via `icebreaker_source`. Template fallback (`buildIcebreakerTemplate`) applies on failure. The read-only boundary is untouched: copy is for manual outreach only.
+8. **Follow-up manual hold** — when IMAP is unconfigured the reply state is unknowable; the follow-up tick must NOT auto-advance. The plan is marked `pendingManual`, excluded from `isPlanDue`, and the renderer shows a "邮件需人工确认" badge via `AgentStatus.emailPendingManual`. The hold clears automatically once IMAP is configured and the sequence resumes.
+9. **Recipient send window + interval jitter** — cold email is delivered only within the recipient's local 09:00-18:00 (`electron/utils/send-window.ts`, country→IANA map). Window deferrals return `outside_recipient_send_window` before any counter mutation: no daily-quota consumption, no failure count, plan deferred to the next tick. Unknown timezones are allowed (honest degradation — never guess). Stage intervals carry a ±20% random jitter (`jitteredInterval`, injectable random source) to avoid metronomic send patterns.
+
+### P2/P3 enhancements (same closure wave)
+
+10. **Structured opportunity score (Stage 2)** — the LLM scoring prompt requires `opportunityScore: { icpFit(0-55), intent(0-35), evidence(0-10), riskPenalty(0-20), finalScore }` with `totalScore = finalScore`; `normalizeOpportunityScore()` clamps dimensions and recomputes `finalScore` from the formula. Missing/invalid LLM output → `undefined` (never fabricated). The Stage-1 deterministic 40/30/20/10 constants and the concurrency-2 / 3000-char red lines are untouched.
+11. **Configurable DKIM selectors** — `user_config.dnsShield.dkimSelectors` (settings UI: DNS card in the outreach console) is MERGED with the built-in default selector list (append-only, never replaces) in both `dns-service` and `EmailAgent.checkDnsHealth`; the SPF/blacklist critical soft-lock rule is unchanged.
+12. **Five-grade verification queues** — `buildVerificationQueues()` routes verification results: verified/probable → primary, catch_all → throttled (content-reliant), risky → deprioritized, invalid → suppression candidates. `EmailAgent` hard-blocks disposable/format-invalid recipients before any counter mutation and logs role-account sends (`send_role_account`) without blocking.
+13. **Multi-window temporal isolation (P3-2)** — `activeJobIds: Map<senderId, jobId>` scopes stale-job checks per window; providers discard via `isKnownActiveJobId(myJobId)` (matches ANY active window's job). `getCurrentActiveJobId()` remains as the global-latest fallback for backward compatibility.
+14. **Cadence guidance (P2-2, partial)** — `describeCadence(stage)` emits the 14-day omni-channel rhythm (Day0 email → Day3-5 LinkedIn manual touch → Day7-10 FU1 → Day12-14 FU2) into stage-transition logs. The unified cross-channel orchestrator stays roadmap until its product surface exists — do not claim it as shipped.
 
 ---
 

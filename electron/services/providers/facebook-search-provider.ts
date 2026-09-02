@@ -1,10 +1,30 @@
 import { fetchWithRetry, getDefaultSerpApiTimeoutMs } from '../proxy-service'
-import { ProviderQuery, type SearchProvider, type ProviderExecuteResult } from '../provider-registry'
+import {
+  ProviderQuery,
+  type ProviderConfig,
+  type SearchProvider,
+  type ProviderExecuteResult,
+  type ProviderResult,
+} from '../provider-registry'
 
 const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 const FETCH_LIMIT = 50
 
-const normalizeFacebookResult = (item: any) => ({
+interface SerpApiFacebookItem {
+  title?: string
+  name?: string
+  page_name?: string
+  link?: string
+  url?: string
+  phone?: string
+  address?: string
+  location?: string
+  snippet?: string
+  description?: string
+  about?: string
+}
+
+const normalizeFacebookResult = (item: SerpApiFacebookItem) => ({
   source: 'facebook_search' as const,
   company: String(item?.title || item?.name || item?.page_name || '').trim(),
   website: String(item?.link || item?.url || '').trim(),
@@ -18,30 +38,35 @@ const normalizeFacebookResult = (item: any) => ({
 
 export class FacebookSearchProvider implements SearchProvider {
   readonly id = 'facebook_search' as const
-  readonly label = 'SerpApi Facebook Search'
+  readonly name = 'SerpApi Facebook Search'
+  readonly requiredConfigKeys = ['googleKey']
 
   supportedLanguages(): string[] {
     return ['en']
+  }
+
+  isAvailable(config?: ProviderConfig): boolean {
+    return !!config?.googleKey
   }
 
   async execute(query: ProviderQuery): Promise<ProviderExecuteResult> {
     const { keyword, googleKey, timeoutMs, myJobId } = query
     if (!googleKey) return { results: [], error: 'SerpApi key not configured' }
 
-    const { getCurrentActiveJobId } = await import('../search-service')
-    if (myJobId !== getCurrentActiveJobId()) {
+    const { isKnownActiveJobId } = await import('../search-service')
+    if (!isKnownActiveJobId(myJobId)) {
       return { results: [], error: `Stale job ${myJobId} — discarded by temporal isolation` }
     }
 
     try {
-      const results: any[] = []
+      const results: ProviderResult[] = []
 
       for (let page = 0; page < 2; page++) {
         // Use SerpApi Facebook search engine
         const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(`site:facebook.com ${keyword}`)}&api_key=${encodeURIComponent(googleKey)}&start=${page * 10}&num=${FETCH_LIMIT}`
         const response = await fetchWithRetry(url, { method: 'GET' }, getDefaultSerpApiTimeoutMs(timeoutMs || 30000), {
           retries: 2,
-          shouldRetry: (res: any, err: any) => {
+          shouldRetry: (res: Response | null, err: unknown) => {
             if (err) return true
             return Boolean(res && SERPAPI_RETRYABLE_STATUS.has(res.status))
           },

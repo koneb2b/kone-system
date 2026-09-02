@@ -120,9 +120,9 @@ Agent 执行管道 (agent-pipeline.ts)
 
 ## Continuous Search Temporal Isolation Contract
 
-- `electron/services/search-service.ts` implements JobID stamping (`currentActiveJobId`) for temporal isolation: every `handleSearchExecute` invocation generates `crypto.randomUUID()`. All async callbacks (SerpApi response, AnySearch mutate, LLM scoring, website enrichment) must check `myJobId !== currentActiveJobId` at entry and silently discard if mismatched, preventing cross-industry race conditions.
-- The contract applies to: `emitBasicResults`, `emitDecisionMakers`, `computeLeadScore`, `enrichLeadWebsite`, and all `.then()` / `await` continuations in the search pipeline.
-- This is a module-level singleton pattern, sufficient for single-window single-user. Future multi-tab concurrent search should upgrade to a `Map<string, string>` structure.
+- `electron/services/search-service.ts` implements JobID stamping for temporal isolation: every `handleSearchExecute` invocation generates `crypto.randomUUID()`. All async callbacks (SerpApi response, AnySearch mutate, LLM scoring, website enrichment) must compare `myJobId` against the owner-scoped active job (`activeJobIdFor()` → `activeJobIds: Map<senderId, jobId>`) at entry and silently discard if mismatched, preventing cross-industry race conditions.
+- The contract applies to: `emitBasicResults`, `emitLeadScored`, `emitStreamComplete`, `enrichLeadWithDeepProbe`, and all `.then()` / `await` continuations in the search pipeline. (勘误：早期版本写作 `emitDecisionMakers` / `computeLeadScore` / `enrichLeadWebsite`，这三个函数名在代码中不存在；以本行为准。)
+- **P3-2 升级（已落地）**：隔离结构已由模块级单例升级为 `Map<ownerKey, jobId>`（ownerKey = sender WebContents id），多窗口/多 Tab 并发搜索互不误杀。Provider 的陈旧检查统一使用导出的 `isKnownActiveJobId(myJobId)`（匹配任意活跃窗口的 job），`getCurrentActiveJobId()` 保留为全局最新回退（向后兼容）。
 
 ## Search-to-Agent Data Pipeline Contract
 

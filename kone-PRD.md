@@ -17,7 +17,7 @@
 - **能力真相**：各 Provider 的真实可用状态以 `PROVIDER-CAPABILITY.md` 为唯一事实源。
 - **契约真相**：IPC 通道/类型以 `src/shared/ipc-contracts.ts` + `electron/ipc/channels.ts` 为运行时事实源。
 - **方法论参考**：`kone-.md` 是通用获客方法论北极星（愿景/SOP），**非实装规格**；凡其内容（评分模型、技术栈、算力选型）与本文件冲突，一律以本文件为准。
-- **时点快照（非活规范）**：`KONE-V1.3-对齐审计分析报告.md`、`KONE-商用成熟度深度审计报告.md`、`KONE-V1.3-优化计划.md`、`V1.2-to-V1.3-alignment.md` 均为特定 commit 的历史快照，仅供追溯，**不得作为当前规范裁决依据**。
+- **时点快照（非活规范）**：`KONE-V1.3-对齐审计分析报告.md`、`KONE-V1.3-优化计划.md`、`KONE-V1.3-商用上线就绪度审计报告.md` 为特定 commit 的治理/审计快照，仅供追溯，**不得作为当前规范裁决依据**。（原列于此的 `KONE-商用成熟度深度审计报告.md` 与 `V1.2-to-V1.3-alignment.md` 已于文档治理轮**清除归档**——内容分别并入对齐审计报告 §6/§8/§10 与本文件 §三，仅留重定向墓碑桩。）
 
 ### 0.3 宪法常量单一源 (Constitutional Constants — 只此一份)
 以下硬性常量**只在本节定义一次**；其余所有文档（ARCH-STANDARDS、.clinerules、agent 蓝图、PROJECT-PRD 等）如需引用，**只能指针引用本节，不得改写数值**。任何与本节数值不一致的表述均视为文档缺陷：
@@ -134,6 +134,7 @@
 - 排序与状态归一稳定性：合并完成后，继续无条件锁死两项既有法典：
   - 排序法典：1. `addedDate` 降序；2. `matchScore` 降序，未评分项统一按 `-1` 兜底参与排序。
   - 归一法典：调用 `normalizeLeadStatus` 确保 `qualified` 等过渡态收敛为 `contacting`，未知值归一为 `new`。
+- **`matchScore` 三态语义法典**（V1.2 不变红线，自历史台账移植固化）：`undefined` = 未评分（Scout 骨架态，严禁伪造成 0 分）；有效数字 = 已评分；`null` = 上游判定无效值。**任何映射层不得将 `undefined`/`null` 静默转换为 `0`**——0 分与未评分是两种完全不同的商业语义（前者是"评估过且极差"，后者是"尚未评估"），混淆即破坏高潜推荐漏斗的可信度。
 
 ## 🛡️ 四、 本地运行物理边界与性能控制红线 (Performance Guard)
 ### 1. 4G-8G 办公设备轻量计算高压线
@@ -153,11 +154,11 @@
 #### 0.1 数据源层 (Provider Plugin Layer)
 - **Provider 抽象接口**：`SearchProvider` 定义标准契约 `{ execute(query): SearchExecuteResult[], name: string, id: DataSourceType, supportedLanguages(): string[] }`
 - **Provider 注册表**：`provider-registry.ts` 集中管理所有已注册 Provider，支持运行时增删。
-- **现有 Provider 清单**：SerpApi（`google_maps`/`google_organic`）、AnySearch（`anysearch`）、LinkedIn SerpApi（`linkedin_search` via `linkedin-search-provider.ts`，复用 SerpApi Key）——V1.3 已落地
-- **待实现 Provider（P1 优先）**：
-  - `customs_shipment`: 海关提单数据爬虫（3-5 天）
-  - `facebook_search`: Facebook 站点限定搜索（1 天）
-  - `trade_show`: 全球展会参展名录爬虫（2-3 天）
+- **Provider 清单（以 `PROVIDER-CAPABILITY.md` 为唯一事实源）**：
+  - **✅ 真实可用**：SerpApi Maps（`google_maps`）、SerpApi Organic（`google_organic`）、LinkedIn SerpApi（`linkedin_search`）、海关网页补位（`customs_shipment`，基于公开网页的近似检索，非官方提单库直连）、展会网页补位（`trade_show`，同前）、Facebook 限定检索（`facebook_search`）——均已接入 `myJobId` 时空隔离与 retry/timeout
+  - **⚠️ 实验性**：AnySearch（`anysearch`）垂直 B2B 实体 API，依赖第三方稳定性
+  - **⛔ 已弃用**：`yellow_pages`（`execute()` 返回 DEPRECATED 错误，黄页由 AnySearch 统一路由）
+  - **宣传口径约束**：`customs_shipment`/`trade_show` 对外只能使用「基于公开网页的海关/展会线索补位」措辞，严禁宣称官方数据库直连
 - **宪法约束**：每个 Provider 必须自包含、无状态、可独立测试。通过 `providerId` 字符串标识，配置来源于 `userConfig.providers` 数组。Provider 必须接收 `language`、`country`、`city`、`intentProducts` 与 `b2bAttributes` 参数，不得在 Provider 内重新臆造用户意图。
 
 #### 0.2 搜索与评分层 (Search & Scoring Layer)
@@ -168,16 +169,15 @@
 - `enrichLeadWebsite` 深探补全阶段：官网抓取、联系人提取、LLM 全景白皮书生成
 - 最终产出 `SearchExecuteResult`：含 `decisionMakers[]`、`customsData`、`exhibitionFootprints[]`、`agentStatus`
 
-#### 0.3 管道分发层 (Agent Pipeline Layer) — **待实现（V1.3 规划）**
-- **`agent-pipeline.ts`** 新文件：监听搜索完成事件，自动将合格线索注入 Agent 队列。
-- **触发时机**：`search:stream-complete` 事件后，由 `pipeline-orchestrator` 自动拾取已评分线索。
-- **管道过滤**：只将 `matchScore >= 60` 且拥有可触达资产（`phone` 或 `email` 或 `linkedinUrl` 任一非空）的线索加入 Agent 队列。
-- **队列模型**：`AgentTask { leadId, company, phone?, email?, linkedinUrl?, preferredAgent?, createdAt, priority }` 作为最小任务单元。
-- **宪法约束**：Agent 管道必须在主进程常驻运行，不得依赖前端状态。管道执行不得阻塞搜索流程。
+#### 0.3 管道分发层 (Agent Pipeline Layer) — **已落地（V1.3）**
+- **`agent-pipeline.ts`**：核心模块 `buildAgentTaskQueue()` / `withPipelineIsolation()` / `isStaleTask()`；由 `search-service.ts` 在 `search:stream-complete` 后于 `withPipelineIsolation(runId)` 包裹内调用，将合格线索注入 Agent 队列（**先暂存供人工确认，绝不自动发送**）。
+- **管道过滤**：只将 `matchScore >= 60` 且拥有可触达资产（`phone` / `email` / `linkedinUrl` / `decisionMakers[].linkedinUrl` 任一非空）的线索加入 Agent 队列。顶层无 `linkedinUrl` 时从 `decisionMakers[].linkedinUrl` 聚合回退（P0-3 修复）。
+- **队列模型**：`AgentTask { id, taskRunId, leadId, leadKey, company, website, phone?, email?, linkedinUrl?, createdAt, priority }` 作为最小任务单元；`leadKey` 携带 `SearchExecuteResult.id` 稳定 UUID 供写回关联。
+- **宪法约束**：Agent 管道在主进程常驻运行（`stageAgentsFromPipeline` 暂存 + `consumeStagedTargets` 消费），不依赖前端状态，不阻塞搜索流程。
 
 #### 0.4 智能体执行层 (Agent Execution Layer)
 - 三个 Agent 独立执行任务队列中的任务，各自消费 `AgentTask` 中对应字段（WhatsApp 消费 `phone`、LinkedIn 消费 `linkedinUrl`、Email 消费 `email`）
-- 执行完成后，Agent 调用 `writeBackAgentStatus(leadId, agentType, result)` 将执行结果写回对应 `LeadItem.agentStatus` 字段
+- 执行完成后，Agent 调用 `writeBackAgentStatus(leadKeyOrCompany, agentType, status)` 将执行结果写回：`agentStatusStore`（持久化，键为 `leadKey` 稳定 UUID，回退 `company`）+ `AGENT.STATUS_CHANGED` IPC 运行态双管道
 - 详细 Agent 架构见第 **六** 节
 
 ### 0.5 ICP 结构化评分宪法级算法（computeIcpMatchScore 确定性评分）
@@ -207,22 +207,24 @@
 - 即 §0.5 的 `computeIcpMatchScore` 40/30/20/10，纯函数、无 LLM、毫秒级。
 - 职责：对 ≤200 候选做**免费初排 + 漏斗预筛**，为并发 2 的 LLM 预算做减负。**权重与纯函数性质受 §零.3 宪法保护，不得改动。**
 
-**Stage 0.5 — Scout 准入硬门 Eligibility Gate（`[路线图]`，吸收自 kone-.md §二）**
-- 在 `computeScoutRelevance` 现有负向词过滤基础上，扩展为**结构化 0/1 一票否决**：明确 B2C/Retail 零售终端、Repair 维修/Used 二手翻新、电商平台卖家（Amazon/eBay/AliExpress/Shopee）、纯博客/论坛/资讯站、黑名单行业与被制裁国、CRM 保护期内重复企业。
-- 价值：修复当前模型的**假高分漏洞**——例如"有官网(40)+含产品词(30)+含 supplier(20)+有邮箱(10)=100 分"的电商卖家/维修点会被误判为高潜；硬门将其直接 0 分。
+**Stage 0.5 — Scout 准入硬门 Eligibility Gate（`[部分落地 2026-09]`，吸收自 kone-.md §二）**
+- 已落地（`search-service.ts` `computeEligibilityVeto`，ARCH-STANDARDS §9.6）：在 `computeScoutRelevance` 软过滤之后执行**结构化 0/1 一票否决**，当前覆盖可从候选文本可靠判定的类目——B2C/Retail 零售终端、Repair 维修、Used 二手翻新、电商平台卖家（Amazon/eBay/AliExpress/Shopee 等）、纯博客/资讯站；命中即剔除，不进 ICP 评分与 Agent 管道（结构化探针记录 `准入硬否决:<类目>`）。同步修复产品词 `includes` 子串误伤（词边界正则）并纳入本地语言变体。
+- 仍为 `[路线图]`：黑名单行业与被制裁国、CRM 保护期内重复企业——需候选文本之外的上下文数据，未落地前不得对外宣称。
+- 价值：修复**假高分漏洞**——例如"有官网(40)+含产品词(30)+含 supplier(20)+有邮箱(10)=100 分"的电商卖家/维修点不再被误判为高潜。
 
-**Stage 2 — LLM 机会分（`[路线图]`，吸收自 kone-.md §二，落在 `computeLeadScore`/`buildAnalysisPrompt`）**
-- §0.5 宪法本就允许"后续 LLM 评分可覆盖 `matchScore`"；此层即在该许可下，以 `kone-.md` 富模型产出**最终机会分**：
+**Stage 2 — LLM 机会分（`[部分落地 2026-09]`，吸收自 kone-.md §二）**
+- 已落地：`buildUniversalIcpPrompt` 已升级为结构化机会分输出 `opportunityScore: { icpFit(0-55), intent(0-35, Why-Now 证据), evidence(0-10), riskPenalty(0-20), finalScore }`，`totalScore` 即重算后的 `finalScore`；`normalizeOpportunityScore` 纯函数钳制校验，非法/缺失输出 undefined（不臆造）。结构化分随 `SearchExecuteResult.opportunityScore` 透传至前端，线索表徽标 tooltip 展示分维度拆解。
+- 仍为 `[路线图]`：Intent 的 Tier S/A/B 分级证据源扩展与商机卡装配范式。
+- §0.5 宪法本就允许"后续 LLM 评分可覆盖 `matchScore`"；本层在该许可下运行：
   - **ICP Fit（55%）**：产品应用匹配 / 企业定位（分销·进口·EPC·OEM）/ 区域覆盖 / 采购承载力 / MOQ 对齐 / 触达可实现性。
-  - **Intent 采购意图（35%）**：Tier S 购买邻近（RFQ·招标·在招采购总监·量产公告，权重最高）+ Tier A 产品信号（新产线·新认证·参展）+ Tier B 业务变化（高管变动·进新市场·研发扩招）。**这是当前实装最大空白，也是转化率命门。**
+  - **Intent 采购意图（35%）**：Tier S 购买邻近（RFQ·招标·在招采购总监·量产公告，权重最高）+ Tier A 产品信号（新产线·新认证·参展）+ Tier B 业务变化（高管变动·进新市场·研发扩招）。
   - **Evidence（10%）**：A/B/C/D 置信分级（见 §六.4），映射 `DecisionMaker.confidenceScore`。
-  - **分级 Risk Penalty（0~20 扣分）**：仅公共邮箱(Gmail/Outlook)−10、仅通用前缀(info@/sales@)−5、未识别决策人−5、官网极简−5——比当前"有联系方式即 +10"更精细区分联系人质量。
-- 输出锚定既有字段：`matchReasons`（含 Why-Now 证据）、`riskFlags`（Risk Penalty 明细）、`inferredRole`、`salesStrategy`；`Final Opportunity Score ≥ 80` 触发高价值商机卡装配（见 §六.4）。
+  - **分级 Risk Penalty（0~20 扣分）**：仅公共邮箱(Gmail/Outlook)−10、仅通用前缀(info@/sales@)−5、未识别决策人−5、官网极简−5。
 
 **分层宪法约束**
 - Intent/Eligibility/ICP-Fit 子维度需语义判断，**只能置于 Stage 0.5 / Stage 2**，严禁塞进 Stage-1 纯函数（会破坏其确定性与零成本）。
 - Stage 2 的 55/35/10 **不得改写 §零.3 的 40/30/20/10**——那是 Stage-1 独立常量；两套权重服务两个阶段，各自独立。
-- 实现前均为 `[路线图]`，不得对外宣称已具备 Intent 评分；落地须补回归测试并保持并发 2 / 3000 字红线。
+- 不得对外宣称已具备完整的 Tier S/A/B Intent 证据评分；落地须补回归测试并保持并发 2 / 3000 字红线。
 
 ### 0.6 DecisionMaker 数据流出权威路径
 
@@ -324,6 +326,9 @@ class ProviderRegistry {
 - WhatsApp 拓客猎手：Basic 路线使用 **Puppeteer + Web WhatsApp DOM 自动化（`data-testid` 选择器，标注为「实验性 · Beta」）** + 本地扫码 + 本机住宅 IP + 低频发送（默认 3-5/day），session 断开时必须前端提示用户重新扫码；Premium 路线使用 WhatsApp Cloud API 官方通道。任何实现都不得宣称绝对免疫风控，并必须诚实标注 DOM 方案对 WhatsApp 前端改版的脆弱性（非 `whatsapp-web.js` 协议层实现）。
 - LinkedIn 商务猎手：只允许读取用户授权的本地 Session Cookie 并执行 Profile 只读浏览、公开信息提取、AI 破冰文案生成。**严禁自动发送好友申请、严禁自动私信、严禁批量点击 Connect**。前端只能提供复制文案/人工确认入口，不能实现无人值守 LinkedIn 触达。
 - 邮件长效跟随助理：通过本地封装的 `Nodemailer` + IMAP 模块，直连销售人员在设置中配置好的真实企业邮箱。后台异步运行多轮跟进触达序列：第一天发送首轮开发信；若 IMAP 状态检测到对方未回复，第三天自动补发追加信；第七天发送案例跟进。DNS 信誉检测不通过时必须软锁定发送。
+- **跟进序列 IMAP 依赖（`[已落地 2026-09]`，ARCH-STANDARDS §9.6）**：IMAP 未配置属回复检测盲区，跟进序列不得按时间盲推——计划标记 `pendingManual` 暂停，前端徽标提示"邮件需人工确认"；IMAP 配置恢复后自动续推。
+- **冷邮件时区窗口与节律抖动（`[已落地 2026-09]`，ARCH-STANDARDS §9.6）**：已知国家按收件人当地时间 09:00-18:00 窗口投递（窗口外延迟不消耗日频、不计失败）；时区未知的国家不拦截（诚实降级）。轮次间隔叠加 ±20% 随机抖动，避免整点节律指纹。
+- **邮件内容差异化链（`[已落地 2026-09]`，ARCH-STANDARDS §9.6）**：本地 EmailAgent 序列的内容来源优先级为 `task.aiEmail`（线索 AI 定制开发信，首封专用）→ `emailContentProvider`（LLM 实时生成 150 词定制信，20s 超时）→ 阶段模板兜底；每次发送记录 `email_content_source` 供审计。内容层任何失败降级模板、不阻断发送；抑制清单、DNS 软锁、日频门禁顺序不变。硬编码通用模板不再是自动化链路的常规内容来源。
 
 ### 1.1 社媒反封号与反爬现实边界（不得营销夸大）
 - LinkedIn 属于高风控平台，Kone 仅交付 Profile 只读辅助与 AI 文案生成，不交付自动加好友/自动私信。任何后续实现若加入自动 Connect 或 Message，必须先更新本 PRD 并经人工批准。
@@ -332,7 +337,7 @@ class ProviderRegistry {
 - 所有 Agent 实现必须保留真实失败状态：登录失效、频率限制、验证码、账号异常、网络超时均须写入日志和前端状态，不得用 `setTimeout` 或假成功污染指标。
 ### 2. 发信人域名信誉检测防火墙 (mailX 级能力功能融合)
 - 前置安全检阅：在本地 SMTP 发信序列启动前，系统在本地静默调用 DNS 解析引擎，对发信人企业邮箱的域名做一次深度的基础设施信誉检阅。
-- 专业检测指标拦截：核驳域名的 MX 记录、SPF 发件人策略白名单 IP 覆盖率、DKIM 数字签名密钥有效性、DMARC 拦截策略强度，以及是否被全球主流反垃圾邮件黑名单库（如 Spamhaus）动态拉黑。
+- 专业检测指标拦截：核驳域名的 MX 记录、SPF 发件人策略白名单 IP 覆盖率、DKIM 数字签名密钥有效性、DMARC 拦截策略强度，以及是否被全球主流反垃圾邮件黑名单库（如 Spamhaus）动态拉黑。DKIM selector 支持用户自定义（`user_config.dnsShield.dkimSelectors`，设置页"协同引擎"DNS 卡片可配，与默认列表合并探测防止有限列表误报；`[已落地 2026-09]`）。
 - 软锁定交互保护：若发现关键的 SPF/DKIM 配置缺失、或发信域名已进入拉黑高危期，前端发信控制台强制亮起红色高危阻断预警，**软锁定【执行群发】按钮**，阻止用户盲目群发，彻底针对性保护企业核心域名。
 ### 3. 本地独立进程 Session 沙箱隔离多开 (`/accounts`)
 - 特权沙箱隔离：利用 Electron 核心的 `session.fromPartition('persist:account_id')` 物理隔离技术。
@@ -342,9 +347,9 @@ class ProviderRegistry {
 
 > 以下为吸收自方法论北极星 `kone-.md` 的**触达与送达率工程基线**。标注 `[已落地]` 者为当前代码已具备；标注 `[路线图]` 者为目标态增量，实现前不得对外宣称已完成，也不得改写 §零.3 的宪法常量。评分侧的机会分增强（Eligibility Gate / Intent 采购意图 / 分级 Risk Penalty）见 §0.5.1；本节聚焦触达执行节律与交付物。
 
-- **14 天全渠道协同触达节律**（`[路线图]`，扩展现有 Email 3 轮 3/4/7 天序列）：Day 0 系统装配商机卡 → Day 1 复核并发首封定制冷邮件 → Day 3~5 LinkedIn 无推销感同行交流（人工）→ Day 7~10 Follow-up 1（行业白皮书/现货清单）→ Day 12~14 Follow-up 2（Break-up 礼貌确认）。所有自动化动作须遵守目标客户时区 09:00-18:00 与泊松随机延时。
+- **14 天全渠道协同触达节律**（`[部分落地 2026-09]`，扩展现有 Email 3 轮 3/4/7 天序列）：邮件阶段推进日志已附带节律指引（`describeCadence`：Day0 邮件 → Day3-5 LinkedIn 人工交流 → Day7-10 FU1 → Day12-14 FU2）；**统一编排器**（商机卡 Day0 装配、LinkedIn 人工触点 UI、跨渠道队列调度）依赖产品面尚未存在的前端装配范式，保留 `[路线图]`。所有自动化动作须遵守目标客户时区 09:00-18:00 与随机节律抖动（均已落地，见 §三 Agent 边界）。
 - **冷邮件域名矩阵与送达率红线**（`[路线图]`，强化现有 DNS 盾）：使用 2-3 个专用冷发辅助域名（严禁主品牌域名冷触达）；DKIM 2048 位签名 + SPF + DMARC + PTR/TLS 1.3；专业预热池 14-21 天；投诉率强制 < `0.1%`，达 `0.3%` 触发熔断停发。
-- **邮箱有效性五级分级**（`[路线图]`，强化抑制清单）：Verified（优先主队列）/ Probable（首轮定制）/ Catch_all（限频靠内容防投诉）/ Risky（降权 + Risk Penalty）/ Invalid（强制进抑制列表）。
+- **邮箱有效性五级分级**（`[部分落地 2026-09]`，强化抑制清单）：五级引擎已在 `electron/utils/email-verification.ts` 落地并接入 `automation:verify-emails`（ARCH-STANDARDS §9.6）——RFC 深度格式校验、disposable 一次性域名 → `Risky`、role-account（info@/sales@）→ `Risky`、catch-all 域名诱饵探测 → `Catch_all`、灰名单（421/450）退避重试一次后仍 4xx → `Probable`、SMTP 无定论 → `Probable`（不假 Verified）。`valid` 映射：Verified/Probable/Catch_all 通过，Risky/Invalid 拦截。仍为 `[路线图]`：Verified 优先主队列 / Catch_all 限频靠内容 / Risky 降权加 Risk Penalty / Invalid 自动进抑制清单的差异化队列编排。
 - **证据质量 A/B/C/D 置信分级**（`[路线图]`，映射 `DecisionMaker.confidenceScore` 的 UI 呈现）：A 官网原文/官方稿（100%）· B 权威第三方/协会名录（80%）· C 搜索聚合/社媒（50%）· D LLM 推论（20%，须显式标注 Hypothesis）。
 - **商机智能卡标准结构**（`[已落地]` 字段 + `[路线图]` 装配范式）：企业画像与综合评级、Why Now 时机证据、Strategic Gap 战略缺口、推荐适配型号、150 词内定制开发信（Hook + Bridge + Value + Soft CTA）。
 
