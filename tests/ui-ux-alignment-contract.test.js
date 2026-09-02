@@ -23,23 +23,31 @@ test('search quality controls use localized Simplified Chinese for filter labels
 })
 
 test('renderer and main process agree that US local domains may include .com', () => {
-  const searchEngine = read('src', 'components', 'search-engine.tsx')
+  // Renderer-side domain map now lives in the extracted search hook.
+  // 引号风格兼容双/单引号（prettier 可能整文件统一，不影响语义对齐断言）。
+  const searchHook = read('src', 'hooks', 'use-search-engine.ts')
   const searchService = read('electron', 'services', 'search-service.ts')
 
-  assert.match(searchEngine, /usa: \['\.us', '\.com'\]/)
-  assert.match(searchEngine, /'united states': \['\.us', '\.com'\]/)
-  assert.match(searchService, /usa: \['\.us', '\.com'\]/)
-  assert.match(searchService, /'united states': \['\.us', '\.com'\]/)
+  const usEntry = /["']?usa["']?: \[("\.us", "\.com"|'\.us', '\.com')\]/
+  const usStatesEntry = /["']?united states["']?: \[("\.us", "\.com"|'\.us', '\.com')\]/
+  assert.match(searchHook, usEntry)
+  assert.match(searchHook, usStatesEntry)
+  assert.match(searchService, usEntry)
+  assert.match(searchService, usStatesEntry)
 })
 
 test('user-visible search labels are Simplified Chinese without generic English helper copy', () => {
   const searchEngine = read('src', 'components', 'search-engine.tsx')
   const leadsTable = read('src', 'components', 'leads-table.tsx')
 
-  assert.match(searchEngine, /搜索数据源/)
+  // Omni-Search 大一统盲搜 (PROJECT-PRD §3): the legacy "搜索数据源" channel
+  // dropdown was intentionally removed; the single blind-search entry replaces it.
+  assert.doesNotMatch(searchEngine, /搜索数据源/)
+  assert.match(searchEngine, /AI 全渠道盲搜/)
   assert.match(searchEngine, /AI 正在全球检索/)
   assert.match(searchEngine, /立即开始 AI 获客/)
-  assert.doesNotMatch(searchEngine, /Data Source/)
+  // No user-visible English data-source helper copy (JSX text); code comments/identifiers exempt.
+  assert.doesNotMatch(searchEngine, />[^<]*Data Source[^<]*</)
   assert.match(leadsTable, /已评分高潜线索推荐/)
   assert.match(leadsTable, /仅展示已完成评分且最值得优先跟进的线索/)
 })

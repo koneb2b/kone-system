@@ -7,13 +7,12 @@
  * - 优雅降级：n8n 不可达时自动 fallback 到数据库队列
  */
 
-import * as net from 'net'
-import * as dns from 'dns'
 import { IPC_CHANNELS } from '../ipc/channels'
 import { ensureTrialAccess, registerSecureFeatureIpc } from './license-service'
 import { getPhysicalMachineId } from './license-service'
 import { extractDomain } from '../utils/domain'
 import { safeFetch } from '../utils/http-client'
+import { verifyEmailDetailed, classifyEmailStatic } from '../utils/email-verification'
 import type { ConfigStore } from './config-service'
 
 /* ──────────────────────────────────────────────
@@ -22,6 +21,8 @@ import type { ConfigStore } from './config-service'
 export type EmailVerifyResult = {
   email: string
   valid: boolean
+  /* P0-3 五级分级: verified / probable / catch_all / risky / invalid（增量字段，向后兼容） */
+  grade?: string
   reason?: string
 }
 
@@ -48,80 +49,47 @@ export type EmailTemplate = {
 }
 
 /* ──────────────────────────────────────────────
- *  Email Verification (local SMTP handshake)
+ *  Email Verification（P0-3 五级分级引擎）
+ *  实现位于 utils/email-verification.ts（RFC 深度校验 / disposable / role-account /
+ *  catch-all 探测 / 灰名单退避）。此处保持 IPC 面、Premium 保护与批量纪律不变。
  * ────────────────────────────────────────────── */
-const SMTP_TIMEOUT_MS = 8000
 
-const resolveMx = (domain: string): Promise<string | null> =>
-  new Promise((resolve) => {
-    dns.resolveMx(domain, (err, addresses) => {
-      if (err || !addresses?.length) return resolve(null)
-      const sorted = addresses.sort((a, b) => a.priority - b.priority)
-      resolve(sorted[0].exchange)
-    })
-  })
-
-const smtpHandshake = (mxHost: string, email: string): Promise<{ valid: boolean; reason?: string }> =>
-  new Promise((resolve) => {
-    const socket = new net.Socket()
-    let resolved = false
-    const done = (valid: boolean, reason?: string) => {
-      if (resolved) return
-      resolved = true
-      socket.destroy()
-      resolve({ valid, reason })
-    }
-
-    socket.setTimeout(SMTP_TIMEOUT_MS)
-    socket.on('timeout', () => done(false, 'SMTP 连接超时'))
-    socket.on('error', () => done(false, 'SMTP 连接失败'))
-
-    socket.connect(25, mxHost, () => {
-      let phase = 0
-      let buffer = ''
-
-      socket.on('data', (chunk) => {
-        buffer += chunk.toString()
-        if (!buffer.includes('\r\n')) return
-        const code = parseInt(buffer.slice(0, 3), 10)
-        buffer = ''
-
-        if (phase === 0 && code === 220) {
-          phase = 1
-          socket.write(`EHLO kone-verify.local\r\n`)
-        } else if (phase === 1 && (code === 250 || code === 220)) {
-          phase = 2
-          socket.write(`MAIL FROM:<verify@kone-verify.local>\r\n`)
-        } else if (phase === 2 && code === 250) {
-          phase = 3
-          socket.write(`RCPT TO:<${email}>\r\n`)
-        } else if (phase === 3) {
-          socket.write('QUIT\r\n')
-          done(code === 250, code !== 250 ? `RCPT 拒绝 (${code})` : undefined)
-        } else {
-          socket.write('QUIT\r\n')
-          done(false, `意外响应码 ${code}`)
-        }
-      })
-    })
-  })
+export { classifyEmailStatic }
 
 const verifyEmail = async (email: string): Promise<EmailVerifyResult> => {
-  const trimmed = email.trim().toLowerCase()
-  if (!trimmed || !trimmed.includes('@')) {
-    return { email: trimmed, valid: false, reason: '格式无效' }
-  }
-  const domain = trimmed.split('@')[1]
-  const mxHost = await resolveMx(domain)
-  if (!mxHost) {
-    return { email: trimmed, valid: false, reason: `域名 ${domain} 无 MX 记录` }
-  }
   try {
-    const result = await smtpHandshake(mxHost, trimmed)
-    return { email: trimmed, ...result }
+    const result = await verifyEmailDetailed(email)
+    return { email: result.email, valid: result.valid, grade: result.grade, reason: result.reason }
   } catch {
-    return { email: trimmed, valid: false, reason: 'SMTP 验证异常' }
+    /* 引擎保证 resolve，不 reject——此分支仅为兜底，不武断标 verified。 */
+    const trimmed = String(email || '')
+      .trim()
+      .toLowerCase()
+    return { email: trimmed, valid: false, grade: 'probable', reason: 'SMTP 验证异常' }
   }
+}
+
+/* P2-1 五级验证差异化队列（kone-PRD §六邮箱五级分级）：
+   verified/probable → primary 主队列；catch_all → throttled（限频靠内容防投诉）；
+   risky → deprioritized（disposable/role 降权）；invalid → suppressionCandidates（建议入抑制清单）。
+   未知 grade 按 valid 兜底归类。纯函数，导出供测试与渲染端复用。 */
+export type VerificationQueues = {
+  primary: EmailVerifyResult[]
+  throttled: EmailVerifyResult[]
+  deprioritized: EmailVerifyResult[]
+  suppressionCandidates: EmailVerifyResult[]
+}
+
+export const buildVerificationQueues = (results: EmailVerifyResult[]): VerificationQueues => {
+  const queues: VerificationQueues = { primary: [], throttled: [], deprioritized: [], suppressionCandidates: [] }
+  for (const result of Array.isArray(results) ? results : []) {
+    if (result.grade === 'verified' || result.grade === 'probable') queues.primary.push(result)
+    else if (result.grade === 'catch_all') queues.throttled.push(result)
+    else if (result.grade === 'risky') queues.deprioritized.push(result)
+    else if (result.grade === 'invalid') queues.suppressionCandidates.push(result)
+    else (result.valid ? queues.primary : queues.suppressionCandidates).push(result)
+  }
+  return queues
 }
 
 const verifyEmailsBatch = async (emails: string[]): Promise<EmailVerifyResult[]> => {
@@ -142,8 +110,15 @@ const getN8nWebhookUrl = (store: ConfigStore): string => {
 }
 
 const isPlaceholderWebhook = (value: string) => {
-  const normalized = String(value || '').trim().toLowerCase()
-  return !normalized || normalized.includes('your-webhook') || normalized.includes('placeholder') || normalized.endsWith('/demo')
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return (
+    !normalized ||
+    normalized.includes('your-webhook') ||
+    normalized.includes('placeholder') ||
+    normalized.endsWith('/demo')
+  )
 }
 
 const resolveAuthorizationLevel = (
@@ -170,68 +145,142 @@ const triggerN8nWorkflow = async (
     return { triggered: false, error: '请选择至少一条线索' }
   }
 
-  const compactLeads = leads.map((lead) => {
-    const aiAnalysis = typeof lead.aiAnalysis === 'object' && lead.aiAnalysis ? lead.aiAnalysis as Record<string, unknown> : {}
-    const aiGeneratedPitch = typeof lead.aiGeneratedPitch === 'object' && lead.aiGeneratedPitch ? lead.aiGeneratedPitch as Record<string, unknown> : {}
-    const userSettings = typeof lead.userSettings === 'object' && lead.userSettings ? lead.userSettings as Record<string, unknown> : {}
-    return {
-      lead_info: {
-        email: String(lead.email || '').trim(),
-        company: String(lead.company || '').trim().slice(0, 200),
-        domain: (() => {
-          const raw = String(lead.website || lead.domain || '').trim()
-          try {
-            const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`)
-            return url.hostname.replace(/^www\./, '').toLowerCase()
-          } catch {
-            return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].split('?')[0].toLowerCase()
-          }
-        })(),
-        website: String(lead.website || lead.domain || '').trim(),
-        country: String(lead.country || '').trim().slice(0, 50),
-        contact: String(lead.contact || '').trim().slice(0, 100),
-        contact_title: String(lead.contactTitle || '').trim().slice(0, 120),
-        phone: String(lead.phone || '').trim().slice(0, 80),
-        address: String(lead.address || '').trim().slice(0, 240),
-        source: String(lead.source || '').trim().slice(0, 120),
-        inferred_role: String(lead.inferredRole || '').trim().slice(0, 120),
-        match_reasons: Array.isArray(lead.matchReasons) ? lead.matchReasons.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [],
-        risk_flags: Array.isArray(lead.riskFlags) ? lead.riskFlags.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 3) : [],
-        snippet: String(lead.snippet || '').trim().slice(0, 500),
-      },
-      icp_match_score: resolveLeadScore(lead),
-      ai_analysis: {
-        companyProfile: String(aiAnalysis.companyProfile || '').trim().slice(0, 800),
-        painPoints: String(aiAnalysis.painPoints || '').trim().slice(0, 800),
-        valueMapping: String(aiAnalysis.valueMapping || '').trim().slice(0, 1000),
-        confidence: Number.isFinite(Number(aiAnalysis.confidence)) ? Math.round(Number(aiAnalysis.confidence)) : undefined,
-        source: String(aiAnalysis.source || '').trim().slice(0, 80),
-      },
-      ai_generated_pitch: {
-        emailSubject: String(aiGeneratedPitch.emailSubject || '').trim().slice(0, 200),
-        emailBody: String(aiGeneratedPitch.emailBody || '').trim().slice(0, 2400),
-      },
-      user_settings: {
-        templateId: String(userSettings.templateId || templateId || 'default').trim(),
-        selectedModel: String(userSettings.selectedModel || '').trim().slice(0, 120),
-        icpProfile: (() => {
-          const icp = typeof userSettings.icpProfile === 'object' && userSettings.icpProfile
-            ? userSettings.icpProfile as Record<string, unknown>
-            : {}
-          return {
-            targetProduct: String(icp.targetProduct || '').trim().slice(0, 500),
-            buyerPersona: String(icp.buyerPersona || '').trim().slice(0, 100),
-            coreAdvantage: String(icp.coreAdvantage || '').trim().slice(0, 500),
-            negativeIcp: String(icp.negativeIcp || '').trim().slice(0, 300),
-          }
-        })(),
-      },
-      verification_status: String(lead.verificationStatus || 'unverified').trim(),
-    }
-  }).filter((entry) => entry.lead_info.email && typeof entry.icp_match_score === 'number' && entry.icp_match_score >= N8N_GOLD_FILTER_MIN_SCORE)
+  const compactLeads = leads
+    .map((lead) => {
+      const aiAnalysis =
+        typeof lead.aiAnalysis === 'object' && lead.aiAnalysis ? (lead.aiAnalysis as Record<string, unknown>) : {}
+      const aiGeneratedPitch =
+        typeof lead.aiGeneratedPitch === 'object' && lead.aiGeneratedPitch
+          ? (lead.aiGeneratedPitch as Record<string, unknown>)
+          : {}
+      const userSettings =
+        typeof lead.userSettings === 'object' && lead.userSettings ? (lead.userSettings as Record<string, unknown>) : {}
+      return {
+        lead_info: {
+          email: String(lead.email || '').trim(),
+          company: String(lead.company || '')
+            .trim()
+            .slice(0, 200),
+          domain: (() => {
+            const raw = String(lead.website || lead.domain || '').trim()
+            try {
+              const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`)
+              return url.hostname.replace(/^www\./, '').toLowerCase()
+            } catch {
+              return raw
+                .replace(/^https?:\/\//, '')
+                .replace(/^www\./, '')
+                .split('/')[0]
+                .split('?')[0]
+                .toLowerCase()
+            }
+          })(),
+          website: String(lead.website || lead.domain || '').trim(),
+          country: String(lead.country || '')
+            .trim()
+            .slice(0, 50),
+          contact: String(lead.contact || '')
+            .trim()
+            .slice(0, 100),
+          contact_title: String(lead.contactTitle || '')
+            .trim()
+            .slice(0, 120),
+          phone: String(lead.phone || '')
+            .trim()
+            .slice(0, 80),
+          address: String(lead.address || '')
+            .trim()
+            .slice(0, 240),
+          source: String(lead.source || '')
+            .trim()
+            .slice(0, 120),
+          inferred_role: String(lead.inferredRole || '')
+            .trim()
+            .slice(0, 120),
+          match_reasons: Array.isArray(lead.matchReasons)
+            ? lead.matchReasons
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+                .slice(0, 4)
+            : [],
+          risk_flags: Array.isArray(lead.riskFlags)
+            ? lead.riskFlags
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+                .slice(0, 3)
+            : [],
+          snippet: String(lead.snippet || '')
+            .trim()
+            .slice(0, 500),
+        },
+        icp_match_score: resolveLeadScore(lead),
+        ai_analysis: {
+          companyProfile: String(aiAnalysis.companyProfile || '')
+            .trim()
+            .slice(0, 800),
+          painPoints: String(aiAnalysis.painPoints || '')
+            .trim()
+            .slice(0, 800),
+          valueMapping: String(aiAnalysis.valueMapping || '')
+            .trim()
+            .slice(0, 1000),
+          confidence: Number.isFinite(Number(aiAnalysis.confidence))
+            ? Math.round(Number(aiAnalysis.confidence))
+            : undefined,
+          source: String(aiAnalysis.source || '')
+            .trim()
+            .slice(0, 80),
+        },
+        ai_generated_pitch: {
+          emailSubject: String(aiGeneratedPitch.emailSubject || '')
+            .trim()
+            .slice(0, 200),
+          emailBody: String(aiGeneratedPitch.emailBody || '')
+            .trim()
+            .slice(0, 2400),
+        },
+        user_settings: {
+          templateId: String(userSettings.templateId || templateId || 'default').trim(),
+          selectedModel: String(userSettings.selectedModel || '')
+            .trim()
+            .slice(0, 120),
+          icpProfile: (() => {
+            const icp =
+              typeof userSettings.icpProfile === 'object' && userSettings.icpProfile
+                ? (userSettings.icpProfile as Record<string, unknown>)
+                : {}
+            return {
+              targetProduct: String(icp.targetProduct || '')
+                .trim()
+                .slice(0, 500),
+              buyerPersona: String(icp.buyerPersona || '')
+                .trim()
+                .slice(0, 100),
+              coreAdvantage: String(icp.coreAdvantage || '')
+                .trim()
+                .slice(0, 500),
+              negativeIcp: String(icp.negativeIcp || '')
+                .trim()
+                .slice(0, 300),
+            }
+          })(),
+        },
+        verification_status: String(lead.verificationStatus || 'unverified').trim(),
+      }
+    })
+    .filter(
+      (entry) =>
+        entry.lead_info.email &&
+        typeof entry.icp_match_score === 'number' &&
+        entry.icp_match_score >= N8N_GOLD_FILTER_MIN_SCORE,
+    )
 
   if (!compactLeads.length) {
-    return { triggered: false, error: `选中线索均无有效邮箱或评分低于上云阈值 ${N8N_GOLD_FILTER_MIN_SCORE}`, rejected: leads.length }
+    return {
+      triggered: false,
+      error: `选中线索均无有效邮箱或评分低于上云阈值 ${N8N_GOLD_FILTER_MIN_SCORE}`,
+      rejected: leads.length,
+    }
   }
 
   const webhookUrl = getN8nWebhookUrl(store)
@@ -299,30 +348,33 @@ export const registerAutomationHandlers = (
   )
 
   // automation:start-campaign — premium only
-  ipcMain.handle(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN, async (_event, payload: { leads: Array<Record<string, unknown>>; templateId?: string }) => {
-    const authorizationLevel = resolveAuthorizationLevel(store, licenseGuard)
-    const trialDenied = ensureTrialAccess(store, licenseGuard, '自动化发信')
-    if (trialDenied) {
-      return trialDenied
-    }
-
-    try {
-      licenseGuard.requireFeature('cloud_send', '自动化发信')
-    } catch (error: any) {
-      return {
-        success: false,
-        error: 'FEATURE_DENIED',
-        message: String(error?.message || '当前授权无权执行自动化发信'),
-        operationName: '自动化发信',
-        code: Number(error?.code) || 403,
+  ipcMain.handle(
+    IPC_CHANNELS.AUTOMATION.START_CAMPAIGN,
+    async (_event, payload: { leads: Array<Record<string, unknown>>; templateId?: string }) => {
+      const authorizationLevel = resolveAuthorizationLevel(store, licenseGuard)
+      const trialDenied = ensureTrialAccess(store, licenseGuard, '自动化发信')
+      if (trialDenied) {
+        return trialDenied
       }
-    }
 
-    try {
-      const result = await triggerN8nWorkflow(store, payload?.leads || [], payload?.templateId)
-      return { success: true, data: result }
-    } catch (error: any) {
-      return { success: false, error: error?.message || '自动化发信失败', code: error?.code }
-    }
-  })
+      try {
+        licenseGuard.requireFeature('cloud_send', '自动化发信')
+      } catch (error: any) {
+        return {
+          success: false,
+          error: 'FEATURE_DENIED',
+          message: String(error?.message || '当前授权无权执行自动化发信'),
+          operationName: '自动化发信',
+          code: Number(error?.code) || 403,
+        }
+      }
+
+      try {
+        const result = await triggerN8nWorkflow(store, payload?.leads || [], payload?.templateId)
+        return { success: true, data: result }
+      } catch (error: any) {
+        return { success: false, error: error?.message || '自动化发信失败', code: error?.code }
+      }
+    },
+  )
 }

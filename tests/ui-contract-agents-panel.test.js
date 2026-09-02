@@ -7,16 +7,18 @@ const panelPath = path.join(process.cwd(), 'src', 'components', 'agents-panel.ts
 const source = fs.readFileSync(panelPath, 'utf8')
 
 test('agents panel has trial meltdown guard: non-premium shows upgrade instead of agent cards', () => {
-  assert.match(source, /if\s*\(!isPremium\)\s*\{/)
+  // P0-5 分层授权：Trial/未授权（isTrialOrFree）直接熔断渲染升级墙，不输出智能体卡片
+  assert.match(source, /const isTrialOrFree = !isPremium && !isPaidBasic/)
+  assert.match(source, /if \(isTrialOrFree\) \{/)
   assert.match(source, /该功能仅对商业高级版完全开放/)
   assert.match(source, /\[立即输入商业授信码激活\]/)
   assert.match(source, /placeholder="粘贴商业授信码"/)
-  assert.match(source, /isTrialLicense\s*=\s*totalLimit\s*===\s*3/)
 })
 
 test('agents panel has trial badge when trial limit active', () => {
-  assert.match(source, /\{isTrialLicense\s*&&\s*\(/)
-  assert.match(source, /试用版 · 每日限制 3 条/)
+  // P0-5 分层授权：Paid Basic 只开放本地 Email + 低量 WhatsApp，LinkedIn 必须隐藏
+  assert.match(source, /const isPaidBasic = plan === "basic"/)
+  assert.match(source, /isPaidBasic \? agents\.filter\(\(a\) => a\.agentType !== "linkedin"\) : agents/)
 })
 
 test('agents panel has autopilot cruise safety warning', () => {
@@ -26,7 +28,7 @@ test('agents panel has autopilot cruise safety warning', () => {
 
 test('agents panel renders agent cards only for premium users', () => {
   // The upgrade path returns first, so agent cards only render in the premium path
-  assert.match(source, /if \(!isPremium\)/)
+  assert.match(source, /if \(isTrialOrFree\) \{/)
   // Agent cards are in the premium return path (after the upgrade guard)
   assert.match(source, /agentType === 'whatsapp'/)
   assert.match(source, /agentType === 'linkedin'/)
@@ -49,9 +51,14 @@ test('U5-BADGE: all DataSourceType values have defined badge colors in DATASOURC
 
   // Verify each DataSourceType is defined with label, shortLabel, and color
   const requiredTypes = [
-    'google_maps', 'google_organic', 'customs_shipment',
-    'trade_show', 'yellow_pages', 'linkedin_search',
-    'facebook_search', 'anysearch',
+    'google_maps',
+    'google_organic',
+    'customs_shipment',
+    'trade_show',
+    'yellow_pages',
+    'linkedin_search',
+    'facebook_search',
+    'anysearch',
   ]
 
   for (const dsType of requiredTypes) {

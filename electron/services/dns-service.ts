@@ -23,7 +23,10 @@ const withConcurrencyGuard = async <T>(fn: () => Promise<T>): Promise<T> => {
 const extractDomain = (emailOrDomain: string) => {
   const trimmed = String(emailOrDomain || '').trim()
   if (trimmed.includes('@')) return trimmed.split('@').pop() || trimmed
-  return trimmed.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '')
+  return trimmed
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/^www\./i, '')
 }
 
 const resolveDns = async (domain: string, rrtype: string): Promise<DnsRecord[]> => {
@@ -48,7 +51,21 @@ const checkSpamhausBlacklist = async (domain: string): Promise<boolean> => {
   }
 }
 
-const checkDnsHealth = async (domain: string) => {
+/* P2-4：DKIM selector 探测列表 —— 默认列表 + 用户配置合并（防误报：自定义
+   selector 不替换默认列表，仅追加）。配置键：user_config.dnsShield.dkimSelectors */
+const DEFAULT_DKIM_SELECTORS = ['default', 'google', 'selector1', 'selector2', 'k1', 'mail']
+
+export const resolveDkimSelectors = (raw?: unknown): string[] => {
+  const configured = Array.isArray(raw)
+    ? raw.map((s) => String(s || '').trim()).filter(Boolean)
+    : String(raw || '')
+        .split(/[,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+  return [...new Set([...DEFAULT_DKIM_SELECTORS, ...configured.map((s) => s.toLowerCase())])]
+}
+
+const checkDnsHealth = async (domain: string, dkimSelectors?: string[]) => {
   const results: DnsRecord[] = []
 
   const mxRecords = await resolveDns(domain, 'MX')
@@ -59,9 +76,8 @@ const checkDnsHealth = async (domain: string) => {
   results.push(...txtRecords)
   const hasSPF = txtRecords.some((r) => r.value.toLowerCase().includes('v=spf1'))
 
-  const dkimSelectors = ['default', 'google', 'selector1', 'selector2', 'k1', 'mail']
   let hasDKIM = false
-  for (const sel of dkimSelectors) {
+  for (const sel of dkimSelectors || DEFAULT_DKIM_SELECTORS) {
     const dkimRecords = await resolveDns(`${sel}._domainkey.${domain}`, 'TXT')
     if (dkimRecords.length > 0) {
       results.push(...dkimRecords)
@@ -96,10 +112,7 @@ const checkDnsHealth = async (domain: string) => {
   }
 }
 
-export const registerDnsHandlers = (
-  ipcMain: Electron.IpcMain,
-  store: ConfigStore
-) => {
+export const registerDnsHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
   const { licenseGuard } = createLicenseService(store)
 
   registerSecureFeatureIpc(
@@ -116,7 +129,15 @@ export const registerDnsHandlers = (
         }
 
         const domain = extractDomain(rawDomain)
-        const result = await withConcurrencyGuard(() => checkDnsHealth(domain))
+        /* P2-4：读取用户配置的自定义 DKIM selector（默认列表永远保留） */
+        let dkimSelectors: string[] | undefined
+        try {
+          const userConfig = store.get('user_config') as { dnsShield?: { dkimSelectors?: unknown } } | undefined
+          dkimSelectors = resolveDkimSelectors(userConfig?.dnsShield?.dkimSelectors)
+        } catch {
+          /* config unavailable → defaults */
+        }
+        const result = await withConcurrencyGuard(() => checkDnsHealth(domain, dkimSelectors))
         return { success: true, data: result }
       } catch (error) {
         return {
@@ -126,6 +147,6 @@ export const registerDnsHandlers = (
         }
       }
     },
-    '发信域名信誉检测'
+    '发信域名信誉检测',
   )
 }
