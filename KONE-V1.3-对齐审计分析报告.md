@@ -138,7 +138,7 @@ Kone V1.3 的**核心宪法（四级弹性搜索、JobID 时空隔离、Gold Fil
 
 ## 6. 与上一轮审计的衔接
 
-`KONE-商用成熟度深度审计报告.md`（§5.1-5.3, §7）遗留清单与本轮新增的对应关系：
+> 🗑️ **归档说明**：`KONE-商用成熟度深度审计报告.md` 已于文档治理轮**清除归档**（内容含已知错误 §2.2 ICP 权重表述；其仍有效的勘误与遗留事项已并入本文 §8/§10 与《优化计划》P2-6），仓库中仅存重定向墓碑桩。下表为其遗留清单与本轮新增的对应关系（历史引用保留原文件名以便追溯）：
 
 | 上轮条目 | 本轮状态 |
 |---|---|
@@ -219,3 +219,47 @@ Kone V1.3 的**核心宪法（四级弹性搜索、JobID 时空隔离、Gold Fil
 - 本报告为**静态分析**结论；所有 `file:line` 证据可在仓库直接复核。
 - 配套交付：《KONE-V1.3-优化计划.md》（P0/P1/P2 分级、负责人建议、验证方式、预计工作量）。
 - 建议下一轮：在可执行 shell 环境运行 `npm run test:unit`、`npm run build`、`node ./scripts/security-audit.cjs` 复核本报告第 5 节结论与 I6 的 glob 风险。
+
+## 10. 文档治理执行记录（第三轮 · 规范文档体系对齐）
+
+用户指令："对项目所有规范文档内容进行全面深度严谨的对齐梳理汇总……该合并合并，该清除清除，该补充完善的要补强"。核心目的：消除商用歧义与执行隐患。执行结果（详见优化计划 P1-12 条目）：
+
+### 10.1 本轮修正的实质性矛盾（会直接导致执行歧义的项）
+
+| # | 文档 | 修正内容 | 隐患等级 |
+|---|---|---|---|
+| 1 | `PROJECT-PRD.md` §3.3.1.a / `AGENTS.md` | 时空隔离契约引用**三个代码中不存在的函数名**（`emitDecisionMakers`/`computeLeadScore`/`enrichLeadWebsite`），真实为 `emitLeadScored`/`enrichLeadWithDeepProbe`。已勘误并标注"严禁凭旧名臆造修复" | 🔴 极高——任何按文档找函数的维护者都会扑空并可能错误"补建"函数 |
+| 2 | `kone-PRD.md` §0.3 | 管道分发层标"待实现（V1.3 规划）"，实际 `agent-pipeline.ts` 已落地。已改为已落地并对齐真实模块结构（含 P0-3 修复的 `decisionMakers[].linkedinUrl` 聚合） | 🔴 高——误导维护者重复建设 |
+| 3 | `kone-PRD.md` §0.1 / `PROJECT-PRD.md` §3.7.5 | Provider 清单仍列"待实现爬虫"，与 `PROVIDER-CAPABILITY.md`（唯一事实源）冲突。已对齐：6 真实可用 + AnySearch 实验性 + yellow_pages 弃用；密钥表从 4 级收敛为 2 级（同一 SerpApi Key 全家桶） | 🟠 中高——商用宣传口径漂移 |
+| 4 | `PROJECT-PRD.md` §3.7.2/3.7.3/3.7.4 | 管道 A 写回路径描述为直写 `LeadItem.agentStatus`（渲染端 Zustand），与 §3.7.4 宪法约束（主进程持久化 `agent_status` 键）自相矛盾。已统一为真实机制：`agentStatusStore` 持久化 + `agent:get-status` IPC 读端（P0-1）；`AgentTask` 类型补齐 `taskRunId`/`leadKey`/`website` 并标注 `leadId` 为占位 0 | 🟠 中高——双管道实现理解分裂 |
+| 5 | `V1.2-商业版交付与运维手册.md` L202 | Auto-Update 表述"Win/Mac 自动更新"掩盖真相：默认 `publish: null` **无任何自动更新**，走离线顾问渠道；仅设 `KONE_UPDATE_FEED_URL` 后才启用。已补强并标注"严禁向客户宣称开箱即用自动更新" | 🔴 高——直接商用交付承诺失真 |
+| 6 | `ARCH-STANDARDS.md` §registry | 文档要求"所有注册走 registry"但存量 handler 全部直挂 `ipcMain`。已补 `attach(ipcMain)` 职责说明 + P0-4 迁移状态注记，明确"目标态 vs 现状" | 🟡 中——避免误判迁移已完成 |
+
+### 10.2 状态刷新类修正（消除"已完成 vs 待办"混乱）
+
+- `V1.2-to-V1.3-alignment.md`：顶部横幅声称"Pending 均已落地"但表格仍标 ⏳ 待实施（自相矛盾）——表格已全量刷新为 ✅、`DataSourceType` 表格补 `anysearch`（8 值）；**刷新确认完毕后该台账已整体清除归档**，其唯一独有内容（`matchScore` 三态语义法典）已移植固化至 `kone-PRD.md §三`。
+- `.opencode/agents/ipc-agent.md`：4 个 stage（`anysearch`/`localized_search`/`prefiltering`/`blind_scoring`）从"Recommended additions"改为已落地全集（对齐 `emitStage` 类型联合 9 值）。
+- 手册运维注意 1/2：从"不要描述为已接入（除非补齐）"刷新为"已落地但严禁宣传官方数据库直连"（对齐事实源口径）。
+
+### 10.3 经核对无需修改的项（外部前置更新已完成）
+
+`kone-PRD.md` 降级文案/章节编号/`decisionMakers` 拼写、`whatsapp-web.js` 口径（5 处文档已统一为 Puppeteer DOM 方案）、商用成熟度报告 §2.2 ICP 权重勘误横幅、8 文档链统一——均已在外部更新中完成，本轮复核确认一致。
+
+### 10.4 治理结论
+
+- 文档链现与代码现状**无已知实质矛盾**；"待实现/规划中"字样仅存于 `ARCH-STANDARDS.md` registry 迁移注记（有意保留，因迁移确实未完成）与优化计划待办本身。
+- 商用价值视角的三个关键"诚实性"承诺已在文档层闭环：Provider 能力宣传口径（事实源唯一）、Auto-Update 离线渠道真相、Agent 执行边界（LinkedIn 只读 / WhatsApp 实验性 / Email 合规前置）。
+- 残余风险：文档-代码一致性目前靠人工维护，建议尽快落地 P2-8"文档链一致性护栏" CI 检查，防止下一轮迭代再度漂移。
+
+### 10.5 归档清除记录（"该清除清除"执行结果）
+
+**清除方式说明**：本会话 shell 持续损坏（`STATUS_DLL_INIT_FAILED`，多次复测），无法执行物理删除（`Remove-Item`）。故采用**内容清除 + 重定向墓碑桩**方式完成"清除"：文件正文已清空，仅保留指向继任文档的桩；物理删除命令已写入各桩内，待 shell 恢复或随下次提交 `git rm` 执行。
+
+| 文件 | 处置 | 依据 |
+|---|---|---|
+| `V1.2-to-V1.3-alignment.md` | ✅ 内容清除（墓碑桩） | 纯历史台账，全部 Pending 已核实落地；唯一独有内容（matchScore 三态语义）已移植至 `kone-PRD.md §三` |
+| `KONE-商用成熟度深度审计报告.md` | ✅ 内容清除（墓碑桩） | 已知含错快照（§2.2 ICP 权重）；有效遗留事项已并入本文 §6/§8 与《优化计划》P2-6 |
+| `kone-.md` | ⛔ 保留（非垃圾） | 复核确认其为"外贸B2B 获客方法论北极星"文档（240 行，带规范定位横幅），被 `kone-PRD.md` 引用 7 处（§0.2/§0.5.1/§六.4）；仅文件名异常，建议后续 shell 恢复后 `git mv` 重命名为 `METHODOLOGY-NORTHSTAR.md` 并同步更新引用 |
+| `.clinerules` | ⛔ 保留 | Cline 工具链配置（132 行宪法副本），属工具配置而非规范文档；若团队已全面切换 OpenCode 流，可另行评估归并 |
+
+**清除后根目录文档终态（9 份活文件 + 2 个待物理删除的桩）**：`kone-PRD.md`（权威）、`PROJECT-PRD.md`、`ARCH-STANDARDS.md`、`AGENTS.md`、`V1.2-商业版交付与运维手册.md`、`PROVIDER-CAPABILITY.md`、`kone-.md`（方法论）、`KONE-V1.3-对齐审计分析报告.md`（现行审计）、`KONE-V1.3-优化计划.md`（现行计划）。

@@ -879,7 +879,9 @@ const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item
 
 ### 3.3.1.a JobID 时空隔离契约
 
-每次 `handleSearchExecute` 入口生成 `crypto.randomUUID()` 写入模块级 `currentActiveJobId`。所有异步回调（`emitBasicResults`、`emitDecisionMakers`、`computeLeadScore`、`enrichLeadWebsite` 及每个 `.then()` / `await` 续传）入口均执行 `if (myJobId !== currentActiveJobId) return`。
+每次 `handleSearchExecute` 入口生成 `crypto.randomUUID()` 写入模块级 `currentActiveJobId`。所有异步回调（`emitBasicResults`、`emitLeadScored`、`emitStreamComplete`、`enrichLeadWithDeepProbe` 及每个 `.then()` / `await` 续传）入口均执行 `if (myJobId !== currentActiveJobId) return`。
+
+> ⚠️ **函数名勘误（2024 校准）**：早期版本此处写作 `emitDecisionMakers` / `computeLeadScore` / `enrichLeadWebsite`——这三个函数名在 `search-service.ts` 中**不存在**，为文档臆造。真实函数名为 `emitLeadScored`（LLM 评分推送）与 `enrichLeadWithDeepProbe`（深探补全）。任何 Agent 按图索骥找不到旧函数名时，以本条勘误为准，严禁凭旧名臆造"修复"。
 
 - **同步洗舱**：新搜索立即覆写 `currentActiveJobId`，旧回调后续抵达时自动丢弃。
 - **跨行业防护**：解决前一个搜索的慢回调污染后一个搜索结果的问题。
@@ -1539,11 +1541,12 @@ Pipeline-Orchestrator 拾取本次搜索的所有 `SearchExecuteResult`
   ▼
 过滤规则（同时满足）：
   1. `matchScore >= 60`（高价值线索阈值）
-  2. 拥有至少一项可触达资产：`phone` 或 `email` 或 `linkedinUrl` 非空
+  2. 拥有至少一项可触达资产：`phone` / `email` / `linkedinUrl` / `decisionMakers[].linkedinUrl` 非空
+     （顶层无 linkedinUrl 时从 decisionMakers[].linkedinUrl 聚合回退，P0-3 修复）
   │
   ▼
 生成 `AgentTask` 对象：
-  { leadId, company, phone?, email?, linkedinUrl?, preferredAgent?, createdAt, priority }
+  { id, taskRunId?, leadId, leadKey?, company, website, phone?, email?, linkedinUrl?, createdAt, priority }
   │
   ▼
 按 Agent 类型分发（每个 Agent 消费对应字段）：
@@ -1552,23 +1555,28 @@ Pipeline-Orchestrator 拾取本次搜索的所有 `SearchExecuteResult`
   - Email Agent → `email`
   │
   ▼
-Agent 执行完毕后调用 `writeBackAgentStatus(leadId, agentType, result)`
-  写回路径：`SearchExecuteResult.agentStatus` → `LeadItem.agentStatus`
+Agent 执行完毕后调用 `writeBackAgentStatus(leadKeyOrCompany, agentType, status)`
+  写回路径（管道 A）：agentStatusStore（`agent_status` 配置键，键为 leadKey 稳定 UUID，回退 company）
+  写回路径（管道 B）：AgentState → `AGENT.STATUS_CHANGED` IPC 实时推送
+  渲染端读取：`agent:get-status` IPC（P0-1）按 leadKey 拉取持久化状态并合并回线索徽标
 ```
 
 ### 3.7.3 Agent Task 队列宪法
 
-`AgentTask` 是管道最小任务单元：
+`AgentTask` 是管道最小任务单元（与 `agent-pipeline.ts` 实际类型对齐）：
 
 ```typescript
 type AgentTask = {
   id: string                     // crypto.randomUUID()
-  leadId: number                 // 关联的 LeadItem.id
+  taskRunId?: string             // 管道运行 ID（withPipelineIsolation 生成，过期任务丢弃依据）
+  leadId: number                 // 历史占位字段（恒为 0），真正关联见 leadKey
+  leadKey?: string               // SearchExecuteResult.id 稳定 UUID，agentStatus 写回关联键（缺失时回退 company）
   company: string                // 公司名（Agent 执行时用于消息模板）
+  website: string                // 官网（消息模板与上下文）
   phone?: string                 // WhatsApp Agent 消费
   email?: string                 // Email Agent 消费
-  linkedinUrl?: string           // LinkedIn Agent 消费
-  preferredAgent?: 'whatsapp' | 'linkedin' | 'email'  // 人工指定优先渠道
+  linkedinUrl?: string           // LinkedIn Agent 消费（含 decisionMakers[].linkedinUrl 聚合回退）
+  preferredAgent?: 'whatsapp' | 'linkedin' | 'email'  // 人工指定优先渠道（预留）
   createdAt: number              // Date.now()
   priority: number               // 0-100，来自 matchScore
 }
@@ -1576,7 +1584,7 @@ type AgentTask = {
 
 ### 3.7.4 Agent 状态双管道写回模型
 
-**管道 A — `agentStatus`（线索态）**：持久化写入 `SearchExecuteResult.agentStatus` → `LeadItem.agentStatus`
+**管道 A — `agentStatus`（线索态）**：主进程 `writeBackAgentStatus` 持久化写入 `agentStatusStore`（`agent_status` 配置键，键为 `leadKey` 稳定 UUID）；渲染端经 `agent:get-status` IPC（P0-1 已落地）按 `leadKey` 读取并合并为 `LeadItem.agentStatus` 触达徽标
 
 | Agent 类型 | 写入字段 | 值 |
 |---|---|---|
@@ -1607,9 +1615,9 @@ type AgentState = {
 | 等级 | 提供方 | 密钥来源 | 适用场景 |
 |---|---|---|---|
 | P0 | AnySearch 垂直 B2B 实体 API | `userConfig.providers[anysearch]` | 全局搜 + 决策人穿透 + 海关/展会/社媒多源融合 |
-| P1 | SerpApi LinkedIn Search | 复用 `userConfig.providers[google-maps]` 中同一 SerpApi Key | LinkedIn 公司/人物定向挖掘 |
-| P2 | 海关数据爬虫 | 用户自备（如有） | 提单数据补充 |
-| P3 | 展会名录爬虫 | 免费公开数据 | 展会足迹补充 |
+| P1 | SerpApi 全家桶（Maps/Organic/LinkedIn/Facebook/海关/展会网页补位） | 复用 `userConfig.providers[google-maps]` 中同一 SerpApi Key | 本地商户/网页/社媒检索与站点限定补位检索 |
+
+> ⚠️ **勘误（对齐 PROVIDER-CAPABILITY.md 唯一事实源）**：早期版本此表将海关/展会标为「爬虫（用户自备密钥）」——与代码现状不符。`customs_shipment`/`trade_show` 已落地为 SerpApi 网页近似检索（复用同一 Key，非官方数据库直连）；官方数据库直连属于未来可选增强，当前无任何待接入爬虫。
 
 ### 3.7.6 Provider 注册表规范（已落地 · 接口以 kone-PRD §0.8 为准）
 

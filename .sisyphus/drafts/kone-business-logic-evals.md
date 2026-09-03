@@ -5,7 +5,7 @@
 - 仅在 `.sisyphus/plans/` 下生成《Kone 核心业务逻辑测试网 (Business-Logic Evals) 搭建计划》。
 - 这套测试网必须使用 Mock 数据，不直连外部 API。
 - 断言对象包括 4 大核心护城河：
-  1. 三级搜索降级与过滤
+  1. 四级搜索降级与过滤
   2. AI 引擎低配红线（HTML 去噪+<=3000 截断）
   3. Autopilot Gold Filter
   4. 云端交接裁剪

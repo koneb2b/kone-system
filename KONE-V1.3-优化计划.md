@@ -104,9 +104,17 @@
 - 决策人条目渲染置信度进度条（`kone-PRD.md:183`）；`analysis-drawer.tsx` 渲染 `agentStatus`；`search-result-card.tsx` 徽标颜色按 `ui-agent.md:141` 修正（海关 emerald/展会 amber/黄页 purple）+ 头部补决策人/海关/展会徽标。
 - 验证：`tests/ui-ux-alignment-contract.test.js` 扩展。工作量：1d。
 
-### P1-12 文档去矛盾（与代码现状对齐）
-- `PROJECT-PRD.md:184/1526/1612` 去除"待实现/待恢复"；`PROJECT-PRD.md:1620,1639` Provider 契约形状对齐代码（`ProviderExecuteResult`/`Map`）；`AGENTS.md:40` 统一 8 文档链；`kone-PRD.md` 重复 `## 六、` 章节与 `decisionMagers` 笔误修复；`KONE-商用成熟度深度审计报告.md §2.2` ICP 权重改为与 PRD/代码一致；`kone-PRD.md:43` L3 文案与 ui-agent.md 统一；**`V1.2-to-V1.3-alignment.md` 全量刷新**（L62-77 的"待实施"项均已落地，L26 补 `anysearch`）。
-- 验证：`tests/repo-hygiene.test.js` 增加文档断言。工作量：0.5-1d。
+### P1-12 文档去矛盾（与代码现状对齐）✅ 已完成（2024 文档治理轮）
+- **已执行**（本轮实际落点，含外部前置更新合并核算）：
+  - `kone-PRD.md` §0.1 Provider 清单对齐 `PROVIDER-CAPABILITY.md`（6 真实可用 + 1 实验性 + 1 弃用 + 宣传口径约束）；§0.3 管道分发层"待实现"→"已落地"（含 P0-3 的 decisionMakers[].linkedinUrl 聚合回退）；§0.4 `writeBackAgentStatus` 签名对齐代码（`leadKeyOrCompany` 键，非 `leadId`）
+  - `PROJECT-PRD.md` §3.3.1.a 时空隔离契约函数名勘误（`emitDecisionMakers`/`computeLeadScore`/`enrichLeadWebsite` 为文档臆造名，真实为 `emitLeadScored`/`enrichLeadWithDeepProbe`）；§3.7.2 管道图、§3.7.3 AgentTask 类型（补 `taskRunId`/`leadKey`/`website`，标注 `leadId` 为占位 0）、§3.7.4 管道 A 写回路径对齐 `agent_status` 配置键 + `agent:get-status` 读端机制；§3.7.5 密钥等级表勘误（海关/展会已是 SerpApi 网页补位，无待接入爬虫）
+  - `AGENTS.md` 时空隔离契约同步函数名勘误
+  - `ARCH-STANDARDS.md` registry 节补 `attach(ipcMain)` 职责 + P0-4 迁移状态注记（基础设施已落地、存量迁移未开始，目标态 vs 现状区分）
+  - `V1.2-商业版交付与运维手册.md` Auto-Update 补离线更新渠道真相（默认无 feed 不自动检查、`KONE_UPDATE_FEED_URL` 启用条件）；运维注意 1/2 口径对齐事实源
+  - `V1.2-to-V1.3-alignment.md` Pending 表全量刷新为已落地、DataSourceType 补 `anysearch` 8 值（刷新核实完毕后，该历史台账已整体**清除归档**——matchScore 三态语义移植至 `kone-PRD.md §三`，文件仅存墓碑桩待物理删除）
+  - `.opencode/agents/ipc-agent.md` stage 列表从"推荐新增"改为已落地全集（9 值对齐 `emitStage` 类型）
+  - 其余项（8 文档链统一、重复章节、`decisionMagers` 笔误、`whatsapp-web.js` 口径、L3 文案、商用成熟度报告 §2.2 ICP 权重勘误横幅）经核对已由外部前置更新完成
+- 剩余：`tests/repo-hygiene.test.js` 文档断言（随 P2-8 护栏一并实施）。
 
 ### P1-13 质量控制开关主进程完整挂载（N1）
 - **问题**：`localDomainOnly`（优先本土域名）与 `highRelevanceOnly`（只看高相关）仅前端二次过滤，主进程 Scout/过滤阶段未消费；`COUNTRY_TLD_MAP`（search-service.ts:126）为死代码。
@@ -124,9 +132,9 @@
 | P2-3 | 自动化巡航/邮箱验证伪进度 | `automation-workflow.tsx:93-95` 改真实步进 | 手工冒烟 |
 | P2-4 | CSV 导出判空 | `leads-table.tsx:171` matchScore 空值输出"待评估" | 单元断言 |
 | P2-5 | 导航徽标一致性 | `app-sidebar.tsx:43-44` 按 dashboard 真实准入（basic 可进 accounts）调整 | UI 冒烟 |
-| P2-6 | 仓库卫生 | 清理 `.tmp-ipc-sweep-user-data/`、`.tmp-test-user-data/` 残留；明确 `dist-electron/` 与 smoke 产物跟踪策略 | `repo-hygiene` |
+| P2-6 | 仓库卫生 | 清理 `.tmp-ipc-sweep-user-data/`、`.tmp-test-user-data/` 残留；明确 `dist-electron/` 与 smoke 产物跟踪策略；**补提交仍未跟踪的源文件**（据已归档的商用成熟度快照勘误：`electron/services/email-suppression.ts`、`electron/services/followup-scheduler.ts`、`electron/ipc/registry.ts`——其中 registry.ts 本轮 P0-4 已有改动，务必 `git add` 提交，否则注册中心激活代码不入库） | `repo-hygiene` |
 | P2-7 | Provider 枚举收敛 | `yellow_pages` 从 UI 数据源选择隐藏（枚举保留向后兼容）；`providers.status` 补 preload 绑定或移除死 handler（N4） | 冒烟 |
-| P2-8 | 文档链一致性护栏 | 增加"文档-代码对照"CI 检查（关键字符串如"待实现"与实现文件的对照）；`V1.2-商业版交付与运维手册.md:202` 补"`publish:null` 为有意配置，走离线渠道"声明（N8） | CI |
+| P2-8 | 文档链一致性护栏 | 增加"文档-代码对照"CI 检查（关键字符串如"待实现"与实现文件的对照）；`V1.2-商业版交付与运维手册.md:202` 补"`publish:null` 为有意配置，走离线渠道"声明（N8）——**手册声明部分已于文档治理轮完成**，仅剩 CI 检查 | CI |
 | P2-9 | 意图解构缓存 | 相同 keyword+country 的 `mutateSearchIntent` 结果做会话级缓存 | 性能冒烟 |
 | P2-10 | PDF 计数落盘失败策略 | `setTrialPdfExportCount` 落盘失败时改为阻断本次导出（防 3 次上限绕过，N6）；PDF 预览窗补 `sandbox:true`（N5） | 手工冒烟 |
 | P2-11 | Agent handler 授权收口 | `agent:get-log`/`agent:suppress-*` 迁入安全包装器或注册中心（N7，随 P0-4 一并进行） | `test:ipc` |
@@ -137,7 +145,7 @@
 
 1. **第 1 批（P0，2 周）**：P0-2（Email 链路）→ P0-3（LinkedIn 断链）→ P0-1（双管道读端）→ P0-4（IPC 注册中心，分批）→ P0-5（Agent 面板分层授权）。
 2. **第 2 批（P1，3 周）**：P1-5/P1-6（Agent 限额与计数，防合规风险）→ P1-13（质量控制开关挂载）→ P1-3/P1-4（数据链路）→ P1-9（安全基线）→ 其余按依赖。
-3. **第 3 批（P2）**：测试矩阵 → CI → 文档刷新（含 `V1.2-to-V1.3-alignment.md`）→ 卫生护栏。
+3. **第 3 批（P2）**：测试矩阵 → CI → 文档护栏（P2-8 一致性检查；`V1.2-to-V1.3-alignment.md` 已清除归档，无需再刷新）→ 卫生护栏（P2-6 含未跟踪源文件补提交与两个墓碑桩的物理删除）。
 
 每批完成后运行：`npm run test:unit`、`npm run test:ipc`、`npm run test:e2e-smoke`、`npm run build`、`node ./scripts/security-audit.cjs`，并回归 `kone-PRD.md §0.5/§0.6/§0.7/§0.8` 与 `AGENTS.md` 双管道/四层搜索宪法条款。
 

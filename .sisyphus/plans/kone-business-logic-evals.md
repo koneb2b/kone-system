@@ -1,7 +1,7 @@
 # Kone 核心业务逻辑测试网 (Business-Logic Evals) 搭建计划
 
 ## TL;DR
-> **Summary**: 在 `tests/business-logic/` 下建立一套只使用 Mock 数据、绝不直连外部 API 的核心业务逻辑评估测试网，专门固化 Kone 的 4 大护城河：三级搜索降级与过滤、低配 AI 引擎 HTML 去噪与 3000 字符红线、Autopilot Gold Filter、云端交接裁剪。
+> **Summary**: 在 `tests/business-logic/` 下建立一套只使用 Mock 数据、绝不直连外部 API 的核心业务逻辑评估测试网，专门固化 Kone 的 4 大护城河：四级搜索降级与过滤、低配 AI 引擎 HTML 去噪与 3000 字符红线、Autopilot Gold Filter、云端交接裁剪。
 > **Deliverables**:
 > - `tests/business-logic/` 目录下的业务逻辑评估测试套件
 > - Search fallback / filtering evals
@@ -19,7 +19,7 @@
 - 绝对禁止修改任何 `src/`、`electron/` 下的业务代码。
 - 测试必须使用 Mock 数据，不直连外部 API。
 - 需要对以下 4 大核心护城河做断言：
-  1. **三级搜索降级与过滤**：触发 `location 400` 和 `localCount === 0`，验证 `search:stage` 二级/三级文案与 pre-filter 噪音剔除。
+  1. **四级搜索降级与过滤**：覆盖 AnySearch Level 0、`location 400` 和 `localCount === 0`，验证 `search:stage` 第零级/二级/三级文案与 pre-filter 噪音剔除。
   2. **AI 引擎低配红线**：10000 字符脏 HTML 输入时，去噪并裁剪到 `<= 3000` 字符。
   3. **Autopilot Gold Filter**：模拟 80 / 50 / `undefined` 分数线索，仅高潜线索进入 `addLead`。
   4. **云端交接裁剪**：验证 `triggerN8nWorkflow` 的 `.slice()` 长度限制严格执行。
@@ -27,7 +27,7 @@
 ### Grounding Summary
 - 已静默读取：`PROJECT-PRD.md`、`ARCH-STANDARDS.md`、`.opencode/agents/ui-agent.md`、`.opencode/agents/ipc-agent.md`、`.opencode/agents/system-blueprint.md`、`.opencode/agents/build-agent.md`、`V1.2-商业版交付与运维手册.md`、`.clinerules`、`AGENTS.md`。
 - 已确认业务硬边界：
-  - `三级弹性搜索协议` 是宪法级红线
+  - `四级弹性搜索协议` 是宪法级红线
   - 缺失 AI key 属于可恢复降级状态，但本次是业务逻辑评估，不是实现修复
   - 搜索评分/网站正文传给 LLM 之前必须去噪且 `<= 3000` 字符
   - Autopilot 只能保存过阈值高潜线索

@@ -66,24 +66,22 @@ Required semantic alias:
 Current concrete channel:
 - `search:stage`
 
-Stages currently recognized by product flow:
+Stages currently recognized by product flow (full set, aligned with `emitStage` type union in `search-service.ts`):
+- `anysearch` (level 0 multi-source acquisition)
 - `fetching`
 - `normalizing`
+- `prefiltering`
 - `scoring`
+- `blind_scoring` (tertiary Organic fallback with snippet blind-score)
 - `enriching`
 - `complete`
+- `localized_search` (local-language variant search)
 
 Mandatory downgrade visibility law:
 - `search:stage` must be able to express at least: AnySearch multi-source acquisition (level 0), normal acquisition, secondary keyword retry, tertiary Organic fallback, scoring degradation, and recoverable missing-key state
 - downgrade semantics must be forwarded to renderer rather than being trapped only in backend logs
 - missing AI key is a recoverable degraded state and must be exposed through dedicated IPC semantics or fields so UI can show a non-blocking notice
 - any started stream must end with explicit `complete` or `error + complete` closure so UI cannot deadlock under extreme timeout or upstream failure conditions
-
-Recommended stage additions for practical fallback visibility:
-- `anysearch`
-- `localized_search`
-- `prefiltering`
-- `blind_scoring`
 
 ### Phase D: stream closure
 Required semantic aliases:
