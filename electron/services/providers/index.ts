@@ -24,4 +24,10 @@ export function createDefaultProviderRegistry(): ProviderRegistry {
 }
 
 export { ProviderRegistry } from '../provider-registry'
-export type { ProviderQuery, SearchProvider, ProviderExecuteResult, ProviderResult } from '../provider-registry'
+export type {
+  ProviderQuery,
+  ProviderConfig,
+  SearchProvider,
+  ProviderExecuteResult,
+  ProviderResult,
+} from '../provider-registry'

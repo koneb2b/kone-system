@@ -14,7 +14,7 @@ export const registerAuthHandlers = (ipcMain: Electron.IpcMain) => {
         callbackPath?: string
         timeoutMs?: number
         extraAuthParams?: Record<string, string | undefined>
-      }
+      },
     ) => {
       try {
         const result = await startAuthFlow({
@@ -42,7 +42,7 @@ export const registerAuthHandlers = (ipcMain: Electron.IpcMain) => {
         console.error('❌ [Auth] Login failed:', error)
         return { success: false, error: error?.message || 'Login failed', code: error?.code }
       }
-    }
+    },
   )
 
   ipcMain.handle(IPC_CHANNELS.AUTH.LOGOUT, async () => {

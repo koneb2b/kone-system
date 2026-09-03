@@ -31,11 +31,7 @@ const generateAccountId = () => {
 
 const getSessionPartition = (accountId: string) => `${SESSION_PREFIX}${accountId}`
 
-const runLimitedConcurrency = async <T>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<void>
-) => {
+const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item: T) => Promise<void>) => {
   let currentIndex = 0
   const normalizedLimit = Math.max(1, Math.min(limit, items.length || 1))
 
@@ -100,10 +96,7 @@ const performHealthCheck = async (entry: AccountEntry) => {
   return entry
 }
 
-const broadcastStatusUpdate = (
-  sender: Electron.WebContents,
-  updated: AccountEntry
-) => {
+const broadcastStatusUpdate = (sender: Electron.WebContents, updated: AccountEntry) => {
   sender.send(IPC_CHANNELS.ACCOUNT.STATUS_UPDATE, {
     accountId: updated.accountId,
     accountType: updated.accountType,
@@ -125,7 +118,7 @@ const startHealthCheckPoller = (sender: Electron.WebContents) => {
 
     try {
       const entries = Array.from(accounts.values()).filter(
-        (e) => e.status === 'connected' || e.status === 'disconnected'
+        (e) => e.status === 'connected' || e.status === 'disconnected',
       )
 
       if (entries.length === 0) {
@@ -193,70 +186,72 @@ export const findAccountByType = (accountType: string): AccountEntry | undefined
   return Array.from(accounts.values()).find((a) => a.accountType === accountType)
 }
 
-export const registerSandboxHandlers = (
-  ipcMain: Electron.IpcMain,
-  store: ConfigStore
-) => {
+export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
   const { licenseGuard } = createLicenseService(store)
 
   let rollcallSender: Electron.WebContents | null = null
 
   /* ── ACCOUNT CONNECT ── */
-  ipcMain.handle(IPC_CHANNELS.ACCOUNT.CONNECT, async (_event, payload: { accountType: string; label: string; credentials?: Record<string, string> }) => {
-    try {
-      const accountType = String(payload?.accountType || '').trim() as AccountEntry['accountType']
+  ipcMain.handle(
+    IPC_CHANNELS.ACCOUNT.CONNECT,
+    async (_event, payload: { accountType: string; label: string; credentials?: Record<string, string> }) => {
+      try {
+        const accountType = String(payload?.accountType || '').trim() as AccountEntry['accountType']
 
-      const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
-      const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
+        const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
+        const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
 
-      if (!hasTeamCollaboration) {
-        const isEmailType = accountType === 'email_smtp' || accountType === 'email_imap'
-        if (!isEmailType || !hasSearchBasic) {
-          return buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
+        if (!hasTeamCollaboration) {
+          const isEmailType = accountType === 'email_smtp' || accountType === 'email_imap'
+          if (!isEmailType || !hasSearchBasic) {
+            return (
+              buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
+            )
+          }
+          const existingEmail = Array.from(accounts.values()).find(
+            (a) => a.accountType === 'email_smtp' || a.accountType === 'email_imap',
+          )
+          if (existingEmail) {
+            return { success: false, error: '基础版仅支持单个企业邮箱通道。请先断开已有邮箱账号。', code: 403 }
+          }
         }
-        const existingEmail = Array.from(accounts.values()).find(
-          (a) => a.accountType === 'email_smtp' || a.accountType === 'email_imap'
-        )
-        if (existingEmail) {
-          return { success: false, error: '基础版仅支持单个企业邮箱通道。请先断开已有邮箱账号。', code: 403 }
+
+        rollcallSender = _event.sender
+        const accountId = generateAccountId()
+        const partition = getSessionPartition(accountId)
+
+        const entry: AccountEntry = {
+          accountId,
+          accountType,
+          label: String(payload.label || '').trim() || `${accountType} 账号`,
+          email: payload.credentials?.email || undefined,
+          status: 'connected',
+          connectedAt: new Date().toISOString(),
+          lastCheckedAt: new Date().toISOString(),
+          credentials: payload.credentials,
+        }
+
+        accounts.set(accountId, entry)
+        if (rollcallSender && !rollcallSender.isDestroyed()) {
+          startHealthCheckPoller(rollcallSender)
+        }
+
+        return {
+          success: true,
+          data: {
+            accountId: entry.accountId,
+            status: entry.status,
+          },
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : '沙箱创建失败',
+          code: 500,
         }
       }
-
-      rollcallSender = _event.sender
-      const accountId = generateAccountId()
-      const partition = getSessionPartition(accountId)
-
-      const entry: AccountEntry = {
-        accountId,
-        accountType,
-        label: String(payload.label || '').trim() || `${accountType} 账号`,
-        email: payload.credentials?.email || undefined,
-        status: 'connected',
-        connectedAt: new Date().toISOString(),
-        lastCheckedAt: new Date().toISOString(),
-        credentials: payload.credentials,
-      }
-
-      accounts.set(accountId, entry)
-      if (rollcallSender && !rollcallSender.isDestroyed()) {
-        startHealthCheckPoller(rollcallSender)
-      }
-
-      return {
-        success: true,
-        data: {
-          accountId: entry.accountId,
-          status: entry.status,
-        },
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '沙箱创建失败',
-        code: 500,
-      }
-    }
-  })
+    },
+  )
 
   /* ── ACCOUNT DISCONNECT ── */
   ipcMain.handle(IPC_CHANNELS.ACCOUNT.DISCONNECT, async (_event, payload: { accountId: string }) => {
@@ -276,7 +271,9 @@ export const registerSandboxHandlers = (
       const isEmailType = entry.accountType === 'email_smtp' || entry.accountType === 'email_imap'
 
       if (!hasTeamCollaboration && (!isEmailType || !hasSearchBasic)) {
-        return buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
+        return (
+          buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
+        )
       }
 
       const partition = getSessionPartition(accountId)
@@ -306,16 +303,16 @@ export const registerSandboxHandlers = (
       const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
 
       if (!hasTeamCollaboration && !hasSearchBasic) {
-        return buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
+        return (
+          buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
+        )
       }
 
       rollcallSender = _event.sender
 
       let entries = Array.from(accounts.values())
       if (!hasTeamCollaboration) {
-        entries = entries.filter(
-          (e) => e.accountType === 'email_smtp' || e.accountType === 'email_imap'
-        )
+        entries = entries.filter((e) => e.accountType === 'email_smtp' || e.accountType === 'email_imap')
       }
 
       const sessionEntries = entries.map((entry) => ({

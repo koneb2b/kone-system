@@ -8,6 +8,8 @@ import type {
   AgentControlRequest,
   AgentListData,
   AgentLogData,
+  AgentLeadStatusEvent,
+  AgentStatusData,
   AnalysisGenerateData,
   AnalysisGenerateRequest,
   AutopilotAction,
@@ -33,6 +35,7 @@ import type {
   LicenseInfoData,
   LicenseSubmitData,
   LicenseSubmitRequest,
+  ProviderListData,
   ProxyData,
   ProxyRequest,
   RealtimeLeadEvent,
@@ -92,7 +95,7 @@ export const unwrapIpc = <T>(response: IpcResponse<T> | undefined | null, fallba
   if (!response?.success) {
     throw new ElectronApiError(response?.error || fallbackMessage, response?.code, { meta: response?.meta })
   }
-  return (response.data as T)
+  return response.data as T
 }
 
 export const configGet = async <T = unknown>(key: string) =>
@@ -132,7 +135,7 @@ export const searchExecute = async (payload: SearchExecuteRequest): Promise<Sear
   const response = await withTimeout(
     window.electronAPI.search.execute(payload),
     SEARCH_EXECUTE_TIMEOUT_MS,
-    'searchExecute'
+    'searchExecute',
   )
   const normalized = unwrapIpc<SearchExecuteData>(response, '搜索失败')
   return {
@@ -153,8 +156,7 @@ export const onSearchStreamStart = (callback: (total: number) => void) =>
 export const onSearchStage = (callback: (payload: SearchStagePayload) => void) =>
   window.electronAPI.onSearchStage(callback)
 
-export const onSearchStreamComplete = (callback: () => void) =>
-  window.electronAPI.onSearchStreamComplete(callback)
+export const onSearchStreamComplete = (callback: () => void) => window.electronAPI.onSearchStreamComplete(callback)
 
 export const onSearchStreamError = (callback: (error: string) => void) =>
   window.electronAPI.onSearchStreamError(callback)
@@ -165,20 +167,19 @@ export const onAutopilotAction = (callback: (action: AutopilotAction) => void) =
 export const analysisGenerate = async (payload: AnalysisGenerateRequest): Promise<AnalysisGenerateData> =>
   unwrapIpc(
     await withTimeout(window.electronAPI.analysis.generate(payload), ANALYSIS_GENERATE_TIMEOUT_MS, 'analysisGenerate'),
-    'AI 分析失败'
+    'AI 分析失败',
   )
 
-export const saveExportFile = async (payload: FileExportSaveRequest): Promise<FileExportSaveData> =>
-  {
-    const response = await window.electronAPI.files.saveExport(payload)
-    if (response?.canceled) {
-      return { canceled: true }
-    }
-    if (!response?.success) {
-      throw new ElectronApiError(response?.error || '导出失败', response?.code, { canceled: false })
-    }
-    return (response.data as FileExportSaveData) ?? {}
+export const saveExportFile = async (payload: FileExportSaveRequest): Promise<FileExportSaveData> => {
+  const response = await window.electronAPI.files.saveExport(payload)
+  if (response?.canceled) {
+    return { canceled: true }
   }
+  if (!response?.success) {
+    throw new ElectronApiError(response?.error || '导出失败', response?.code, { canceled: false })
+  }
+  return (response.data as FileExportSaveData) ?? {}
+}
 
 export const exportPdfFile = async (payload: FileExportPdfRequest): Promise<FileExportPdfData> => {
   const response = await window.electronAPI.files.exportPdf(payload)
@@ -186,7 +187,10 @@ export const exportPdfFile = async (payload: FileExportPdfRequest): Promise<File
     return { canceled: true }
   }
   if (!response?.success) {
-    throw new ElectronApiError(response?.error || 'PDF 导出失败', response?.code, { canceled: false, meta: response?.meta })
+    throw new ElectronApiError(response?.error || 'PDF 导出失败', response?.code, {
+      canceled: false,
+      meta: response?.meta,
+    })
   }
   return (response.data as FileExportPdfData) ?? {}
 }
@@ -197,8 +201,7 @@ export const verifyLicense = async (key: string) =>
 export const getLicenseStatus = async () =>
   unwrapIpc(await window.electronAPI.license.checkStatus(), '读取授权状态失败')
 
-export const getAuthSession = async () =>
-  unwrapIpc(await window.electronAPI.auth.getSession(), '读取会话状态失败')
+export const getAuthSession = async () => unwrapIpc(await window.electronAPI.auth.getSession(), '读取会话状态失败')
 
 export const getLicenseInfo = async (): Promise<LicenseInfoData> =>
   unwrapIpc(await window.electronAPI.license.getInfo(), '读取授权信息失败')
@@ -277,10 +280,23 @@ export const agentControl = async (payload: AgentControlRequest): Promise<AgentC
 export const onAgentStatusChanged = (callback: (state: SalesAgentState) => void) =>
   window.electronAPI.onAgentStatusChanged(callback)
 
+/* L1-1/F2：per-lead 触达状态实时事件（线索表徽标即时刷新） */
+export const onAgentLeadStatusUpdated = (callback: (event: AgentLeadStatusEvent) => void) =>
+  window.electronAPI.onAgentLeadStatusUpdated(callback)
+
 export const agentGetLog = async (agentId: string): Promise<AgentLogData> =>
   unwrapIpc(await window.electronAPI.agents.getLog(agentId), '读取智能体运行日志失败')
+
+/* P0-1 双管道读端：按 leadKey 读取持久化线索态 agentStatus */
+export const agentGetStatus = async (leadKey: string): Promise<AgentStatusData> =>
+  unwrapIpc(await window.electronAPI.agents.getStatus(leadKey), '读取线索触达状态失败')
 
 /* ── V1.3 DNS Health Check ── */
 
 export const dnsHealthCheck = async (domain: string): Promise<DnsHealthCheckResult> =>
   unwrapIpc(await window.electronAPI.dns.healthCheck({ domain }), 'DNS 健康检测失败')
+
+/* ── V1.4 Provider Status ── */
+
+export const providerList = async (): Promise<ProviderListData> =>
+  unwrapIpc(await window.electronAPI.providers.getList(), '读取 Provider 状态失败')

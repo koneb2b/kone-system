@@ -1,7 +1,7 @@
-import { create } from "zustand"
-import { clearFeatureRegistryCache, getFeatureRegistry, type LicensePlan } from "@/lib/feature-gate"
-import { getLicenseInfo } from "@/lib/electron-api"
-import type { LicenseTier } from "@/shared/ipc-contracts"
+import { create } from 'zustand'
+import { clearFeatureRegistryCache, getFeatureRegistry, type LicensePlan } from '@/lib/feature-gate'
+import { getLicenseInfo } from '@/lib/electron-api'
+import type { LicenseTier } from '@/shared/ipc-contracts'
 
 type LicenseStoreState = {
   loading: boolean
@@ -29,11 +29,11 @@ export const useLicenseStore = create<LicenseStoreState>((set) => ({
   isLicensed: false,
   isExpired: false,
   isTrial: false,
-  plan: "trial",
-  tier: "basic",
+  plan: 'trial',
+  tier: 'basic',
   daysRemaining: 0,
   expiresAt: 0,
-  machineId: "",
+  machineId: '',
   refreshLicenseStatus: async (forceRefresh = false) => {
     set((state) => ({ ...state, loading: true }))
 
@@ -42,14 +42,11 @@ export const useLicenseStore = create<LicenseStoreState>((set) => ({
         clearFeatureRegistryCache()
       }
 
-      const [license, info] = await Promise.all([
-        getFeatureRegistry(forceRefresh),
-        getLicenseInfo().catch(() => null),
-      ])
+      const [license, info] = await Promise.all([getFeatureRegistry(forceRefresh), getLicenseInfo().catch(() => null)])
       const isTrial = info?.isTrial ?? false
-      const isLicensed = license.status === "active" && !isTrial
-      const isExpired = license.status === "expired"
-      const tier: LicenseTier = info?.tier || (isLicensed ? "premium" : "basic")
+      const isLicensed = license.status === 'active' && !isTrial
+      const isExpired = license.status === 'expired'
+      const tier: LicenseTier = info?.tier || (isLicensed ? 'premium' : 'basic')
       const daysLeft = info?.daysLeft ?? getDaysRemaining(license.expiresAt)
 
       set({
@@ -61,7 +58,7 @@ export const useLicenseStore = create<LicenseStoreState>((set) => ({
         tier,
         daysRemaining: Math.ceil(daysLeft),
         expiresAt: info?.expiresAt || license.expiresAt,
-        machineId: info?.machineId || "",
+        machineId: info?.machineId || '',
       })
     } catch {
       set({
@@ -69,11 +66,11 @@ export const useLicenseStore = create<LicenseStoreState>((set) => ({
         isLicensed: false,
         isExpired: true,
         isTrial: false,
-        plan: "trial",
-        tier: "basic",
+        plan: 'trial',
+        tier: 'basic',
         daysRemaining: 0,
         expiresAt: 0,
-        machineId: "",
+        machineId: '',
       })
     }
   },

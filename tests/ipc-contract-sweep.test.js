@@ -7,7 +7,11 @@ const originalLoad = Module._load
 const originalUnhandledListeners = process.listeners('unhandledRejection')
 const originalUncaughtListeners = process.listeners('uncaughtException')
 const originalTestUserDataDir = process.env.KONE_TEST_USER_DATA_DIR
-process.env.KONE_TEST_USER_DATA_DIR = path.join(process.env.TEMP || process.cwd(), 'opencode', `kone-ipc-sweep-user-data-${process.pid}`)
+process.env.KONE_TEST_USER_DATA_DIR = path.join(
+  process.env.TEMP || process.cwd(),
+  'opencode',
+  `kone-ipc-sweep-user-data-${process.pid}`,
+)
 
 const electronMock = {
   app: {
@@ -30,28 +34,72 @@ const safeFetchStub = async () => ({
   },
 })
 
+// Stub the raw global fetch so handlers that call the world-time API
+// (license:submit -> syncTrialAnchor -> getStandardTime) never touch the live
+// network during the boundary-value barrage. Without this, a firewalled/offline
+// CI runner would block up to the fetch timeout and report a false `timed_out`.
+const originalGlobalFetch = global.fetch
+global.fetch = async (url) => ({
+  ok: true,
+  status: 200,
+  headers: { get: () => 'application/json' },
+  async json() {
+    if (/worldtimeapi/i.test(String(url || ''))) {
+      return { unixtime: Math.floor(Date.now() / 1000) }
+    }
+    return {}
+  },
+  async text() {
+    return '{}'
+  },
+})
+
 const supabaseModuleMock = {
   createClient() {
     return {
       from() {
         return {
-          select() { return this },
-          eq() { return this },
-          neq() { return this },
-          in() { return this },
-          limit() { return this },
-          single() { return Promise.resolve({ data: null, error: null }) },
-          maybeSingle() { return Promise.resolve({ data: null, error: null }) },
-          upsert() { return Promise.resolve({ data: null, error: null }) },
-          insert() { return Promise.resolve({ data: null, error: null }) },
-          order() { return this },
+          select() {
+            return this
+          },
+          eq() {
+            return this
+          },
+          neq() {
+            return this
+          },
+          in() {
+            return this
+          },
+          limit() {
+            return this
+          },
+          single() {
+            return Promise.resolve({ data: null, error: null })
+          },
+          maybeSingle() {
+            return Promise.resolve({ data: null, error: null })
+          },
+          upsert() {
+            return Promise.resolve({ data: null, error: null })
+          },
+          insert() {
+            return Promise.resolve({ data: null, error: null })
+          },
+          order() {
+            return this
+          },
         }
       },
       removeChannel() {},
       channel() {
         return {
-          on() { return this },
-          subscribe() { return this },
+          on() {
+            return this
+          },
+          subscribe() {
+            return this
+          },
         }
       },
     }
@@ -180,6 +228,7 @@ const protectedFeatureError = (operationName) => {
   return error
 }
 
+// eslint-disable-next-line no-control-regex -- 剥离终端 ANSI 转义序列是此处唯一职责
 const stripAnsi = (value) => String(value || '').replace(/\u001b\[[0-9;]*m/g, '')
 
 const normalizeResultKind = (result) => {
@@ -402,7 +451,12 @@ const getSweepCases = (IPC_CHANNELS) => [
     label: 'SEARCH.API_TEST_CONNECTION',
     family: 'search',
     expectation: 'success_or_error_structured',
-    payloads: [undefined, {}, { provider: 'llm', key: '', baseUrl: '' }, { provider: 'google-leads', key: '', baseUrl: '' }],
+    payloads: [
+      undefined,
+      {},
+      { provider: 'llm', key: '', baseUrl: '' },
+      { provider: 'google-leads', key: '', baseUrl: '' },
+    ],
   },
   {
     channel: IPC_CHANNELS.SEARCH.API_PROXY,
@@ -423,7 +477,12 @@ const getSweepCases = (IPC_CHANNELS) => [
     label: 'SEARCH.ANALYSIS_GENERATE',
     family: 'analysis',
     expectation: 'degraded_expected',
-    payloads: [undefined, {}, { lead: {}, scenario: 'direct_quote' }, { lead: { company: 'Example GmbH' }, scenario: 'reply_coach' }],
+    payloads: [
+      undefined,
+      {},
+      { lead: {}, scenario: 'direct_quote' },
+      { lead: { company: 'Example GmbH' }, scenario: 'reply_coach' },
+    ],
   },
   {
     channel: IPC_CHANNELS.FILES.EXPORT_SAVE,
@@ -472,7 +531,12 @@ const getSweepCases = (IPC_CHANNELS) => [
     label: 'CLOUD.CREATE_CAMPAIGN',
     family: 'cloud',
     expectation: 'success_or_error_structured',
-    payloads: [undefined, {}, { domain: '', email: '', templateId: '' }, { domain: 'example.com', email: 'dev@example.com', templateId: 'default' }],
+    payloads: [
+      undefined,
+      {},
+      { domain: '', email: '', templateId: '' },
+      { domain: 'example.com', email: 'dev@example.com', templateId: 'default' },
+    ],
   },
   {
     channel: IPC_CHANNELS.CLOUD.FETCH_TEAM_LEADS,
@@ -521,7 +585,15 @@ const getSweepCases = (IPC_CHANNELS) => [
     label: 'AUTOMATION.START_CAMPAIGN',
     family: 'automation',
     expectation: 'success_or_error_structured',
-    payloads: [undefined, {}, { leads: [] }, { leads: [{ email: 'dev@example.com', company: 'Example', website: 'https://example.com' }], templateId: 'default' }],
+    payloads: [
+      undefined,
+      {},
+      { leads: [] },
+      {
+        leads: [{ email: 'dev@example.com', company: 'Example', website: 'https://example.com' }],
+        templateId: 'default',
+      },
+    ],
   },
 ]
 
@@ -539,20 +611,39 @@ test('ipc contract sweep: handlers resist boundary-value barrage without fatal c
       const outcome = await invokeWithGuard(handler, invocationArgs)
       const resultKind = outcome.status === 'returned' ? normalizeResultKind(outcome.value) : outcome.status
 
-      assert.equal(outcome.uncaught.length, 0, `${sweepCase.label} emitted uncaught exception for payload ${JSON.stringify(payload)}`)
-      assert.equal(outcome.unhandled.length, 0, `${sweepCase.label} emitted unhandled rejection for payload ${JSON.stringify(payload)}`)
+      assert.equal(
+        outcome.uncaught.length,
+        0,
+        `${sweepCase.label} emitted uncaught exception for payload ${JSON.stringify(payload)}`,
+      )
+      assert.equal(
+        outcome.unhandled.length,
+        0,
+        `${sweepCase.label} emitted unhandled rejection for payload ${JSON.stringify(payload)}`,
+      )
       assert.notEqual(outcome.status, 'timed_out', `${sweepCase.label} hung on payload ${JSON.stringify(payload)}`)
-      assert.notEqual(outcome.status, 'rejected', `${sweepCase.label} rejected instead of returning structured response on payload ${JSON.stringify(payload)}`)
+      assert.notEqual(
+        outcome.status,
+        'rejected',
+        `${sweepCase.label} rejected instead of returning structured response on payload ${JSON.stringify(payload)}`,
+      )
 
-      if (sweepCase.expectation === 'stream_contract_expected' && sent.some((entry) => entry.channel === IPC_CHANNELS.SEARCH.STREAM_ERROR)) {
+      if (
+        sweepCase.expectation === 'stream_contract_expected' &&
+        sent.some((entry) => entry.channel === IPC_CHANNELS.SEARCH.STREAM_ERROR)
+      ) {
         assert.ok(
           sent.some((entry) => entry.channel === IPC_CHANNELS.SEARCH.STREAM_COMPLETE),
-          `${sweepCase.label} emitted stream error without stream complete`
+          `${sweepCase.label} emitted stream error without stream complete`,
         )
       }
 
       if (sweepCase.expectation === 'deny_expected') {
-        assert.equal(outcome.value?.success, false, `${sweepCase.label} unexpectedly succeeded under deny_expected policy`)
+        assert.equal(
+          outcome.value?.success,
+          false,
+          `${sweepCase.label} unexpectedly succeeded under deny_expected policy`,
+        )
       }
 
       results.push({
@@ -568,19 +659,27 @@ test('ipc contract sweep: handlers resist boundary-value barrage without fatal c
     }
   }
 
-  const summary = results.reduce((acc, entry) => {
-    acc.total += 1
-    if (entry.outcome === 'structured_success') acc.structuredSuccess += 1
-    else if (entry.outcome === 'structured_error') acc.structuredError += 1
-    else acc.other += 1
-    return acc
-  }, { total: 0, structuredSuccess: 0, structuredError: 0, other: 0 })
+  const summary = results.reduce(
+    (acc, entry) => {
+      acc.total += 1
+      if (entry.outcome === 'structured_success') acc.structuredSuccess += 1
+      else if (entry.outcome === 'structured_error') acc.structuredError += 1
+      else acc.other += 1
+      return acc
+    },
+    { total: 0, structuredSuccess: 0, structuredError: 0, other: 0 },
+  )
 
   assert.equal(summary.other, 0, 'Sweep produced non-structured outcomes')
 })
 
 test.after(() => {
   Module._load = originalLoad
+  if (typeof originalGlobalFetch === 'undefined') {
+    delete global.fetch
+  } else {
+    global.fetch = originalGlobalFetch
+  }
   if (typeof originalTestUserDataDir === 'undefined') {
     delete process.env.KONE_TEST_USER_DATA_DIR
   } else {

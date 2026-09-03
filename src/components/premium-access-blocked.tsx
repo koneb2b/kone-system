@@ -1,6 +1,6 @@
-"use client"
+'use client'
 
-import { Lock } from "lucide-react"
+import { Lock } from 'lucide-react'
 
 export function PremiumAccessBlocked({
   title,

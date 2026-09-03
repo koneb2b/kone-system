@@ -55,10 +55,7 @@ const createStoreMock = (values = {}) => ({
   },
 })
 
-const createLicenseGuardMock = ({
-  claims = null,
-  featureError = null,
-} = {}) => ({
+const createLicenseGuardMock = ({ claims = null, featureError = null } = {}) => ({
   getStoredClaims() {
     return claims
   },
@@ -92,7 +89,7 @@ test('scene A: expired trial short-circuits before handler execution', async () 
       handlerExecuted = true
       return { success: true }
     },
-    '海外客户智能搜索'
+    '海外客户智能搜索',
   )
 
   const result = await ipcMain.getHandler('test:expired')(createEventMock())
@@ -127,7 +124,7 @@ test('scene B: missing feature denies access before handler execution', async ()
       handlerExecuted = true
       return { success: true }
     },
-    '线索全量导出'
+    '线索全量导出',
   )
 
   const result = await ipcMain.getHandler('test:feature-denied')(createEventMock())
@@ -165,7 +162,7 @@ test('scene C: trial and feature pass through to handler', async () => {
       handlerCallCount += 1
       return { success: true, echoed: payload }
     },
-    '云端代理请求'
+    '云端代理请求',
   )
 
   const payload = { url: 'https://example.com' }

@@ -9,9 +9,9 @@ const read = (...segments) => fs.readFileSync(path.join(repoRoot, ...segments), 
 test('premium workspace access treats Enterprise as unlocked in sidebar', () => {
   const sidebar = read('src', 'components', 'app-sidebar.tsx')
 
-  assert.match(sidebar, /const canAccessPremiumWorkspace = tier === "premium" \|\| plan === "enterprise"/)
+  assert.match(sidebar, /const canAccessPremiumWorkspace = tier === ["']premium["'] \|\| plan === ["']enterprise["']/)
   assert.match(sidebar, /item\.premium && !canAccessPremiumWorkspace/)
-  assert.doesNotMatch(sidebar, /badge: "Pro"/)
+  assert.doesNotMatch(sidebar, /badge: ["']Pro["']/)
 })
 
 test('search quality controls use localized Simplified Chinese for filter labels', () => {

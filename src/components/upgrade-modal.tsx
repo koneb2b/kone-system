@@ -1,22 +1,16 @@
-"use client"
+'use client'
 
-import { useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Check, Copy, Crown, Fingerprint, Headset, QrCode, Rocket, Shield } from "lucide-react"
-import { submitLicense } from "@/lib/electron-api"
-import { useLicenseStore } from "@/store/licenseStore"
-import wechatQrUrl from "@/assets/wechat-qr.png"
-import { useToast } from "@/hooks/use-toast"
+import { useState } from 'react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Check, Copy, Crown, Fingerprint, Headset, QrCode, Rocket, Shield } from 'lucide-react'
+import { submitLicense } from '@/lib/electron-api'
+import { useLicenseStore } from '@/store/licenseStore'
+import wechatQrUrl from '@/assets/wechat-qr.png'
+import { useToast } from '@/hooks/use-toast'
 
-type UpgradeIntent = "basic" | "premium"
+type UpgradeIntent = 'basic' | 'premium'
 
 type UpgradeModalProps = {
   open: boolean
@@ -25,31 +19,40 @@ type UpgradeModalProps = {
   onActivated?: () => void
 }
 
-const INTENT_COPY: Record<UpgradeIntent, { title: string; subtitle: string; description: string; activationHint: string; activateButtonLabel: string; emptyKeyMessage: string }> = {
+const INTENT_COPY: Record<
+  UpgradeIntent,
+  {
+    title: string
+    subtitle: string
+    description: string
+    activationHint: string
+    activateButtonLabel: string
+    emptyKeyMessage: string
+  }
+> = {
   basic: {
-    title: "升级 Kone 基础版",
-    subtitle: "解除试用限制，打造专属外贸获客引擎",
-    description:
-      "扫码添加专属顾问 | 获取基础版授权。解锁无限次本地搜索、深度邮箱挖掘与线索全量导出，AI深度分析跟进。",
-    activationHint: "粘贴专属顾问交付的基础版离线授权码后，系统将立即完成校验并解除试用限制，切换为正式商业授权。",
-    activateButtonLabel: "立即解锁基础版",
-    emptyKeyMessage: "请输入基础版离线授权码",
+    title: '升级 Kone 基础版',
+    subtitle: '解除试用限制，打造专属外贸获客引擎',
+    description: '扫码添加专属顾问 | 获取基础版授权。解锁无限次本地搜索、深度邮箱挖掘与线索全量导出，AI深度分析跟进。',
+    activationHint: '粘贴专属顾问交付的基础版离线授权码后，系统将立即完成校验并解除试用限制，切换为正式商业授权。',
+    activateButtonLabel: '立即解锁基础版',
+    emptyKeyMessage: '请输入基础版离线授权码',
   },
   premium: {
-    title: "升级 Kone 企业高级版",
-    subtitle: "B2B 私域协同 + 云端自动化序列",
-    description:
-      "扫码添加专属顾问 | 获取高级版授权。解锁云端防撞单检测、团队线索共享与多节点自动化发信引擎。",
-    activationHint: "粘贴专属顾问交付的 Premium 离线授权码后，系统将立即完成校验并瞬间覆盖当前试用状态，解锁云端高级能力。",
-    activateButtonLabel: "立即解锁高级版",
-    emptyKeyMessage: "请输入高级版离线授权码",
+    title: '升级 Kone 企业高级版',
+    subtitle: 'B2B 私域协同 + 云端自动化序列',
+    description: '扫码添加专属顾问 | 获取高级版授权。解锁云端防撞单检测、团队线索共享与多节点自动化发信引擎。',
+    activationHint:
+      '粘贴专属顾问交付的 Premium 离线授权码后，系统将立即完成校验并瞬间覆盖当前试用状态，解锁云端高级能力。',
+    activateButtonLabel: '立即解锁高级版',
+    emptyKeyMessage: '请输入高级版离线授权码',
   },
 }
 
-export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivated }: UpgradeModalProps) {
-  const [licenseKey, setLicenseKey] = useState("")
+export function UpgradeModal({ open, intent = 'premium', onOpenChange, onActivated }: UpgradeModalProps) {
+  const [licenseKey, setLicenseKey] = useState('')
   const [activating, setActivating] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("")
+  const [errorMessage, setErrorMessage] = useState('')
   const [copied, setCopied] = useState(false)
   const machineId = useLicenseStore((state) => state.machineId)
   const refreshLicenseStatus = useLicenseStore((state) => state.refreshLicenseStatus)
@@ -58,12 +61,16 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
 
   const handleCopyMachineId = async () => {
     try {
-      await navigator.clipboard.writeText(machineId || "")
+      await navigator.clipboard.writeText(machineId || '')
       setCopied(true)
       setTimeout(() => setCopied(false), 2200)
     } catch (error) {
       setCopied(false)
-      toast({ title: "错误", description: error instanceof Error ? error.message : "复制设备识别码失败", variant: "destructive" })
+      toast({
+        title: '错误',
+        description: error instanceof Error ? error.message : '复制设备识别码失败',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -71,33 +78,33 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
     if (!licenseKey.trim()) {
       const message = copy.emptyKeyMessage
       setErrorMessage(message)
-      toast({ title: "激活失败", description: message, variant: "destructive" })
+      toast({ title: '激活失败', description: message, variant: 'destructive' })
       return
     }
 
     setActivating(true)
-    setErrorMessage("")
+    setErrorMessage('')
     try {
       const result = await submitLicense({ licenseKey: licenseKey.trim() })
       if (result.isExpired) {
-        const message = result.message || "授权已过期，请联系专属顾问续费"
+        const message = result.message || '授权已过期，请联系专属顾问续费'
         setErrorMessage(message)
-        toast({ title: "激活失败", description: message, variant: "destructive" })
+        toast({ title: '激活失败', description: message, variant: 'destructive' })
         return
       }
-      if (result.tier === "unregistered") {
-        const message = result.message || "激活码无效，请核对后重新输入"
+      if (result.tier === 'unregistered') {
+        const message = result.message || '激活码无效，请核对后重新输入'
         setErrorMessage(message)
-        toast({ title: "激活失败", description: message, variant: "destructive" })
+        toast({ title: '激活失败', description: message, variant: 'destructive' })
         return
       }
       await refreshLicenseStatus(true)
       onOpenChange(false)
       onActivated?.()
     } catch (error) {
-      const message = error instanceof Error ? error.message : "验证失败，请稍后重试"
+      const message = error instanceof Error ? error.message : '验证失败，请稍后重试'
       setErrorMessage(message)
-      toast({ title: "激活失败", description: message, variant: "destructive" })
+      toast({ title: '激活失败', description: message, variant: 'destructive' })
     } finally {
       setActivating(false)
     }
@@ -105,8 +112,8 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
 
   const handleClose = (next: boolean) => {
     if (!next) {
-      setLicenseKey("")
-      setErrorMessage("")
+      setLicenseKey('')
+      setErrorMessage('')
       setCopied(false)
     }
     onOpenChange(next)
@@ -130,12 +137,8 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                   <Crown className="size-5 text-white" />
                 </div>
                 <div>
-                  <DialogTitle className="text-xl font-bold tracking-tight text-slate-900">
-                    {copy.title}
-                  </DialogTitle>
-                  <DialogDescription className="mt-1 text-xs text-slate-500">
-                    {copy.subtitle}
-                  </DialogDescription>
+                  <DialogTitle className="text-xl font-bold tracking-tight text-slate-900">{copy.title}</DialogTitle>
+                  <DialogDescription className="mt-1 text-xs text-slate-500">{copy.subtitle}</DialogDescription>
                 </div>
               </div>
             </DialogHeader>
@@ -145,9 +148,7 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                 <Headset className="size-4 text-blue-600" />
                 扫码添加专属顾问
               </div>
-              <p className="mt-2 min-h-[44px] text-sm leading-relaxed text-slate-500">
-                {copy.description}
-              </p>
+              <p className="mt-2 min-h-[44px] text-sm leading-relaxed text-slate-500">{copy.description}</p>
 
               <div className="mt-5 flex flex-col items-center gap-4">
                 <div className="relative flex size-48 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-md">
@@ -157,15 +158,17 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                     className="size-full object-contain"
                     onError={(e) => {
                       const target = e.currentTarget
-                      target.style.display = "none"
-                      target.parentElement?.querySelector("[data-placeholder]")?.removeAttribute("hidden")
+                      target.style.display = 'none'
+                      target.parentElement?.querySelector('[data-placeholder]')?.removeAttribute('hidden')
                     }}
                   />
-                  <div data-placeholder hidden className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
+                  <div
+                    data-placeholder
+                    hidden
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400"
+                  >
                     <QrCode className="size-12 text-slate-300" />
-                    <span className="px-3 text-center text-[11px] leading-relaxed">
-                      请替换为真实微信二维码
-                    </span>
+                    <span className="px-3 text-center text-[11px] leading-relaxed">请替换为真实微信二维码</span>
                   </div>
                 </div>
 
@@ -176,7 +179,7 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                   </div>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-slate-700">
-                      {machineId || "正在获取..."}
+                      {machineId || '正在获取...'}
                     </code>
                     <Button
                       variant="outline"
@@ -203,12 +206,8 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                   <Shield className="size-4 text-blue-400" />
                   离线授权激活
                 </div>
-                <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">
-                  已获取离线授权码？ 请在此粘贴
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                {copy.activationHint}
-                </p>
+                <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">已获取离线授权码？ 请在此粘贴</h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-500">{copy.activationHint}</p>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -225,7 +224,8 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                   </p>
                 ) : (
                   <p className="mt-3 text-xs text-slate-500">
-                    支持粘贴完整离线授权文件或单行激活码。验证通过后将立即切换为{intent === "basic" ? "基础版" : "高级版"}。
+                    支持粘贴完整离线授权文件或单行激活码。验证通过后将立即切换为
+                    {intent === 'basic' ? '基础版' : '高级版'}。
                   </p>
                 )}
 
@@ -237,7 +237,7 @@ export function UpgradeModal({ open, intent = "premium", onOpenChange, onActivat
                   className="mt-5 h-12 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-md transition-colors hover:bg-blue-700"
                 >
                   {!activating ? <Rocket className="size-4.5" /> : null}
-                  {activating ? `正在解锁${intent === "basic" ? "基础版" : "高级版"}...` : copy.activateButtonLabel}
+                  {activating ? `正在解锁${intent === 'basic' ? '基础版' : '高级版'}...` : copy.activateButtonLabel}
                 </Button>
               </div>
             </div>

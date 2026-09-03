@@ -27,10 +27,12 @@ test('dashboard shell uses responsive flex layout with overflow scrolling', () =
   assert.match(sidebar, /flex-col gap-1/)
 })
 
-test('search workspace uses responsive data source grid and flex-wrap filters', () => {
+test('search workspace uses responsive grid and flex-wrap filters', () => {
   const searchEngine = read('src', 'components', 'search-engine.tsx')
 
-  assert.match(searchEngine, /lg:grid-cols-\[220px_minmax\(0,1fr\)\]/)
+  // Omni-Search removed the legacy data-source column; the workspace now uses a
+  // responsive results/analysis grid plus flex-wrap filter rows.
+  assert.match(searchEngine, /lg:grid-cols-\[1\.4fr_1fr\]/)
   assert.match(searchEngine, /flex-wrap/)
   assert.match(searchEngine, /flex-col gap-\d/)
 })

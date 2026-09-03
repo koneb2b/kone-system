@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
-import { TrendingUp, Target, Zap } from "lucide-react"
-import { useLeadsStore } from "@/store/leads-store"
+import { useEffect, useMemo, useState } from 'react'
+import { TrendingUp, Target, Zap } from 'lucide-react'
+import { useLeadsStore } from '@/store/leads-store'
 
 const getScoredLeads = (leads: Array<{ matchScore?: number | null }>) =>
-  leads.filter((lead) => typeof lead.matchScore === "number")
+  leads.filter((lead) => typeof lead.matchScore === 'number')
 
 export function StatsCards({ onLeadsNavigate }: { onLeadsNavigate?: () => void }) {
   const { leads, searchResults } = useLeadsStore()
@@ -13,36 +13,36 @@ export function StatsCards({ onLeadsNavigate }: { onLeadsNavigate?: () => void }
     : 0
   const stats = [
     {
-      label: "今日挖掘量",
+      label: '今日挖掘量',
       value: `${searchResults.length}`,
       icon: TrendingUp,
-      trend: searchResults.length ? "实时" : "等待搜索",
-      color: "text-primary",
-      bgColor: "bg-primary/10",
+      trend: searchResults.length ? '实时' : '等待搜索',
+      color: 'text-primary',
+      bgColor: 'bg-primary/10',
     },
     {
-      label: "AI 匹配准确率",
+      label: 'AI 匹配准确率',
       value: `${matchedAvg}%`,
       icon: Target,
-      trend: scoredLeads.length ? "动态" : "暂无",
-      color: "text-success",
-      bgColor: "bg-success/10",
+      trend: scoredLeads.length ? '动态' : '暂无',
+      color: 'text-success',
+      bgColor: 'bg-success/10',
     },
     {
-      label: "线索库总量",
+      label: '线索库总量',
       value: `${leads.length}`,
       icon: Zap,
-      trend: "本地",
-      color: "text-amber-500",
-      bgColor: "bg-amber-500/10",
+      trend: '本地',
+      color: 'text-amber-500',
+      bgColor: 'bg-amber-500/10',
       action: onLeadsNavigate,
     },
   ]
   const targets = useMemo(
     () =>
       stats.map((stat) => {
-        const numeric = parseFloat(stat.value.replace(/,/g, ""))
-        const suffix = stat.value.replace(/[0-9.,]/g, "")
+        const numeric = parseFloat(stat.value.replace(/,/g, ''))
+        const suffix = stat.value.replace(/[0-9.,]/g, '')
         return { numeric: Number.isFinite(numeric) ? numeric : 0, suffix }
       }),
     [],

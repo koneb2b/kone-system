@@ -1,45 +1,64 @@
-"use client"
+'use client'
 
-import { Suspense, lazy, useState, useCallback, useEffect } from "react"
-import { Bell, Shield, Wifi } from "lucide-react"
-import { AppSidebar } from "@/components/app-sidebar"
-import { UpgradeModal } from "@/components/upgrade-modal"
-import { ContactModal } from "@/components/contact-modal"
-import { PremiumAccessBlocked } from "@/components/premium-access-blocked"
-import { startCampaign } from "@/lib/electron-api"
-import { useLicenseStore } from "@/store/licenseStore"
+import { Suspense, lazy, useState, useCallback, useEffect } from 'react'
+import { Bell, Shield, Wifi } from 'lucide-react'
+import { AppSidebar } from '@/components/app-sidebar'
+import { UpgradeModal } from '@/components/upgrade-modal'
+import { ContactModal } from '@/components/contact-modal'
+import { PremiumAccessBlocked } from '@/components/premium-access-blocked'
+import { startCampaign } from '@/lib/electron-api'
+import { useLicenseStore } from '@/store/licenseStore'
 
-import type { LeadItem } from "@/store/leads-store"
+import type { LeadItem } from '@/store/leads-store'
 
-const SearchEngine = lazy(() => import("@/components/search-engine").then((module) => ({ default: module.SearchEngine })))
-const StatsCards = lazy(() => import("@/components/stats-cards").then((module) => ({ default: module.StatsCards })))
-const LeadsTable = lazy(() => import("@/components/leads-table").then((module) => ({ default: module.LeadsTable })))
-const AnalysisDrawer = lazy(() => import("@/components/analysis-drawer").then((module) => ({ default: module.AnalysisDrawer })))
-const LeadsManagement = lazy(() => import("@/components/leads-management").then((module) => ({ default: module.LeadsManagement })))
-const DataCenter = lazy(() => import("@/components/data-center").then((module) => ({ default: module.DataCenter })))
-const KnowledgeBase = lazy(() => import("@/components/knowledge-base").then((module) => ({ default: module.KnowledgeBase })))
-const SystemSettings = lazy(() => import("@/components/system-settings").then((module) => ({ default: module.SystemSettings })))
-const TeamDashboard = lazy(() => import("@/components/team-dashboard").then((module) => ({ default: module.TeamDashboard })))
-const AutomationWorkflow = lazy(() => import("@/components/automation-workflow").then((module) => ({ default: module.AutomationWorkflow })))
-const AccountsManagement = lazy(() => import("@/components/accounts-management").then((module) => ({ default: module.AccountsManagement })))
-const AgentsPanel = lazy(() => import("@/components/agents-panel").then((module) => ({ default: module.AgentsPanel })))
+const SearchEngine = lazy(() =>
+  import('@/components/search-engine').then((module) => ({ default: module.SearchEngine })),
+)
+const StatsCards = lazy(() => import('@/components/stats-cards').then((module) => ({ default: module.StatsCards })))
+const LeadsTable = lazy(() => import('@/components/leads-table').then((module) => ({ default: module.LeadsTable })))
+const AnalysisDrawer = lazy(() =>
+  import('@/components/analysis-drawer').then((module) => ({ default: module.AnalysisDrawer })),
+)
+const LeadsManagement = lazy(() =>
+  import('@/components/leads-management').then((module) => ({ default: module.LeadsManagement })),
+)
+const DataCenter = lazy(() => import('@/components/data-center').then((module) => ({ default: module.DataCenter })))
+const KnowledgeBase = lazy(() =>
+  import('@/components/knowledge-base').then((module) => ({ default: module.KnowledgeBase })),
+)
+const SystemSettings = lazy(() =>
+  import('@/components/system-settings').then((module) => ({ default: module.SystemSettings })),
+)
+const TeamDashboard = lazy(() =>
+  import('@/components/team-dashboard').then((module) => ({ default: module.TeamDashboard })),
+)
+const AutomationWorkflow = lazy(() =>
+  import('@/components/automation-workflow').then((module) => ({ default: module.AutomationWorkflow })),
+)
+const AccountsManagement = lazy(() =>
+  import('@/components/accounts-management').then((module) => ({ default: module.AccountsManagement })),
+)
+const AgentsPanel = lazy(() => import('@/components/agents-panel').then((module) => ({ default: module.AgentsPanel })))
 
 type UserRole = 'trial' | 'pro' | 'enterprise'
-type UpgradeIntent = "basic" | "premium"
+type UpgradeIntent = 'basic' | 'premium'
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
-  search: { title: "海外客户智能搜索", subtitle: "AI 驱动的全球 B2B 客户精准挖掘" },
-  leads: { title: "线索管理", subtitle: "管理和跟踪所有客户线索" },
-  data: { title: "数据中心", subtitle: "全面的业务数据分析与洞察" },
-  knowledge: { title: "企业知识库", subtitle: "构建您的私域 AI 大脑" },
-  settings: { title: "系统设置", subtitle: "API 密钥、搜索配置与账户管理" },
-  "team-dashboard": { title: "团队协作看板", subtitle: "实时团队线索协同与防撞单管理" },
-  automation: { title: "智能触达工作流", subtitle: "客户清洗、模板配置与云端发送的协同引擎" },
-  accounts: { title: "多账号沙箱管理", subtitle: "独立持久化沙箱隔离，安全多开 LinkedIn / Facebook / WhatsApp / 企业邮箱" },
-  agents: { title: "AI 销售团队", subtitle: "3 大原生智能体协同工作：WhatsApp 拓客 · LinkedIn 买手 · 邮件三轮跟进" },
+  search: { title: '海外客户智能搜索', subtitle: 'AI 驱动的全球 B2B 客户精准挖掘' },
+  leads: { title: '线索管理', subtitle: '管理和跟踪所有客户线索' },
+  data: { title: '数据中心', subtitle: '全面的业务数据分析与洞察' },
+  knowledge: { title: '企业知识库', subtitle: '构建您的私域 AI 大脑' },
+  settings: { title: '系统设置', subtitle: 'API 密钥、搜索配置与账户管理' },
+  'team-dashboard': { title: '团队协作看板', subtitle: '实时团队线索协同与防撞单管理' },
+  automation: { title: '智能触达工作流', subtitle: '客户清洗、模板配置与云端发送的协同引擎' },
+  accounts: {
+    title: '多账号沙箱管理',
+    subtitle: '独立持久化沙箱隔离，安全多开 LinkedIn / Facebook / WhatsApp / 企业邮箱',
+  },
+  agents: { title: 'AI 销售团队', subtitle: '3 大原生智能体协同工作：WhatsApp 拓客 · LinkedIn 买手 · 邮件三轮跟进' },
 }
 
-function SectionSkeleton({ label = "模块加载中..." }: { label?: string }) {
+function SectionSkeleton({ label = '模块加载中...' }: { label?: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
       <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-slate-500">
@@ -51,13 +70,13 @@ function SectionSkeleton({ label = "模块加载中..." }: { label?: string }) {
 }
 
 export function DashboardPage() {
-  const [activeNav, setActiveNav] = useState("search")
+  const [activeNav, setActiveNav] = useState('search')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null)
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
-  const [upgradeIntent, setUpgradeIntent] = useState<UpgradeIntent>("premium")
+  const [upgradeIntent, setUpgradeIntent] = useState<UpgradeIntent>('premium')
   const [contactModalOpen, setContactModalOpen] = useState(false)
-  const [cloudMode, setCloudMode] = useState<"connected" | "local">("connected")
+  const [cloudMode, setCloudMode] = useState<'connected' | 'local'>('connected')
   const plan = useLicenseStore((s) => s.plan)
   const tier = useLicenseStore((s) => s.tier)
   const isTrial = useLicenseStore((s) => s.isTrial)
@@ -65,7 +84,7 @@ export function DashboardPage() {
   const refreshLicenseStatus = useLicenseStore((s) => s.refreshLicenseStatus)
 
   const currentRole: UserRole = loading ? 'trial' : isTrial ? 'trial' : tier === 'premium' ? 'enterprise' : 'pro'
-  const isExpired = tier === "expired"
+  const isExpired = tier === 'expired'
 
   useEffect(() => {
     if (isExpired) {
@@ -74,19 +93,19 @@ export function DashboardPage() {
   }, [isExpired])
 
   useEffect(() => {
-    const handleNavigateSettings = () => setActiveNav("settings")
-    const handleNavigateLeads = () => setActiveNav("leads")
+    const handleNavigateSettings = () => setActiveNav('settings')
+    const handleNavigateLeads = () => setActiveNav('leads')
     const handleCloudMode = (event: Event) => {
-      const customEvent = event as CustomEvent<{ mode?: "connected" | "local" }>
-      setCloudMode(customEvent.detail?.mode === "local" ? "local" : "connected")
+      const customEvent = event as CustomEvent<{ mode?: 'connected' | 'local' }>
+      setCloudMode(customEvent.detail?.mode === 'local' ? 'local' : 'connected')
     }
-    window.addEventListener("kone:navigate-settings", handleNavigateSettings)
-    window.addEventListener("kone:navigate-leads", handleNavigateLeads)
-    window.addEventListener("kone:cloud-mode", handleCloudMode as EventListener)
+    window.addEventListener('kone:navigate-settings', handleNavigateSettings)
+    window.addEventListener('kone:navigate-leads', handleNavigateLeads)
+    window.addEventListener('kone:cloud-mode', handleCloudMode as EventListener)
     return () => {
-      window.removeEventListener("kone:navigate-settings", handleNavigateSettings)
-      window.removeEventListener("kone:navigate-leads", handleNavigateLeads)
-      window.removeEventListener("kone:cloud-mode", handleCloudMode as EventListener)
+      window.removeEventListener('kone:navigate-settings', handleNavigateSettings)
+      window.removeEventListener('kone:navigate-leads', handleNavigateLeads)
+      window.removeEventListener('kone:cloud-mode', handleCloudMode as EventListener)
     }
   }, [])
 
@@ -96,7 +115,7 @@ export function DashboardPage() {
   }
 
   const handlePremiumNavClick = useCallback((_id: string) => {
-    setUpgradeIntent("premium")
+    setUpgradeIntent('premium')
     setUpgradeModalOpen(true)
   }, [])
 
@@ -110,44 +129,41 @@ export function DashboardPage() {
   }, [refreshLicenseStatus])
 
   const handleSendToCloud = async (lead: LeadItem) => {
-    const analysisCache = typeof lead.analysisCache === "object" && lead.analysisCache
-      ? (lead.analysisCache as Record<string, any>)
-      : {}
-    const bestAnalysis = analysisCache.direct_quote
-      || analysisCache.competitor_switch
-      || analysisCache.factory_strength
-      || {}
+    const analysisCache =
+      typeof lead.analysisCache === 'object' && lead.analysisCache ? (lead.analysisCache as Record<string, any>) : {}
+    const bestAnalysis =
+      analysisCache.direct_quote || analysisCache.competitor_switch || analysisCache.factory_strength || {}
 
     const response = await startCampaign({
-      templateId: "single_lead_handoff",
+      templateId: 'single_lead_handoff',
       leads: [
         {
-          email: lead.email || "",
+          email: lead.email || '',
           company: lead.company,
-          website: lead.website || "",
-          domain: lead.website || "",
-          country: lead.country || "",
-          contact: lead.contact || "",
-          contactTitle: lead.contactTitle || lead.inferredRole || "",
-          phone: lead.phone || "",
-          address: lead.address || "",
-          source: lead.source || "",
-          matchScore: typeof lead.matchScore === "number" ? lead.matchScore : undefined,
+          website: lead.website || '',
+          domain: lead.website || '',
+          country: lead.country || '',
+          contact: lead.contact || '',
+          contactTitle: lead.contactTitle || lead.inferredRole || '',
+          phone: lead.phone || '',
+          address: lead.address || '',
+          source: lead.source || '',
+          matchScore: typeof lead.matchScore === 'number' ? lead.matchScore : undefined,
           matchReasons: lead.matchReasons || [],
           riskFlags: lead.riskFlags || [],
-          inferredRole: lead.inferredRole || "",
-          snippet: lead.snippet || "",
-          verificationStatus: "unverified",
+          inferredRole: lead.inferredRole || '',
+          snippet: lead.snippet || '',
+          verificationStatus: 'unverified',
           aiAnalysis: {
-            companyProfile: String(bestAnalysis.companyProfile || "").trim(),
-            painPoints: String(bestAnalysis.painPoints || "").trim(),
-            valueMapping: String(bestAnalysis.valueMapping || "").trim(),
-            confidence: typeof bestAnalysis.confidence === "number" ? bestAnalysis.confidence : undefined,
-            source: String(bestAnalysis.source || "").trim(),
+            companyProfile: String(bestAnalysis.companyProfile || '').trim(),
+            painPoints: String(bestAnalysis.painPoints || '').trim(),
+            valueMapping: String(bestAnalysis.valueMapping || '').trim(),
+            confidence: typeof bestAnalysis.confidence === 'number' ? bestAnalysis.confidence : undefined,
+            source: String(bestAnalysis.source || '').trim(),
           },
           aiGeneratedPitch: {
-            emailSubject: String(bestAnalysis.emailSubject || "").trim(),
-            emailBody: String(bestAnalysis.emailBody || "").trim(),
+            emailSubject: String(bestAnalysis.emailSubject || '').trim(),
+            emailBody: String(bestAnalysis.emailBody || '').trim(),
           },
           userSettings: {},
         },
@@ -156,7 +172,7 @@ export function DashboardPage() {
 
     if (response.triggered === false && response.error) {
       const supabaseMessage = /supabase|URL.*Key|Anon|service_role|JWT/i.test(response.error)
-        ? "企业云端协同引擎暂未启用。当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。"
+        ? '企业云端协同引擎暂未启用。当前功能为 Premium 高级版专属，支持云端多员防撞单碰撞与脱机长效跟随，请联系管理员解锁。'
         : response.error
       throw new Error(supabaseMessage)
     }
@@ -172,11 +188,12 @@ export function DashboardPage() {
   }
 
   const currentPage = pageTitles[activeNav] || pageTitles.search
-  const showLocalEnhancedMode = activeNav === "team-dashboard" && cloudMode === "local"
-  const canAccessPremiumWorkspace = tier === "premium" || plan === "enterprise"
-  const canAccessAccountsWorkspace = !loading && (canAccessPremiumWorkspace || plan === "basic" || plan === "trial")
-  const shouldBlockPremiumPage = (activeNav === "team-dashboard" || activeNav === "automation") && !loading && !canAccessPremiumWorkspace
-  const shouldBlockAccountsPage = activeNav === "accounts" && !canAccessAccountsWorkspace
+  const showLocalEnhancedMode = activeNav === 'team-dashboard' && cloudMode === 'local'
+  const canAccessPremiumWorkspace = tier === 'premium' || plan === 'enterprise'
+  const canAccessAccountsWorkspace = !loading && (canAccessPremiumWorkspace || plan === 'basic' || plan === 'trial')
+  const shouldBlockPremiumPage =
+    (activeNav === 'team-dashboard' || activeNav === 'automation') && !loading && !canAccessPremiumWorkspace
+  const shouldBlockAccountsPage = activeNav === 'accounts' && !canAccessAccountsWorkspace
 
   return (
     <div className="flex min-h-screen bg-background" data-stage="dashboard">
@@ -199,11 +216,15 @@ export function DashboardPage() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-sm font-medium text-success">
               <span className="relative flex size-2">
-                <span className={`absolute inline-flex size-full rounded-full opacity-75 ${showLocalEnhancedMode ? "bg-slate-400" : "animate-ping bg-success"}`} />
-                <span className={`relative inline-flex size-2 rounded-full ${showLocalEnhancedMode ? "bg-slate-400" : "bg-success"}`} />
+                <span
+                  className={`absolute inline-flex size-full rounded-full opacity-75 ${showLocalEnhancedMode ? 'bg-slate-400' : 'animate-ping bg-success'}`}
+                />
+                <span
+                  className={`relative inline-flex size-2 rounded-full ${showLocalEnhancedMode ? 'bg-slate-400' : 'bg-success'}`}
+                />
               </span>
               {showLocalEnhancedMode ? <Shield className="size-3.5" /> : <Wifi className="size-3.5" />}
-              {showLocalEnhancedMode ? "本地增强模式" : "系统已联通"}
+              {showLocalEnhancedMode ? '本地增强模式' : '系统已联通'}
             </div>
             <button className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
               <Bell className="size-5" />
@@ -214,80 +235,75 @@ export function DashboardPage() {
         </header>
 
         <div className="flex-1 p-6 flex flex-col gap-5 overflow-auto">
-          {activeNav === "search" && (
+          {activeNav === 'search' && (
             <Suspense fallback={<SectionSkeleton label="搜索模块加载中..." />}>
               <>
                 <SearchEngine userRole={currentRole} />
-                <StatsCards onLeadsNavigate={() => setActiveNav("leads")} />
+                <StatsCards onLeadsNavigate={() => setActiveNav('leads')} />
                 <LeadsTable
                   onAnalyze={handleAnalyze}
                   userRole={currentRole}
                   onSendToCloud={handleSendToCloud}
                   canUseCloudSend={canAccessPremiumWorkspace}
-                  onViewAll={() => setActiveNav("leads")}
+                  onViewAll={() => setActiveNav('leads')}
                 />
               </>
             </Suspense>
           )}
-          {activeNav === "agents" && (
+          {activeNav === 'agents' && (
             <Suspense fallback={<SectionSkeleton label="AI 团队加载中..." />}>
               <AgentsPanel />
             </Suspense>
           )}
-          {activeNav === "leads" && (
+          {activeNav === 'leads' && (
             <Suspense fallback={<SectionSkeleton label="线索模块加载中..." />}>
-              <LeadsManagement userRole={currentRole} onAcquireNavigate={() => setActiveNav("search")} />
+              <LeadsManagement userRole={currentRole} onAcquireNavigate={() => setActiveNav('search')} />
             </Suspense>
           )}
-          {activeNav === "data" && (
+          {activeNav === 'data' && (
             <Suspense fallback={<SectionSkeleton label="数据中心加载中..." />}>
-              <DataCenter onLeadsNavigate={() => setActiveNav("leads")} onAcquireNavigate={() => setActiveNav("search")} />
+              <DataCenter
+                onLeadsNavigate={() => setActiveNav('leads')}
+                onAcquireNavigate={() => setActiveNav('search')}
+              />
             </Suspense>
           )}
-          {activeNav === "knowledge" && (
+          {activeNav === 'knowledge' && (
             <Suspense fallback={<SectionSkeleton label="知识库加载中..." />}>
               <KnowledgeBase />
             </Suspense>
           )}
-          {activeNav === "settings" && (
+          {activeNav === 'settings' && (
             <Suspense fallback={<SectionSkeleton label="系统设置加载中..." />}>
               <SystemSettings userRole={currentRole} />
             </Suspense>
           )}
-          {activeNav === "team-dashboard" && tier === "premium" && (
+          {activeNav === 'team-dashboard' && tier === 'premium' && (
             <Suspense fallback={<SectionSkeleton label="团队看板加载中..." />}>
               <TeamDashboard />
             </Suspense>
           )}
-          {activeNav === "automation" && canAccessPremiumWorkspace && (
+          {activeNav === 'automation' && canAccessPremiumWorkspace && (
             <Suspense fallback={<SectionSkeleton label="协同引擎加载中..." />}>
               <AutomationWorkflow />
             </Suspense>
           )}
-          {activeNav === "accounts" && canAccessAccountsWorkspace && (
+          {activeNav === 'accounts' && canAccessAccountsWorkspace && (
             <Suspense fallback={<SectionSkeleton label="账号控制台加载中..." />}>
               <AccountsManagement />
             </Suspense>
           )}
           {shouldBlockPremiumPage && (
             <PremiumAccessBlocked
-              title={
-                activeNav === "accounts"
-                  ? "多账号沙箱管理暂未开放"
-                  : activeNav === "automation"
-                    ? "智能触达工作流暂未开放"
-                    : "团队协作看板暂未开放"
-              }
+              title={activeNav === 'automation' ? '智能触达工作流暂未开放' : '团队协作看板暂未开放'}
               description={
-                  activeNav === "accounts"
-                    ? "当前为 Trial / Basic 方案，仅可使用单邮箱通道。升级 Premium / Enterprise 即可解锁 LinkedIn、Facebook、WhatsApp 独立持久化沙箱多开与物理隔离能力。"
-                    : activeNav === "automation"
-                    ? "当前账号仍处于 Trial / Basic 范围，仅可使用本地获客与线索管理。升级后即可开启云端自动化、发送队列与追踪能力。"
-                    : "当前账号仍处于 Trial / Basic 范围，仅可使用本地线索闭环。升级后即可开启团队协作、防撞单与高级联动能力。"
+                activeNav === 'automation'
+                  ? '当前账号仍处于 Trial / Basic 范围，仅可使用本地获客与线索管理。升级后即可开启云端自动化、发送队列与追踪能力。'
+                  : '当前账号仍处于 Trial / Basic 范围，仅可使用本地线索闭环。升级后即可开启团队协作、防撞单与高级联动能力。'
               }
               ctaLabel="联系顾问升级"
               onUpgrade={() => {
-                setUpgradeIntent("premium")
+                setUpgradeIntent('premium')
                 setUpgradeModalOpen(true)
               }}
             />
@@ -298,7 +314,7 @@ export function DashboardPage() {
               description="当前授权状态不可用。有效试用或基础版可连接 1 个企业邮箱沙箱；升级 Premium / Enterprise 可解锁 LinkedIn、Facebook、WhatsApp 多账号物理隔离能力。"
               ctaLabel="联系顾问升级"
               onUpgrade={() => {
-                setUpgradeIntent("premium")
+                setUpgradeIntent('premium')
                 setUpgradeModalOpen(true)
               }}
             />

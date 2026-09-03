@@ -23,7 +23,7 @@ x2GlOU6kQohjFi4ToK/UO2BmSi6mPScaDpbsCD4zePCWaRbb+SdRO1yQayI1A3uW
 X0PoydDOG78zBLqkAZcCWF8+2bTNZytxlG9MdnTA8YrqvKxonEmnlUWKBTc3qwnw
 Lq/JOztKhC2TzefES0S9Iuc9s2FTRuL40ZSRqIkFah586tmcifNSukW3yHh/9pu+
 UwIDAQAB
------END PUBLIC KEY-----`;
+-----END PUBLIC KEY-----`
 
 const LICENSE_INVALID_MESSAGE = '授权文件无效，请联系顾问重新生成'
 

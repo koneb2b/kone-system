@@ -25,11 +25,7 @@ type CustomTooltipProps = TooltipProps<any, any> & {
   label?: string
 }
 
-function CustomTooltip({
-  active,
-  payload,
-  label,
-}: CustomTooltipProps) {
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload?.length) {
     return null
   }
@@ -46,25 +42,16 @@ function CustomTooltip({
   )
 }
 
-function ChartLegend({
-  className,
-  payload = [],
-}: {
-  className?: string
-  payload?: Array<DataPoint>
-}) {
+function ChartLegend({ className, payload = [] }: { className?: string; payload?: Array<DataPoint> }) {
   if (!payload?.length) {
     return null
   }
 
   return (
-    <div className={cn("flex items-center justify-center gap-4", className)}>
+    <div className={cn('flex items-center justify-center gap-4', className)}>
       {payload.map((entry: DataPoint, index: number) => (
         <div key={stableHash(`${entry.name || 'item'}-${index}`)} className="flex items-center gap-2">
-          <div
-            className="h-3 w-3 rounded"
-            style={{ backgroundColor: entry.color }}
-          />
+          <div className="h-3 w-3 rounded" style={{ backgroundColor: entry.color }} />
           <span className="text-sm text-muted-foreground">{entry.name}</span>
         </div>
       ))}
@@ -72,8 +59,4 @@ function ChartLegend({
   )
 }
 
-export {
-  RechartsPrimitive as Recharts,
-  CustomTooltip as Tooltip,
-  ChartLegend as Legend,
-}
+export { RechartsPrimitive as Recharts, CustomTooltip as Tooltip, ChartLegend as Legend }

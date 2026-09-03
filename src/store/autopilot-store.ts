@@ -1,10 +1,11 @@
-import { create } from "zustand"
-import type { AutopilotStateKind } from "@/shared/ipc-contracts"
-import { clearLegacyAutopilotConfig, getAutopilotConfig, setAutopilotConfig } from "@/lib/autopilot-config"
+import { create } from 'zustand'
+import type { AutopilotStateKind } from '@/shared/ipc-contracts'
+import { clearLegacyAutopilotConfig, getAutopilotConfig, setAutopilotConfig } from '@/lib/autopilot-config'
+import { createThrottledPersister } from '@/lib/persist-utils'
 
-export type AutopilotLifecycle = "idle" | "running" | "paused" | "completed" | "error"
+export type AutopilotLifecycle = 'idle' | 'running' | 'paused' | 'completed' | 'error'
 
-export type AutopilotJobStatus = "pending" | "running" | "cooldown" | "completed" | "failed"
+export type AutopilotJobStatus = 'pending' | 'running' | 'cooldown' | 'completed' | 'failed'
 
 export type AutopilotJob = {
   id: string
@@ -58,7 +59,22 @@ type AutopilotPersistedState = {
   settings: AutopilotSettings
 }
 
-type JobProgressPatch = Partial<Pick<AutopilotJob, "status" | "attempts" | "discoveredCount" | "qualifiedCount" | "savedCount" | "dedupedCount" | "failedCount" | "lastError" | "startedAt" | "finishedAt" | "cooldownUntil">>
+type JobProgressPatch = Partial<
+  Pick<
+    AutopilotJob,
+    | 'status'
+    | 'attempts'
+    | 'discoveredCount'
+    | 'qualifiedCount'
+    | 'savedCount'
+    | 'dedupedCount'
+    | 'failedCount'
+    | 'lastError'
+    | 'startedAt'
+    | 'finishedAt'
+    | 'cooldownUntil'
+  >
+>
 
 type AutopilotState = {
   draftText: string
@@ -90,8 +106,8 @@ const defaultSettings: AutopilotSettings = {
 }
 
 const defaultRuntime: AutopilotRuntime = {
-  runId: "",
-  lifecycle: "idle",
+  runId: '',
+  lifecycle: 'idle',
   totalJobs: 0,
   completedJobs: 0,
   failedJobs: 0,
@@ -103,18 +119,21 @@ const defaultRuntime: AutopilotRuntime = {
   pauseRequested: false,
 }
 
-let persistTimer: ReturnType<typeof setTimeout> | null = null
-let lastPersistAt = 0
+// Shared throttled persister — replaces module-level persistTimer + lastPersistAt globals
+const autopilotPersister = createThrottledPersister({
+  persist: (data) => setAutopilotConfig(data),
+  throttleMs: DEFAULT_PERSIST_THROTTLE_MS,
+})
 
 const createJobId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
   return `autopilot-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 const createRunId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
   return `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -134,7 +153,7 @@ const normalizeSettings = (input?: Partial<AutopilotSettings>): AutopilotSetting
 const normalizeRuntime = (input?: Partial<AutopilotRuntime>): AutopilotRuntime => ({
   ...defaultRuntime,
   ...input,
-  runId: String(input?.runId || ""),
+  runId: String(input?.runId || ''),
   lifecycle: input?.lifecycle || defaultRuntime.lifecycle,
   totalJobs: clampInteger(Number(input?.totalJobs), 0),
   completedJobs: clampInteger(Number(input?.completedJobs), 0),
@@ -149,12 +168,12 @@ const normalizeRuntime = (input?: Partial<AutopilotRuntime>): AutopilotRuntime =
 
 const normalizeJob = (job: Partial<AutopilotJob>, settings: AutopilotSettings): AutopilotJob => ({
   id: String(job.id || createJobId()),
-  keyword: String(job.keyword || "").trim(),
-  country: String(job.country || "").trim(),
+  keyword: String(job.keyword || '').trim(),
+  country: String(job.country || '').trim(),
   targetLeads: Math.max(1, clampInteger(Number(job.targetLeads), 1) || 1),
   threshold: Math.max(0, Math.min(100, clampInteger(Number(job.threshold), 0) || settings.scoreThreshold)),
   attempts: clampInteger(Number(job.attempts), 0),
-  status: job.status || "pending",
+  status: job.status || 'pending',
   discoveredCount: clampInteger(Number(job.discoveredCount), 0),
   qualifiedCount: clampInteger(Number(job.qualifiedCount), 0),
   savedCount: clampInteger(Number(job.savedCount), 0),
@@ -167,7 +186,9 @@ const normalizeJob = (job: Partial<AutopilotJob>, settings: AutopilotSettings): 
   cooldownUntil: Number.isFinite(Number(job.cooldownUntil)) ? Number(job.cooldownUntil) : undefined,
 })
 
-const buildPersistedState = (state: Pick<AutopilotState, "draftText" | "jobs" | "runtime" | "settings">): AutopilotPersistedState => ({
+const buildPersistedState = (
+  state: Pick<AutopilotState, 'draftText' | 'jobs' | 'runtime' | 'settings'>,
+): AutopilotPersistedState => ({
   draftText: state.draftText,
   jobs: state.jobs,
   runtime: state.runtime,
@@ -177,8 +198,8 @@ const buildPersistedState = (state: Pick<AutopilotState, "draftText" | "jobs" | 
 const recalculateRuntimeTotals = (jobs: AutopilotJob[], runtime: AutopilotRuntime): AutopilotRuntime => ({
   ...runtime,
   totalJobs: jobs.length,
-  completedJobs: jobs.filter((job) => job.status === "completed").length,
-  failedJobs: jobs.filter((job) => job.status === "failed").length,
+  completedJobs: jobs.filter((job) => job.status === 'completed').length,
+  failedJobs: jobs.filter((job) => job.status === 'failed').length,
   totalDiscovered: jobs.reduce((sum, job) => sum + job.discoveredCount, 0),
   totalQualified: jobs.reduce((sum, job) => sum + job.qualifiedCount, 0),
   totalSaved: jobs.reduce((sum, job) => sum + job.savedCount, 0),
@@ -196,12 +217,18 @@ const splitAutopilotSegments = (line: string) => {
   const normalized = normalizeAutopilotLine(line)
   if (!normalized) return []
 
-  const commaSegments = normalized.split(',').map((item) => item.trim()).filter(Boolean)
+  const commaSegments = normalized
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
   if (commaSegments.length >= 2) {
     return commaSegments
   }
 
-  const whitespaceSegments = normalized.split(/\s{2,}/).map((item) => item.trim()).filter(Boolean)
+  const whitespaceSegments = normalized
+    .split(/\s{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean)
   return whitespaceSegments.length >= 2 ? whitespaceSegments : []
 }
 
@@ -224,7 +251,7 @@ const parseBatchLine = (line: string, threshold: number): AutopilotJob | null =>
     targetLeads: parsedTarget || 1,
     threshold,
     attempts: 0,
-    status: "pending",
+    status: 'pending',
     discoveredCount: 0,
     qualifiedCount: 0,
     savedCount: 0,
@@ -234,37 +261,13 @@ const parseBatchLine = (line: string, threshold: number): AutopilotJob | null =>
   }
 }
 
-const schedulePersist = (snapshot: AutopilotPersistedState, throttleMs: number) => {
-  const persistNow = async () => {
-    lastPersistAt = Date.now()
-    try {
-      await setAutopilotConfig(snapshot)
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
-  const now = Date.now()
-  const elapsed = now - lastPersistAt
-  const delay = elapsed >= throttleMs ? 0 : throttleMs - elapsed
-
-  if (persistTimer) {
-    clearTimeout(persistTimer)
-  }
-
-  persistTimer = setTimeout(() => {
-    persistTimer = null
-    void persistNow()
-  }, delay)
-}
-
 export const useAutopilotStore = create<AutopilotState>((set, get) => ({
-  draftText: "",
+  draftText: '',
   jobs: [],
   runtime: defaultRuntime,
   settings: defaultSettings,
   hydrated: false,
-  stateKind: "hydrating",
+  stateKind: 'hydrating',
   statusReason: undefined,
 
   hydrateFromStorage: async () => {
@@ -272,31 +275,32 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
       const envelope = await getAutopilotConfig<Partial<AutopilotPersistedState>>()
       const persisted = envelope?.state
       const nextSettings = normalizeSettings(persisted?.settings)
-      const draftText = String(persisted?.draftText || "")
+      const draftText = String(persisted?.draftText || '')
       const nextJobs = Array.isArray(persisted?.jobs)
         ? persisted.jobs.map((job) => normalizeJob(job, nextSettings))
         : []
       const persistedRuntime = normalizeRuntime(persisted?.runtime)
       const nextRuntime = recalculateRuntimeTotals(nextJobs, {
         ...persistedRuntime,
-        lifecycle: persistedRuntime.lifecycle === "running" ? "paused" : persistedRuntime.lifecycle,
-        pauseRequested: persistedRuntime.lifecycle === "running" ? false : persistedRuntime.pauseRequested,
+        lifecycle: persistedRuntime.lifecycle === 'running' ? 'paused' : persistedRuntime.lifecycle,
+        pauseRequested: persistedRuntime.lifecycle === 'running' ? false : persistedRuntime.pauseRequested,
         abortRequested: false,
         currentJobId: undefined,
       })
-      const derivedStateKind = envelope?.stateKind === 'state_unavailable'
-        ? 'state_unavailable'
-        : nextJobs.length === 0
-          ? 'ready_empty'
-          : nextRuntime.lifecycle === 'paused'
-            ? 'paused'
-            : nextRuntime.lifecycle === 'running'
-              ? 'running'
-              : nextRuntime.lifecycle === 'completed'
-                ? 'completed'
-                : nextRuntime.lifecycle === 'error'
-                  ? 'error'
-                  : 'queued_idle'
+      const derivedStateKind =
+        envelope?.stateKind === 'state_unavailable'
+          ? 'state_unavailable'
+          : nextJobs.length === 0
+            ? 'ready_empty'
+            : nextRuntime.lifecycle === 'paused'
+              ? 'paused'
+              : nextRuntime.lifecycle === 'running'
+                ? 'running'
+                : nextRuntime.lifecycle === 'completed'
+                  ? 'completed'
+                  : nextRuntime.lifecycle === 'error'
+                    ? 'error'
+                    : 'queued_idle'
 
       set({
         draftText,
@@ -314,7 +318,7 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
     }
 
     set({
-      draftText: "",
+      draftText: '',
       jobs: [],
       runtime: defaultRuntime,
       settings: defaultSettings,
@@ -326,14 +330,21 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
 
   setDraftText: async (draftText) => {
     const state = get()
-    const nextDraftText = String(draftText || "")
+    const nextDraftText = String(draftText || '')
     set({ draftText: nextDraftText })
-    schedulePersist(buildPersistedState({ draftText: nextDraftText, jobs: state.jobs, runtime: state.runtime, settings: state.settings }), state.settings.persistThrottleMs)
+    autopilotPersister.persist(
+      buildPersistedState({
+        draftText: nextDraftText,
+        jobs: state.jobs,
+        runtime: state.runtime,
+        settings: state.settings,
+      }),
+    )
   },
 
   addBatchJobs: async (rawText) => {
     const state = get()
-    const lines = String(rawText || "")
+    const lines = String(rawText || '')
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean)
@@ -344,13 +355,25 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
     const nextJobs = [...state.jobs, ...newJobs]
     const nextRuntime = recalculateRuntimeTotals(nextJobs, {
       ...state.runtime,
-      lifecycle: nextJobs.length > 0 && state.runtime.lifecycle === "completed" ? "idle" : state.runtime.lifecycle,
+      lifecycle: nextJobs.length > 0 && state.runtime.lifecycle === 'completed' ? 'idle' : state.runtime.lifecycle,
       finishedAt: nextJobs.length > 0 ? undefined : state.runtime.finishedAt,
       lastError: undefined,
     })
 
-    set({ jobs: nextJobs, runtime: nextRuntime, stateKind: nextJobs.length === 0 ? "ready_empty" : "queued_idle", statusReason: undefined })
-    schedulePersist(buildPersistedState({ draftText: state.draftText, jobs: nextJobs, runtime: nextRuntime, settings: state.settings }), state.settings.persistThrottleMs)
+    set({
+      jobs: nextJobs,
+      runtime: nextRuntime,
+      stateKind: nextJobs.length === 0 ? 'ready_empty' : 'queued_idle',
+      statusReason: undefined,
+    })
+    autopilotPersister.persist(
+      buildPersistedState({
+        draftText: state.draftText,
+        jobs: nextJobs,
+        runtime: nextRuntime,
+        settings: state.settings,
+      }),
+    )
     return newJobs
   },
 
@@ -363,7 +386,7 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
     const nextRuntime = recalculateRuntimeTotals(state.jobs, {
       ...state.runtime,
       runId: createRunId(),
-      lifecycle: "running",
+      lifecycle: 'running',
       abortRequested: false,
       pauseRequested: false,
       startedAt: state.runtime.startedAt || Date.now(),
@@ -371,22 +394,36 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
       lastError: undefined,
     })
 
-    set({ runtime: nextRuntime, stateKind: "running", statusReason: undefined })
-    schedulePersist(buildPersistedState({ draftText: state.draftText, jobs: state.jobs, runtime: nextRuntime, settings: state.settings }), state.settings.persistThrottleMs)
+    set({ runtime: nextRuntime, stateKind: 'running', statusReason: undefined })
+    autopilotPersister.persist(
+      buildPersistedState({
+        draftText: state.draftText,
+        jobs: state.jobs,
+        runtime: nextRuntime,
+        settings: state.settings,
+      }),
+    )
 
     // 同步等待 runner 加载并启动，确保启动失败时能向调用方抛出异常
     try {
-      const { startAutopilotRunner } = await import("@/lib/autopilot-runner")
+      const { startAutopilotRunner } = await import('@/lib/autopilot-runner')
       void startAutopilotRunner(nextRuntime.runId)
     } catch (error) {
       const failedRuntime = recalculateRuntimeTotals(get().jobs, {
         ...get().runtime,
-        lifecycle: "error",
-        lastError: error instanceof Error ? error.message : "后台巡航启动失败",
+        lifecycle: 'error',
+        lastError: error instanceof Error ? error.message : '后台巡航启动失败',
         finishedAt: Date.now(),
       })
-      set({ runtime: failedRuntime, stateKind: "error", statusReason: failedRuntime.lastError })
-      schedulePersist(buildPersistedState({ draftText: get().draftText, jobs: get().jobs, runtime: failedRuntime, settings: get().settings }), get().settings.persistThrottleMs)
+      set({ runtime: failedRuntime, stateKind: 'error', statusReason: failedRuntime.lastError })
+      autopilotPersister.persist(
+        buildPersistedState({
+          draftText: get().draftText,
+          jobs: get().jobs,
+          runtime: failedRuntime,
+          settings: get().settings,
+        }),
+      )
       throw error
     }
   },
@@ -398,8 +435,15 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
       pauseRequested: true,
     })
 
-    set({ runtime: nextRuntime, stateKind: state.jobs.length === 0 ? "ready_empty" : "paused" })
-    schedulePersist(buildPersistedState({ draftText: state.draftText, jobs: state.jobs, runtime: nextRuntime, settings: state.settings }), state.settings.persistThrottleMs)
+    set({ runtime: nextRuntime, stateKind: state.jobs.length === 0 ? 'ready_empty' : 'paused' })
+    autopilotPersister.persist(
+      buildPersistedState({
+        draftText: state.draftText,
+        jobs: state.jobs,
+        runtime: nextRuntime,
+        settings: state.settings,
+      }),
+    )
   },
 
   stop: async () => {
@@ -410,8 +454,15 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
       pauseRequested: false,
     })
 
-    set({ runtime: nextRuntime, stateKind: state.jobs.length === 0 ? "ready_empty" : "error" })
-    schedulePersist(buildPersistedState({ draftText: state.draftText, jobs: state.jobs, runtime: nextRuntime, settings: state.settings }), state.settings.persistThrottleMs)
+    set({ runtime: nextRuntime, stateKind: state.jobs.length === 0 ? 'ready_empty' : 'error' })
+    autopilotPersister.persist(
+      buildPersistedState({
+        draftText: state.draftText,
+        jobs: state.jobs,
+        runtime: nextRuntime,
+        settings: state.settings,
+      }),
+    )
   },
 
   stopAndClear: async () => {
@@ -422,8 +473,10 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
       updatedAt: Date.now(),
       finishedAt: Date.now(),
     }
-    set({ draftText: "", jobs: [], runtime: nextRuntime, stateKind: "ready_empty", statusReason: undefined })
-    schedulePersist(buildPersistedState({ draftText: "", jobs: [], runtime: nextRuntime, settings: state.settings }), state.settings.persistThrottleMs)
+    set({ draftText: '', jobs: [], runtime: nextRuntime, stateKind: 'ready_empty', statusReason: undefined })
+    autopilotPersister.persist(
+      buildPersistedState({ draftText: '', jobs: [], runtime: nextRuntime, settings: state.settings }),
+    )
   },
 
   updateJobProgress: async (jobId, data) => {
@@ -440,33 +493,68 @@ export const useAutopilotStore = create<AutopilotState>((set, get) => ({
           ...data,
           updatedAt: now,
         },
-        state.settings
+        state.settings,
       )
     })
 
     const currentJob = nextJobs.find((job) => job.id === jobId)
-    const allSettled = nextJobs.length > 0 && nextJobs.every((job) => job.status === "completed" || job.status === "failed")
-    const hasFailures = nextJobs.some((job) => job.status === "failed")
+    const allSettled =
+      nextJobs.length > 0 && nextJobs.every((job) => job.status === 'completed' || job.status === 'failed')
+    const hasFailures = nextJobs.some((job) => job.status === 'failed')
     const nextRuntime = recalculateRuntimeTotals(nextJobs, {
       ...state.runtime,
       currentJobId: currentJob ? jobId : state.runtime.currentJobId,
       lifecycle: allSettled
-        ? (hasFailures ? "error" : "completed")
-        : currentJob?.status === "failed"
-          ? "error"
+        ? hasFailures
+          ? 'error'
+          : 'completed'
+        : currentJob?.status === 'failed'
+          ? 'error'
           : state.runtime.lifecycle,
       lastError: currentJob?.lastError || state.runtime.lastError,
       finishedAt: allSettled ? now : undefined,
     })
 
-    set({ jobs: nextJobs, runtime: nextRuntime, stateKind: allSettled ? (hasFailures ? "error" : "completed") : currentJob?.status === "cooldown" ? "cooldown" : nextRuntime.lifecycle === "paused" ? "paused" : nextJobs.length === 0 ? "ready_empty" : nextRuntime.lifecycle === "running" ? "running" : "queued_idle", statusReason: nextRuntime.lastError })
-    schedulePersist(buildPersistedState({ draftText: state.draftText, jobs: nextJobs, runtime: nextRuntime, settings: state.settings }), state.settings.persistThrottleMs)
+    set({
+      jobs: nextJobs,
+      runtime: nextRuntime,
+      stateKind: allSettled
+        ? hasFailures
+          ? 'error'
+          : 'completed'
+        : currentJob?.status === 'cooldown'
+          ? 'cooldown'
+          : nextRuntime.lifecycle === 'paused'
+            ? 'paused'
+            : nextJobs.length === 0
+              ? 'ready_empty'
+              : nextRuntime.lifecycle === 'running'
+                ? 'running'
+                : 'queued_idle',
+      statusReason: nextRuntime.lastError,
+    })
+    autopilotPersister.persist(
+      buildPersistedState({
+        draftText: state.draftText,
+        jobs: nextJobs,
+        runtime: nextRuntime,
+        settings: state.settings,
+      }),
+    )
   },
 
   reset: async () => {
-    const current = get()
     const nextRuntime = { ...defaultRuntime, runId: createRunId() }
-    set({ draftText: "", jobs: [], runtime: nextRuntime, settings: defaultSettings, stateKind: "ready_empty", statusReason: undefined })
-    schedulePersist(buildPersistedState({ draftText: "", jobs: [], runtime: nextRuntime, settings: defaultSettings }), current.settings.persistThrottleMs)
+    set({
+      draftText: '',
+      jobs: [],
+      runtime: nextRuntime,
+      settings: defaultSettings,
+      stateKind: 'ready_empty',
+      statusReason: undefined,
+    })
+    autopilotPersister.persist(
+      buildPersistedState({ draftText: '', jobs: [], runtime: nextRuntime, settings: defaultSettings }),
+    )
   },
 }))

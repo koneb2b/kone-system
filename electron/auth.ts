@@ -48,11 +48,7 @@ const TOKEN_SECRET_KEYS = {
 const SESSION_REFRESH_WINDOW_MS = 5 * 60 * 1000
 
 const base64UrlEncode = (buf: Buffer) =>
-  buf
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
+  buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 
 const sha256 = (input: string) => crypto.createHash('sha256').update(input).digest()
 
@@ -94,7 +90,10 @@ const getTokenMeta = () => {
   }
 }
 
-export const saveTokens = (tokens: StoredTokens, context?: { issuerBaseUrl: string; realm: string; clientId: string }) => {
+export const saveTokens = (
+  tokens: StoredTokens,
+  context?: { issuerBaseUrl: string; realm: string; clientId: string },
+) => {
   if (tokens.accessToken) setSecret(TOKEN_SECRET_KEYS.ACCESS_TOKEN, tokens.accessToken)
   if (tokens.refreshToken) setSecret(TOKEN_SECRET_KEYS.REFRESH_TOKEN, tokens.refreshToken)
   if (tokens.idToken) setSecret(TOKEN_SECRET_KEYS.ID_TOKEN, tokens.idToken)
@@ -145,7 +144,7 @@ const exchangeTokenRequest = async (tokenEndpoint: string, body: URLSearchParams
   })
 
   const raw = await response.text()
-  let data: any = {}
+  let data: any
   try {
     data = raw ? JSON.parse(raw) : {}
   } catch {
@@ -336,7 +335,9 @@ export const startAuthFlow = (options: StartAuthFlowOptions): Promise<AuthFlowRe
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
         })
-        res.end(`<!doctype html><html><head><meta charset="utf-8" /><title>Kone 登录</title></head><body style="font-family:sans-serif; text-align:center; padding-top:50px;"><h2>验证完成</h2><p>身份验证已成功处理，您可以关闭此窗口并返回应用。</p><script>setTimeout(() => window.close(), 3000);</script></body></html>`)
+        res.end(
+          '<!doctype html><html><head><meta charset="utf-8" /><title>Kone 登录</title></head><body style="font-family:sans-serif; text-align:center; padding-top:50px;"><h2>验证完成</h2><p>身份验证已成功处理，您可以关闭此窗口并返回应用。</p><script>setTimeout(() => window.close(), 3000);</script></body></html>',
+        )
 
         if (error) {
           finish(new Error(`认证失败: ${error}${errorDescription ? ` (${errorDescription})` : ''}`))

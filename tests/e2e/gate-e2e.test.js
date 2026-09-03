@@ -31,7 +31,9 @@ const resetModule = (modulePath) => {
 const createIpcMainMock = () => {
   const handlers = new Map()
   return {
-    handle(channel, handler) { handlers.set(channel, handler) },
+    handle(channel, handler) {
+      handlers.set(channel, handler)
+    },
     getHandler(channel) {
       const h = handlers.get(channel)
       assert.ok(h, `Missing handler for: ${channel}`)
@@ -43,8 +45,12 @@ const createIpcMainMock = () => {
 const createEventMock = () => ({ sender: { send() {} } })
 
 const createStoreMock = (values = {}) => ({
-  get(key) { return values[key] },
-  set(key, value) { values[key] = value },
+  get(key) {
+    return values[key]
+  },
+  set(key, value) {
+    values[key] = value
+  },
 })
 
 const withElectronMock = () => {
@@ -54,11 +60,17 @@ const withElectronMock = () => {
   }
 }
 
-const resetModuleLoad = () => { Module._load = originalLoad }
+const resetModuleLoad = () => {
+  Module._load = originalLoad
+}
 
 // Clean the tmp user data dir before every test so secret-manager doesn't read stale files
 const cleanTmpDir = () => {
-  try { fs.rmSync(TMP_USER_DATA, { recursive: true, force: true }) } catch { /* empty */ }
+  try {
+    fs.rmSync(TMP_USER_DATA, { recursive: true, force: true })
+  } catch {
+    /* empty */
+  }
 }
 
 // ─────────────────────────────────────────────────────
@@ -75,12 +87,15 @@ test('G3-L1: Trial user AGENT.LIST returns agents with trial-level limits', asyn
   resetModule('../../dist-electron/electron/services/secret-manager.js')
   resetModule('../../dist-electron/electron/services/config-service.js')
   const sm = require('../../dist-electron/electron/services/secret-manager.js')
-  sm.setSecret('secrets.license.claims', JSON.stringify({
-    status: 'active',
-    plan: 'trial',
-    expiresAt: Date.now() + 86_400_000,
-    licenseKey: 'KONE-TEST-TRIAL',
-  }))
+  sm.setSecret(
+    'secrets.license.claims',
+    JSON.stringify({
+      status: 'active',
+      plan: 'trial',
+      expiresAt: Date.now() + 86_400_000,
+      licenseKey: 'KONE-TEST-TRIAL',
+    }),
+  )
 
   // Load agent-service fresh
   resetModule('../../dist-electron/electron/services/agent-service.js')
@@ -118,12 +133,15 @@ test('G3-L2: Basic AGENT.LIST returns basic daily limits', async () => {
   resetModule('../../dist-electron/electron/services/secret-manager.js')
   resetModule('../../dist-electron/electron/services/config-service.js')
   const sm = require('../../dist-electron/electron/services/secret-manager.js')
-  sm.setSecret('secrets.license.claims', JSON.stringify({
-    status: 'active',
-    plan: 'basic',
-    expiresAt: Date.now() + 86_400_000,
-    licenseKey: 'KONE-TEST-BASIC',
-  }))
+  sm.setSecret(
+    'secrets.license.claims',
+    JSON.stringify({
+      status: 'active',
+      plan: 'basic',
+      expiresAt: Date.now() + 86_400_000,
+      licenseKey: 'KONE-TEST-BASIC',
+    }),
+  )
 
   // Load agent-service fresh
   resetModule('../../dist-electron/electron/services/agent-service.js')
@@ -195,8 +213,16 @@ test('G5-TI: pipeline temporal isolation prevents stale task dispatch', async ()
 
   // Verify qualifiesForPipeline rejects low matchScore
   assert.equal(pipeline.qualifiesForPipeline(50, { email: 'test@test.com' }), false, 'matchScore < 60 must be rejected')
-  assert.equal(pipeline.qualifiesForPipeline(70, { phone: '+123' }), true, 'matchScore >= 60 with reachable asset must qualify')
-  assert.equal(pipeline.qualifiesForPipeline(80, {}), false, 'No reachable asset must be rejected even with high matchScore')
+  assert.equal(
+    pipeline.qualifiesForPipeline(70, { phone: '+123' }),
+    true,
+    'matchScore >= 60 with reachable asset must qualify',
+  )
+  assert.equal(
+    pipeline.qualifiesForPipeline(80, {}),
+    false,
+    'No reachable asset must be rejected even with high matchScore',
+  )
 })
 
 // ─────────────────────────────────────────────────────
@@ -212,12 +238,15 @@ test('G6-DC: writeBackAgentStatus updates persistent store + emits IPC', async (
   resetModule('../../dist-electron/electron/services/secret-manager.js')
   resetModule('../../dist-electron/electron/services/config-service.js')
   const sm = require('../../dist-electron/electron/services/secret-manager.js')
-  sm.setSecret('secrets.license.claims', JSON.stringify({
-    status: 'active',
-    plan: 'premium',
-    expiresAt: Date.now() + 86_400_000,
-    licenseKey: 'KONE-TEST-DC',
-  }))
+  sm.setSecret(
+    'secrets.license.claims',
+    JSON.stringify({
+      status: 'active',
+      plan: 'premium',
+      expiresAt: Date.now() + 86_400_000,
+      licenseKey: 'KONE-TEST-DC',
+    }),
+  )
 
   // Track IPC emissions
   const ipcMessages = []
@@ -227,7 +256,9 @@ test('G6-DC: writeBackAgentStatus updates persistent store + emits IPC', async (
       send(channel, ...args) {
         ipcMessages.push({ channel, args })
       },
-      isDestroyed() { return false },
+      isDestroyed() {
+        return false
+      },
     },
   }
 
@@ -246,9 +277,16 @@ test('G6-DC: writeBackAgentStatus updates persistent store + emits IPC', async (
   // Simulate pipeline dispatch which sets globalSender
   const { buildAgentTaskQueue } = require('../../dist-electron/electron/services/agent-pipeline.js')
   const queue = buildAgentTaskQueue([
-    { company: 'DualTest', website: 'https://dual.com', phone: '+111', email: 'a@b.com', linkedinUrl: 'https://linkedin.com/in/test', matchScore: 80 },
+    {
+      company: 'DualTest',
+      website: 'https://dual.com',
+      phone: '+111',
+      email: 'a@b.com',
+      linkedinUrl: 'https://linkedin.com/in/test',
+      matchScore: 80,
+    },
   ])
-  agentService.dispatchAgentsFromPipeline(queue, mockEvent.sender, store, 'test-run-1')
+  agentService.stageAgentsFromPipeline(queue, mockEvent.sender, store, 'test-run-1')
 
   // Write back a status update and verify
   agentService.writeBackAgentStatus('DualTest', 'whatsapp', { whatsappSent: true, whatsappStatus: 'delivered' })
@@ -264,7 +302,10 @@ test('G6-DC: writeBackAgentStatus updates persistent store + emits IPC', async (
   assert.ok(statusChangedMsg, 'AGENT.STATUS_CHANGED IPC must be emitted after writeBackAgentStatus')
   const agentState = statusChangedMsg.args[0]
   assert.ok(agentState, 'STATUS_CHANGED must carry agent state')
-  assert.ok(['agent-whatsapp', 'agent-linkedin', 'agent-email'].includes(agentState.agentId), 'STATUS_CHANGED must carry a valid agentId')
+  assert.ok(
+    ['agent-whatsapp', 'agent-linkedin', 'agent-email'].includes(agentState.agentId),
+    'STATUS_CHANGED must carry a valid agentId',
+  )
 })
 
 // ─────────────────────────────────────────────────────
@@ -281,12 +322,15 @@ test('G7-AFC: AGENT.CONTROL enforces daily limits (trial = 3/day)', async () => 
   resetModule('../../dist-electron/electron/services/secret-manager.js')
   resetModule('../../dist-electron/electron/services/config-service.js')
   const sm = require('../../dist-electron/electron/services/secret-manager.js')
-  sm.setSecret('secrets.license.claims', JSON.stringify({
-    status: 'active',
-    plan: 'trial',
-    expiresAt: Date.now() + 86_400_000,
-    licenseKey: 'KONE-TEST-TRIAL-CTRL',
-  }))
+  sm.setSecret(
+    'secrets.license.claims',
+    JSON.stringify({
+      status: 'active',
+      plan: 'trial',
+      expiresAt: Date.now() + 86_400_000,
+      licenseKey: 'KONE-TEST-TRIAL-CTRL',
+    }),
+  )
 
   resetModule('../../dist-electron/electron/services/agent-service.js')
   resetModule('../../dist-electron/electron/ipc/channels.js')
@@ -308,22 +352,28 @@ test('G7-AFC: AGENT.CONTROL enforces daily limits (trial = 3/day)', async () => 
   assert.equal(wp.dailyLimit, 3, 'Trial whatsapp dailyLimit must be 3')
 
   // AGENT.CONTROL with invalid action must return 400
-  const invalidResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)({
-    sender: { send() {} },
-  }, {
-    agentId: 'agent-whatsapp',
-    action: 'invalid',
-  })
+  const invalidResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)(
+    {
+      sender: { send() {} },
+    },
+    {
+      agentId: 'agent-whatsapp',
+      action: 'invalid',
+    },
+  )
   assert.equal(invalidResult.success, false, 'Invalid action must fail')
   assert.equal(invalidResult.code, 400, 'Invalid action must return 400')
 
   // AGENT.CONTROL with non-existent agent must return 404
-  const missingResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)({
-    sender: { send() {} },
-  }, {
-    agentId: 'agent-nonexistent',
-    action: 'start',
-  })
+  const missingResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)(
+    {
+      sender: { send() {} },
+    },
+    {
+      agentId: 'agent-nonexistent',
+      action: 'start',
+    },
+  )
   assert.equal(missingResult.success, false, 'Non-existent agent must fail')
   assert.equal(missingResult.code, 404, 'Non-existent agent must return 404')
 })
@@ -337,7 +387,11 @@ test('G4-S4: search:stream-complete fires even on search failure', async () => {
   electronMock.app.isPackaged = true
 
   // Mock both electron and http-client (force network failure for search)
-  const httpMock = { safeFetch: async () => { throw new Error('SIMULATED_NETWORK_FAIL') } }
+  const httpMock = {
+    safeFetch: async () => {
+      throw new Error('SIMULATED_NETWORK_FAIL')
+    },
+  }
   Module._load = (request, parent, isMain) => {
     if (request === 'electron') return electronMock
     if (request === '../utils/http-client' && parent?.filename?.includes('search-service')) {
@@ -351,12 +405,15 @@ test('G4-S4: search:stream-complete fires even on search failure', async () => {
   resetModule('../../dist-electron/electron/services/secret-manager.js')
   resetModule('../../dist-electron/electron/services/config-service.js')
   const sm = require('../../dist-electron/electron/services/secret-manager.js')
-  sm.setSecret('secrets.license.claims', JSON.stringify({
-    status: 'active',
-    plan: 'basic',
-    expiresAt: Date.now() + 86_400_000,
-    licenseKey: 'KONE-TEST-SEARCH',
-  }))
+  sm.setSecret(
+    'secrets.license.claims',
+    JSON.stringify({
+      status: 'active',
+      plan: 'basic',
+      expiresAt: Date.now() + 86_400_000,
+      licenseKey: 'KONE-TEST-SEARCH',
+    }),
+  )
 
   // Reload search and channel modules
   resetModule('../../dist-electron/electron/services/search-service.js')

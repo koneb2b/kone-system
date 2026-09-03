@@ -1,3 +1,4 @@
+/* global URL */
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -44,7 +45,7 @@ test('should isolate circuit breakers by host', async () => {
       (error) => {
         assert.equal(error.code, 'CIRCUIT_BREAKER_OPEN')
         return true
-      }
+      },
     )
 
     const openAiResponse = await safeFetch('https://api.openai.com/v1/chat/completions')

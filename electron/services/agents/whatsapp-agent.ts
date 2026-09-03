@@ -1,18 +1,30 @@
 import type { AgentTask } from '../agent-pipeline'
 import type { SalesAgentState, AgentLogEntry } from '../../../src/shared/ipc-contracts'
+import { launchPersistentBrowser } from './browser-resolver'
 
 type WhatsAppSessionState = 'disconnected' | 'connected' | 'qr_ready' | 'expired' | 'rate_limited' | 'error'
 
 type WhatsAppAgentConfig = {
   dailyLimit: number
   sessionPath?: string
+  // Anti-ban pacing: randomized delay applied AFTER each send (PRD reach-out red line).
+  minSendIntervalMs?: number
+  maxSendIntervalMs?: number
 }
+
+// 'delivered' is ONLY set when WhatsApp Web shows a real delivery/read tick.
+// If the tick cannot be confirmed we return 'pending' — never fake a delivered status.
+type WhatsAppDeliveryStatus = 'delivered' | 'pending' | 'failed'
 
 type WhatsAppAgentResult = {
   success: boolean
   messageId?: string
+  deliveryStatus?: WhatsAppDeliveryStatus
   error?: string
 }
+
+const DEFAULT_MIN_SEND_INTERVAL_MS = 30_000
+const DEFAULT_MAX_SEND_INTERVAL_MS = 90_000
 
 export class WhatsAppAgent {
   private config: WhatsAppAgentConfig
@@ -45,18 +57,20 @@ export class WhatsAppAgent {
 
   async connect(): Promise<boolean> {
     try {
-      const puppeteer = await import('puppeteer')
-      this.browser = await puppeteer.launch({
-        headless: false,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        userDataDir: this.config.sessionPath,
-      })
+      // L0-2/B2：打包产物无捆绑 Chromium —— 探测用户机器 Chrome/Edge 后再启动，
+      // 浏览器来源写入运行日志保持可审计（找不到时抛出带指引的中文错误）。
+      const { browser, label } = await launchPersistentBrowser(this.config.sessionPath)
+      this.browser = browser
+      this.addLog('browser_launched', `Browser engine: ${label}`)
 
       const page = await this.browser.newPage()
       await page.goto('https://web.whatsapp.com', { waitUntil: 'domcontentloaded', timeout: 30000 })
 
       const qrSelector = 'canvas[aria-label="Scan me!"]'
-      const qrExists = await page.$(qrSelector).then((el: any) => !!el).catch(() => false)
+      const qrExists = await page
+        .$(qrSelector)
+        .then((el: any) => !!el)
+        .catch(() => false)
 
       if (qrExists) {
         this.sessionState = 'qr_ready'
@@ -64,7 +78,10 @@ export class WhatsAppAgent {
 
         await page.waitForSelector(qrSelector, { hidden: true, timeout: 120000 }).catch(() => {})
 
-        const stillQr = await page.$(qrSelector).then((el: any) => !!el).catch(() => false)
+        const stillQr = await page
+          .$(qrSelector)
+          .then((el: any) => !!el)
+          .catch(() => false)
         if (stillQr) {
           this.sessionState = 'expired'
           this.addLog('qr_expired', 'QR code scan timeout')
@@ -126,7 +143,10 @@ export class WhatsAppAgent {
       const phoneNumber = task.phone?.replace(/[^0-9]/g, '') || ''
       if (!phoneNumber) return { success: false, error: 'No phone number' }
 
-      await page.goto(`https://web.whatsapp.com/send?phone=${phoneNumber}`, { waitUntil: 'networkidle2', timeout: 30000 })
+      await page.goto(`https://web.whatsapp.com/send?phone=${phoneNumber}`, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
+      })
 
       const messageBoxSelector = 'div[data-testid="conversation-compose-box-input"] > p'
       const messageBox = await page.waitForSelector(messageBoxSelector, { timeout: 15000 }).catch(() => null)
@@ -135,24 +155,35 @@ export class WhatsAppAgent {
         return { success: false, error: 'Message input not found' }
       }
 
-      const text = message || `Hi ${task.company},\n\nWe noticed your business and would like to connect.\n\nBest regards`
+      const text =
+        message || `Hi ${task.company},\n\nWe noticed your business and would like to connect.\n\nBest regards`
       await messageBox.type(text, { delay: 50 })
 
-      const sendButton = await page.waitForSelector('button[data-testid="compose-btn-send"]', { timeout: 5000 }).catch(() => null)
+      const sendButton = await page
+        .waitForSelector('button[data-testid="compose-btn-send"]', { timeout: 5000 })
+        .catch(() => null)
       if (sendButton) {
         await sendButton.click()
       } else {
         await page.keyboard.press('Enter')
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Real delivery confirmation: poll for the last outgoing message's status tick.
+      // WhatsApp renders an aria-label like "Sent"/"Delivered"/"Read" on the check icon.
+      // We NEVER assume success — if no tick is observed, the status stays 'pending'.
+      const deliveryStatus = await this.detectDeliveryStatus(page)
 
       this.state.dailyUsed += 1
-      this.state.completedCount += 1
+      if (deliveryStatus === 'delivered') {
+        this.state.completedCount += 1
+      }
       this.state.lastActivity = new Date().toISOString()
-      this.addLog('message_sent', `To=${phoneNumber} Company=${task.company}`)
+      this.addLog('message_sent', `To=${phoneNumber} Company=${task.company} Delivery=${deliveryStatus}`)
 
-      return { success: true, messageId: `${Date.now()}-${phoneNumber}` }
+      // Randomized human-like pacing before the next send (anti rate-limit).
+      await this.pace()
+
+      return { success: true, messageId: `${Date.now()}-${phoneNumber}`, deliveryStatus }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err || '')
       const isRateLimited = /rate.limit|429|too many|blocked/i.test(errMsg)
@@ -167,11 +198,42 @@ export class WhatsAppAgent {
     }
   }
 
+  // Best-effort delivery confirmation. Returns 'delivered' ONLY when a real
+  // sent/delivered/read tick is observed; otherwise 'pending'. Never fakes success.
+  private async detectDeliveryStatus(page: any): Promise<WhatsAppDeliveryStatus> {
+    const deadline = Date.now() + 8000
+    const tickSelectors = [
+      'span[data-testid="msg-dblcheck"]',
+      'span[data-testid="msg-check"]',
+      'span[aria-label="Sent"]',
+      'span[aria-label="Delivered"]',
+      'span[aria-label="Read"]',
+    ]
+    while (Date.now() < deadline) {
+      for (const selector of tickSelectors) {
+        const tick = await page.$(selector).catch(() => null)
+        if (tick) return 'delivered'
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    return 'pending'
+  }
+
+  // Randomized delay to mimic human cadence and reduce rate-limit/ban risk.
+  private async pace(): Promise<void> {
+    const min = this.config.minSendIntervalMs ?? DEFAULT_MIN_SEND_INTERVAL_MS
+    const max = Math.max(min, this.config.maxSendIntervalMs ?? DEFAULT_MAX_SEND_INTERVAL_MS)
+    const delay = min + Math.floor(Math.random() * (max - min + 1))
+    await new Promise((resolve) => setTimeout(resolve, delay))
+  }
+
   async disconnect() {
     if (this.browser) {
       try {
         await this.browser.close()
-      } catch {}
+      } catch {
+        /* browser.close() may throw if already closed — ignore for disconnect */
+      }
       this.browser = null
     }
     this.sessionState = 'disconnected'

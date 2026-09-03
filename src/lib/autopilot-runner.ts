@@ -1,7 +1,7 @@
-import { searchExecute } from "@/lib/electron-api"
-import { mapSearchResultToLeadItem } from "@/lib/lead-mappers"
-import { useAutopilotStore, type AutopilotJob } from "@/store/autopilot-store"
-import { getLeadUniqueKey, useLeadsStore } from "@/store/leads-store"
+import { searchExecute } from '@/lib/electron-api'
+import { mapSearchResultToLeadItem } from '@/lib/lead-mappers'
+import { useAutopilotStore, type AutopilotJob } from '@/store/autopilot-store'
+import { getLeadUniqueKey, useLeadsStore } from '@/store/leads-store'
 
 const INTERRUPT_POLL_MS = 250
 const SAVE_LEAD_DELAY_MS = 150
@@ -14,28 +14,29 @@ const MAX_CONSECUTIVE_FAILURES = 3
 let runnerPromise: Promise<void> | null = null
 let runnerRunId: string | null = null
 
-type ErrorCategory = "fatal" | "rate_limit" | "transient" | "unknown"
+type ErrorCategory = 'fatal' | 'rate_limit' | 'transient' | 'unknown'
 
 const isCurrentRun = (runId: string) => useAutopilotStore.getState().runtime.runId === runId
 
-const sleep = (ms: number) => new Promise<void>((resolve) => {
-  setTimeout(resolve, ms)
-})
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
 
 const classifyError = (error: unknown): { category: ErrorCategory; message: string } => {
-  const message = error instanceof Error ? error.message : String(error || "静默获客执行失败")
+  const message = error instanceof Error ? error.message : String(error || '静默获客执行失败')
   const normalized = message.toLowerCase()
 
   if (/401|403|license|授权|token|api key|missing config|配置缺失|forbidden|unauthorized/.test(normalized)) {
-    return { category: "fatal", message }
+    return { category: 'fatal', message }
   }
   if (/429|quota|rate limit|too many requests|额度/.test(normalized)) {
-    return { category: "rate_limit", message }
+    return { category: 'rate_limit', message }
   }
   if (/timeout|timed out|econnreset|enet|socket|fetch failed|network|temporar|5\d\d/.test(normalized)) {
-    return { category: "transient", message }
+    return { category: 'transient', message }
   }
-  return { category: "unknown", message }
+  return { category: 'unknown', message }
 }
 
 const getRuntimeFlags = () => {
@@ -57,7 +58,7 @@ const syncLifecycleFromFlags = (runId: string) => {
     useAutopilotStore.setState((state) => ({
       runtime: {
         ...state.runtime,
-        lifecycle: "idle",
+        lifecycle: 'idle',
         currentJobId: undefined,
         finishedAt: Date.now(),
       },
@@ -69,7 +70,7 @@ const syncLifecycleFromFlags = (runId: string) => {
     useAutopilotStore.setState((state) => ({
       runtime: {
         ...state.runtime,
-        lifecycle: "paused",
+        lifecycle: 'paused',
         currentJobId: undefined,
       },
     }))
@@ -81,7 +82,7 @@ const syncLifecycleFromFlags = (runId: string) => {
 
 const pickNextPendingJob = () => {
   const { jobs } = useAutopilotStore.getState()
-  return jobs.find((job) => job.status === "pending")
+  return jobs.find((job) => job.status === 'pending')
 }
 
 const markJobRunning = async (runId: string, job: AutopilotJob) => {
@@ -90,7 +91,7 @@ const markJobRunning = async (runId: string, job: AutopilotJob) => {
   }
 
   await useAutopilotStore.getState().updateJobProgress(job.id, {
-    status: "running",
+    status: 'running',
     startedAt: Date.now(),
     lastError: undefined,
     cooldownUntil: undefined,
@@ -99,7 +100,7 @@ const markJobRunning = async (runId: string, job: AutopilotJob) => {
   useAutopilotStore.setState((state) => ({
     runtime: {
       ...state.runtime,
-      lifecycle: "running",
+      lifecycle: 'running',
       currentJobId: job.id,
       lastError: undefined,
     },
@@ -114,7 +115,7 @@ const finalizeJob = async (runId: string, jobId: string, patch: Partial<Autopilo
 
   await useAutopilotStore.getState().updateJobProgress(jobId, {
     ...patch,
-    finishedAt: patch.status === "completed" || patch.status === "failed" ? Date.now() : undefined,
+    finishedAt: patch.status === 'completed' || patch.status === 'failed' ? Date.now() : undefined,
   })
 
   useAutopilotStore.setState((state) => ({
@@ -132,7 +133,7 @@ const requeueJob = async (runId: string, jobId: string, patch: Partial<Autopilot
   }
 
   await useAutopilotStore.getState().updateJobProgress(jobId, {
-    status: "pending",
+    status: 'pending',
     cooldownUntil: undefined,
     ...patch,
   })
@@ -155,7 +156,7 @@ const pauseWithReason = async (runId: string, reason: string) => {
   useAutopilotStore.setState((state) => ({
     runtime: {
       ...state.runtime,
-      lifecycle: "paused",
+      lifecycle: 'paused',
       currentJobId: undefined,
       lastError: reason,
     },
@@ -173,7 +174,7 @@ const stopWithFatalError = async (runId: string, reason: string) => {
     runtime: {
       ...state.runtime,
       abortRequested: true,
-      lifecycle: "error",
+      lifecycle: 'error',
       currentJobId: undefined,
       lastError: reason,
       finishedAt: Date.now(),
@@ -199,7 +200,7 @@ const interruptibleSleep = async (runId: string, ms: number) => {
   return !syncLifecycleFromFlags(runId)
 }
 
-const filterQualifiedResults = (job: AutopilotJob, results: Awaited<ReturnType<typeof searchExecute>>["results"]) => {
+const filterQualifiedResults = (job: AutopilotJob, results: Awaited<ReturnType<typeof searchExecute>>['results']) => {
   const leadsStore = useLeadsStore.getState()
   const existingLeadKeys = new Set(leadsStore.leads.map((lead) => getLeadUniqueKey(lead)))
   const accepted = [] as typeof results
@@ -235,7 +236,12 @@ const filterQualifiedResults = (job: AutopilotJob, results: Awaited<ReturnType<t
   }
 }
 
-const flushSavedProgress = async (runId: string, jobId: string, payload: { savedCount: number; qualifiedCount: number; discoveredCount: number }, force = false) => {
+const flushSavedProgress = async (
+  runId: string,
+  jobId: string,
+  payload: { savedCount: number; qualifiedCount: number; discoveredCount: number },
+  force = false,
+) => {
   if (!isCurrentRun(runId)) {
     return false
   }
@@ -244,7 +250,12 @@ const flushSavedProgress = async (runId: string, jobId: string, payload: { saved
   return force ? isCurrentRun(runId) : true
 }
 
-const saveQualifiedLeads = async (runId: string, job: AutopilotJob, qualifiedResults: Awaited<ReturnType<typeof searchExecute>>["results"], discoveredCount: number) => {
+const saveQualifiedLeads = async (
+  runId: string,
+  job: AutopilotJob,
+  qualifiedResults: Awaited<ReturnType<typeof searchExecute>>['results'],
+  discoveredCount: number,
+) => {
   const { addLead } = useLeadsStore.getState()
   let savedCount = 0
   let pendingSinceFlush = 0
@@ -268,7 +279,8 @@ const saveQualifiedLeads = async (runId: string, job: AutopilotJob, qualifiedRes
     savedCount += 1
     pendingSinceFlush += 1
 
-    const shouldFlush = pendingSinceFlush >= BATCH_PROGRESS_COUNT || Date.now() - lastFlushAt >= BATCH_PROGRESS_INTERVAL_MS
+    const shouldFlush =
+      pendingSinceFlush >= BATCH_PROGRESS_COUNT || Date.now() - lastFlushAt >= BATCH_PROGRESS_INTERVAL_MS
     if (shouldFlush) {
       await flushSavedProgress(runId, job.id, {
         savedCount,
@@ -282,11 +294,16 @@ const saveQualifiedLeads = async (runId: string, job: AutopilotJob, qualifiedRes
     await sleep(SAVE_LEAD_DELAY_MS)
   }
 
-  await flushSavedProgress(runId, job.id, {
-    savedCount,
-    qualifiedCount: qualifiedResults.length,
-    discoveredCount,
-  }, true)
+  await flushSavedProgress(
+    runId,
+    job.id,
+    {
+      savedCount,
+      qualifiedCount: qualifiedResults.length,
+      discoveredCount,
+    },
+    true,
+  )
 
   return savedCount
 }
@@ -325,7 +342,7 @@ const runSingleJob = async (runId: string, job: AutopilotJob) => {
 
   if (getRuntimeFlags().abortRequested || getRuntimeFlags().pauseRequested) {
     await requeueJob(runId, job.id, {
-      lastError: getRuntimeFlags().abortRequested ? "任务已中断，等待重新启动" : "任务已暂停，等待继续执行",
+      lastError: getRuntimeFlags().abortRequested ? '任务已中断，等待重新启动' : '任务已暂停，等待继续执行',
     })
     return false
   }
@@ -334,7 +351,7 @@ const runSingleJob = async (runId: string, job: AutopilotJob) => {
   const cooldownMs = Math.max(0, useAutopilotStore.getState().settings.cooldownMs)
 
   await useAutopilotStore.getState().updateJobProgress(job.id, {
-    status: hasNextPendingJob && cooldownMs > 0 ? "cooldown" : "completed",
+    status: hasNextPendingJob && cooldownMs > 0 ? 'cooldown' : 'completed',
     discoveredCount: results.length,
     qualifiedCount: qualifiedResults.length,
     savedCount,
@@ -346,7 +363,7 @@ const runSingleJob = async (runId: string, job: AutopilotJob) => {
 
   if (!hasNextPendingJob || cooldownMs === 0) {
     await finalizeJob(runId, job.id, {
-      status: "completed",
+      status: 'completed',
       cooldownUntil: undefined,
     })
     return true
@@ -358,7 +375,7 @@ const runSingleJob = async (runId: string, job: AutopilotJob) => {
   }
 
   await useAutopilotStore.getState().updateJobProgress(job.id, {
-    status: "completed",
+    status: 'completed',
     cooldownUntil: undefined,
   })
 
@@ -379,7 +396,7 @@ export const startAutopilotRunner = (runId: string) => {
     try {
       while (true) {
         const { runtime, jobs, settings } = useAutopilotStore.getState()
-        if (!isCurrentRun(runId) || runtime.lifecycle !== "running") {
+        if (!isCurrentRun(runId) || runtime.lifecycle !== 'running') {
           break
         }
 
@@ -387,12 +404,12 @@ export const startAutopilotRunner = (runId: string) => {
           break
         }
 
-        const nextJob = jobs.find((job) => job.status === "pending")
+        const nextJob = jobs.find((job) => job.status === 'pending')
         if (!nextJob) {
           useAutopilotStore.setState((state) => ({
             runtime: {
               ...state.runtime,
-              lifecycle: "completed",
+              lifecycle: 'completed',
               currentJobId: undefined,
               finishedAt: Date.now(),
             },
@@ -416,9 +433,9 @@ export const startAutopilotRunner = (runId: string) => {
             break
           }
 
-          if (category === "fatal") {
+          if (category === 'fatal') {
             await finalizeJob(runId, nextJob.id, {
-              status: "failed",
+              status: 'failed',
               failedCount: nextJob.failedCount + 1,
               lastError: `致命错误：${message}`,
             })
@@ -436,13 +453,16 @@ export const startAutopilotRunner = (runId: string) => {
               runId,
               nextAttempts > MAX_JOB_ATTEMPTS
                 ? `任务 ${nextJob.country} | ${nextJob.keyword} 连续失败超过 ${MAX_JOB_ATTEMPTS} 次，系统已自动暂停。`
-                : `系统连续出现 ${MAX_CONSECUTIVE_FAILURES} 次异常，已自动暂停巡航保护网络信誉。`
+                : `系统连续出现 ${MAX_CONSECUTIVE_FAILURES} 次异常，已自动暂停巡航保护网络信誉。`,
             )
             break
           }
 
-          if (category === "rate_limit") {
-            const cooldownMs = computeBackoffMs(nextAttempts, Math.max(settings.cooldownMs, RATE_LIMIT_BASE_COOLDOWN_MS))
+          if (category === 'rate_limit') {
+            const cooldownMs = computeBackoffMs(
+              nextAttempts,
+              Math.max(settings.cooldownMs, RATE_LIMIT_BASE_COOLDOWN_MS),
+            )
             await requeueJob(runId, nextJob.id, {
               attempts: nextAttempts,
               lastError: `触发限流保护，${Math.ceil(cooldownMs / 1000)} 秒后自动重试。原因：${message}`,
@@ -450,7 +470,7 @@ export const startAutopilotRunner = (runId: string) => {
             useAutopilotStore.setState((state) => ({
               runtime: {
                 ...state.runtime,
-                lifecycle: "running",
+                lifecycle: 'running',
                 currentJobId: undefined,
                 lastError: `限流冷却中，预计 ${Math.ceil(cooldownMs / 1000)} 秒后继续：${message}`,
               },
@@ -470,7 +490,7 @@ export const startAutopilotRunner = (runId: string) => {
           useAutopilotStore.setState((state) => ({
             runtime: {
               ...state.runtime,
-              lifecycle: "running",
+              lifecycle: 'running',
               currentJobId: undefined,
               lastError: `巡航重试中：${message}`,
             },
@@ -483,11 +503,11 @@ export const startAutopilotRunner = (runId: string) => {
       }
 
       const finalState = useAutopilotStore.getState()
-      if (isCurrentRun(runId) && finalState.runtime.lifecycle === "running") {
+      if (isCurrentRun(runId) && finalState.runtime.lifecycle === 'running') {
         useAutopilotStore.setState((state) => ({
           runtime: {
             ...state.runtime,
-            lifecycle: pickNextPendingJob() ? state.runtime.lifecycle : "completed",
+            lifecycle: pickNextPendingJob() ? state.runtime.lifecycle : 'completed',
             currentJobId: undefined,
             finishedAt: pickNextPendingJob() ? state.runtime.finishedAt : Date.now(),
           },

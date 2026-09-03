@@ -23,7 +23,9 @@ test('search stage payload exposes structured degraded semantic metadata (Analys
   assert.match(service, /degraded: true/)
   assert.match(service, /settingsActionable: true/)
 
-  assert.match(searchEngine, /isAiSkippedStageMessage\(payload\?\.message\)/)
+  // AI-skip degraded-state detection now lives in the extracted search hook.
+  const searchHook = read('src', 'hooks', 'use-search-engine.ts')
+  assert.match(searchHook, /isAiSkippedStageMessage\(payload\?\.message\)/)
   assert.match(searchEngine, /aiScoringSkipped/)
   assert.match(searchEngine, /未启用 AI 评分/)
 })

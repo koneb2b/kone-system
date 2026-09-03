@@ -1,6 +1,6 @@
-"use client"
+'use client'
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Users,
   Shield,
@@ -13,48 +13,51 @@ import {
   Settings,
   Sparkles,
   Loader2,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { useToast } from "@/hooks/use-toast"
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useToast } from '@/hooks/use-toast'
 import {
   fetchTeamLeads,
   checkDomainCollision,
   subscribeCloudRealtime,
   unsubscribeCloudRealtime,
   onCloudRealtimeLeadEvent,
-} from "@/lib/electron-api"
-import type { CloudLeadEntry, DomainCollisionResult, RealtimeLeadEvent } from "@/shared/ipc-contracts"
+} from '@/lib/electron-api'
+import type { CloudLeadEntry, DomainCollisionResult, RealtimeLeadEvent } from '@/shared/ipc-contracts'
 
 const maskOwner = (machineId?: string, label?: string) => {
   if (label) return label
-  if (!machineId) return "未知"
+  if (!machineId) return '未知'
   return `业务员-${machineId.slice(0, 4).toLowerCase()}`
 }
 
 function useCollisionCheck() {
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<DomainCollisionResult | null>(null)
-  const [inputValue, setInputValue] = useState("")
+  const [inputValue, setInputValue] = useState('')
   const { toast } = useToast()
 
-  const check = useCallback(async (d: string) => {
-    const trimmed = d.trim()
-    if (!trimmed) return
-    setInputValue(trimmed)
-    setChecking(true)
-    try {
-      setResult(await checkDomainCollision(trimmed))
-    } catch (error) {
-      setResult(null)
-      toast({
-        title: "错误",
-        description: error instanceof Error ? error.message : "域名检测失败，请稍后重试",
-        variant: "destructive",
-      })
-    } finally {
-      setChecking(false)
-    }
-  }, [toast])
+  const check = useCallback(
+    async (d: string) => {
+      const trimmed = d.trim()
+      if (!trimmed) return
+      setInputValue(trimmed)
+      setChecking(true)
+      try {
+        setResult(await checkDomainCollision(trimmed))
+      } catch (error) {
+        setResult(null)
+        toast({
+          title: '错误',
+          description: error instanceof Error ? error.message : '域名检测失败，请稍后重试',
+          variant: 'destructive',
+        })
+      } finally {
+        setChecking(false)
+      }
+    },
+    [toast],
+  )
 
   return { checking, result, inputValue, setInputValue, check }
 }
@@ -78,9 +81,9 @@ export function TeamDashboard() {
     } catch (error) {
       setOffline(true)
       toast({
-        title: "错误",
-        description: error instanceof Error ? error.message : "团队数据拉取失败，请稍后重试",
-        variant: "destructive",
+        title: '错误',
+        description: error instanceof Error ? error.message : '团队数据拉取失败，请稍后重试',
+        variant: 'destructive',
       })
     } finally {
       setLoading(false)
@@ -98,16 +101,16 @@ export function TeamDashboard() {
       .catch((error) => {
         if (!cancelled) {
           toast({
-            title: "错误",
-            description: error instanceof Error ? error.message : "实时订阅失败，已切换为静态模式",
-            variant: "destructive",
+            title: '错误',
+            description: error instanceof Error ? error.message : '实时订阅失败，已切换为静态模式',
+            variant: 'destructive',
           })
         }
       })
 
     const unsubEvent = onCloudRealtimeLeadEvent((evt: RealtimeLeadEvent) => {
       if (cancelled) return
-      if (evt.eventType === "INSERT" && evt.new) {
+      if (evt.eventType === 'INSERT' && evt.new) {
         const entry = evt.new as CloudLeadEntry
         if (entry.score >= 80) {
           setLeads((prev) => {
@@ -117,7 +120,7 @@ export function TeamDashboard() {
           setFlashId(entry.id)
           setTimeout(() => setFlashId(null), 2000)
         }
-      } else if (evt.eventType === "UPDATE" && evt.new) {
+      } else if (evt.eventType === 'UPDATE' && evt.new) {
         const entry = evt.new as CloudLeadEntry
         setLeads((prev) => prev.map((l) => (l.id === entry.id ? { ...l, ...entry } : l)))
         setFlashId(entry.id)
@@ -133,17 +136,17 @@ export function TeamDashboard() {
   }, [loadTeamLeads])
 
   useEffect(() => {
-    const mode = offline && leads.length === 0 && !loading ? "local" : "connected"
-    window.dispatchEvent(new CustomEvent("kone:cloud-mode", { detail: { mode } }))
+    const mode = offline && leads.length === 0 && !loading ? 'local' : 'connected'
+    window.dispatchEvent(new CustomEvent('kone:cloud-mode', { detail: { mode } }))
     return () => {
-      window.dispatchEvent(new CustomEvent("kone:cloud-mode", { detail: { mode: "connected" } }))
+      window.dispatchEvent(new CustomEvent('kone:cloud-mode', { detail: { mode: 'connected' } }))
     }
   }, [offline, leads.length, loading])
 
   const formatDate = (ts: string) => {
     try {
       const d = new Date(ts)
-      return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+      return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
     } catch {
       return ts
     }
@@ -192,23 +195,30 @@ export function TeamDashboard() {
             value={collision.inputValue}
             onChange={(e) => collision.setInputValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void collision.check(collision.inputValue)
+              if (e.key === 'Enter') void collision.check(collision.inputValue)
             }}
             placeholder="输入域名检测是否已被同事跟进..."
             className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
-          <Button size="sm" onClick={() => void collision.check(collision.inputValue)} disabled={collision.checking || !collision.inputValue.trim()}>
+          <Button
+            size="sm"
+            onClick={() => void collision.check(collision.inputValue)}
+            disabled={collision.checking || !collision.inputValue.trim()}
+          >
             {collision.checking ? <Loader2 className="size-3.5 animate-spin" /> : <Shield className="size-3.5" />}
-            {collision.checking ? "检测中..." : "检测"}
+            {collision.checking ? '检测中...' : '检测'}
           </Button>
         </div>
         {collision.result ? (
-          <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${collision.result.collision ? "border border-red-200 bg-red-50 text-red-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+          <div
+            className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${collision.result.collision ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-emerald-200 bg-emerald-50 text-emerald-700'}`}
+          >
             {collision.result.collision ? (
               <>
                 <AlertTriangle className="size-4 shrink-0" />
                 <span>
-                  <strong>{collision.result.domain}</strong> 已由 {maskOwner(collision.result.ownerMachineId, collision.result.ownerLabel)} 跟进中，建议避免重复触达
+                  <strong>{collision.result.domain}</strong> 已由{' '}
+                  {maskOwner(collision.result.ownerMachineId, collision.result.ownerLabel)} 跟进中，建议避免重复触达
                 </span>
               </>
             ) : (
@@ -259,7 +269,7 @@ export function TeamDashboard() {
                     type="button"
                     variant="outline"
                     className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                    onClick={() => window.dispatchEvent(new Event("kone:navigate-settings"))}
+                    onClick={() => window.dispatchEvent(new Event('kone:navigate-settings'))}
                   >
                     <Settings className="size-4" />
                     前往系统设置配置
@@ -269,19 +279,28 @@ export function TeamDashboard() {
 
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">示例协同视图</span>
+                    <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                      示例协同视图
+                    </span>
                     <span className="text-[11px] text-slate-400">Preview</span>
                   </div>
                   <div className="space-y-3 opacity-55">
                     {[
-                      { score: 95, company: "Hulk Energy", desc: "LiFePO4 采购需求", owner: "业务员-a3f2" },
-                      { score: 91, company: "Nordic Grid", desc: "储能逆变器年度寻源", owner: "业务员-c8d1" },
-                      { score: 88, company: "Solvex Marine", desc: "港口设备电池替换项目", owner: "业务员-0f72" },
+                      { score: 95, company: 'Hulk Energy', desc: 'LiFePO4 采购需求', owner: '业务员-a3f2' },
+                      { score: 91, company: 'Nordic Grid', desc: '储能逆变器年度寻源', owner: '业务员-c8d1' },
+                      { score: 88, company: 'Solvex Marine', desc: '港口设备电池替换项目', owner: '业务员-0f72' },
                     ].map((item) => (
-                      <div key={item.company} className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3">
-                        <div className="flex size-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">{item.score}</div>
+                      <div
+                        key={item.company}
+                        className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3"
+                      >
+                        <div className="flex size-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">
+                          {item.score}
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-slate-800">[示例] {item.company}: {item.desc}</div>
+                          <div className="truncate text-sm font-medium text-slate-800">
+                            [示例] {item.company}: {item.desc}
+                          </div>
                           <div className="mt-1 text-xs text-slate-500">高价值需求线索 · 已纳入团队协同跟进视图</div>
                         </div>
                         <div className="shrink-0 text-xs text-slate-400">{item.owner}</div>
@@ -297,9 +316,11 @@ export function TeamDashboard() {
             {leads.map((lead) => (
               <div
                 key={lead.id}
-                className={`flex items-center gap-4 px-4 py-3 transition-all duration-500 ${flashId === lead.id ? "bg-blue-50 ring-1 ring-blue-300" : "hover:bg-muted/20"}`}
+                className={`flex items-center gap-4 px-4 py-3 transition-all duration-500 ${flashId === lead.id ? 'bg-blue-50 ring-1 ring-blue-300' : 'hover:bg-muted/20'}`}
               >
-                <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white ${lead.score >= 90 ? "bg-emerald-500" : "bg-blue-500"}`}>
+                <div
+                  className={`flex size-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white ${lead.score >= 90 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                >
                   {lead.score}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -323,7 +344,9 @@ export function TeamDashboard() {
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-xs font-medium text-muted-foreground">{maskOwner(lead.owner_machine_id, lead.owner_label)}</div>
+                  <div className="text-xs font-medium text-muted-foreground">
+                    {maskOwner(lead.owner_machine_id, lead.owner_label)}
+                  </div>
                   <div className="text-[10px] text-muted-foreground/60">{formatDate(lead.created_at)}</div>
                 </div>
               </div>

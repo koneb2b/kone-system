@@ -1,13 +1,9 @@
-import type { ElectronApi } from '../shared/ipc-contracts';
+import type { ElectronApi } from '../shared/ipc-contracts'
 
-export {};
+export {}
 
 declare global {
   interface Window {
-    electronAPI: ElectronApi;
+    electronAPI: ElectronApi
   }
 }
-
-
-
-

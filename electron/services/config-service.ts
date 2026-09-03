@@ -18,6 +18,8 @@ export const SECRET_KEYS = {
   LICENSE_CLAIMS: 'secrets.license.claims',
   ANYSEARCH_API_KEY: 'secrets.anysearch.apiKey',
   ANYSEARCH_BASE_URL: 'secrets.anysearch.baseUrl',
+  /* L0-3/B3：Email Agent SMTP 密码加密落位（明文遗留字段仅作读端回退兼容） */
+  EMAIL_SMTP_PASS: 'secrets.email.smtpPass',
 } as const
 
 export const PROVIDER_SECRET_KEYS: Record<string, string> = {
@@ -220,10 +222,7 @@ export const getN8nConfig = (store: ConfigStore): N8nConfigSnapshot => {
   }
 }
 
-export const shouldAllowN8nPush = (
-  config: N8nConfigSnapshot,
-  lead: { matchScore?: number; inferredRole?: string }
-) => {
+export const shouldAllowN8nPush = (config: N8nConfigSnapshot, lead: { matchScore?: number; inferredRole?: string }) => {
   if (!config.autoPush) {
     return { allowed: true as const, reason: '' }
   }
@@ -237,7 +236,9 @@ export const shouldAllowN8nPush = (
   }
 
   const normalizedRoleFilter = config.roleFilter.toLowerCase()
-  const normalizedInferredRole = String(lead.inferredRole || '').trim().toLowerCase()
+  const normalizedInferredRole = String(lead.inferredRole || '')
+    .trim()
+    .toLowerCase()
   if (normalizedRoleFilter && !normalizedInferredRole.includes(normalizedRoleFilter)) {
     return {
       allowed: false as const,
@@ -312,7 +313,17 @@ export const getMachineIdOrCreate = (store: ConfigStore) => {
 export const getDevEnterpriseClaims = (store: ConfigStore) => ({
   status: 'active' as const,
   expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-  features: ['enterprise', 'search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'cloud_send', 'team_collaboration'],
+  features: [
+    'enterprise',
+    'search_basic',
+    'search_deep',
+    'analysis_basic',
+    'analysis_advanced',
+    'lead_export',
+    'export_full',
+    'cloud_send',
+    'team_collaboration',
+  ],
   licenseKey: 'DEV-ENTERPRISE-UNLOCKED',
   machineId: getMachineIdOrCreate(store),
   plan: 'enterprise' as const,
@@ -361,8 +372,7 @@ export const migrateLegacySecretsFromConfig = (store: ConfigStore) => {
 /** config:set 写保护黑名单 — 禁止渲染进程直接篡改授权/计费相关键 */
 const CONFIG_SET_BLACKLIST = ['license.', 'billing.', 'secrets.', 'system.hardwareMachineId']
 
-const isConfigKeyBlocked = (key: string): boolean =>
-  CONFIG_SET_BLACKLIST.some((prefix) => key.startsWith(prefix))
+const isConfigKeyBlocked = (key: string): boolean => CONFIG_SET_BLACKLIST.some((prefix) => key.startsWith(prefix))
 
 /** secret:set 写保护白名单 — 仅允许渲染进程设置这些密钥 */
 const SECRET_SET_WHITELIST: Set<string> = new Set([

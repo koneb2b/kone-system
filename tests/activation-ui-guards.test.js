@@ -17,14 +17,23 @@ test('activation screen uses kone brand gradient on left panel', () => {
 
 test('activation screen surfaces destructive toast errors for activation and trial failures', () => {
   assert.match(activationSource, /useToast\(\)/)
-  assert.match(activationSource, /toast\(\{ title: "激活失败", description: message, variant: "destructive" \}\)/)
-  assert.match(activationSource, /toast\(\{ title: "试用开启失败", description: message, variant: "destructive" \}\)/)
+  assert.match(
+    activationSource,
+    /toast\(\{ title: ["']激活失败["'], description: message, variant: ["']destructive["'] \}\)/,
+  )
+  assert.match(
+    activationSource,
+    /toast\(\{ title: ["']试用开启失败["'], description: message, variant: ["']destructive["'] \}\)/,
+  )
   assert.match(activationSource, /finally \{\s*setActivating\(false\)/s)
   assert.match(activationSource, /finally \{\s*setRequestingTrial\(false\)/s)
 })
 
 test('upgrade modal surfaces destructive toast errors and loading state', () => {
-  assert.match(upgradeSource, /toast\(\{ title: "激活失败", description: message, variant: "destructive" \}\)/)
+  assert.match(
+    upgradeSource,
+    /toast\(\{ title: ["']激活失败["'], description: message, variant: ["']destructive["'] \}\)/,
+  )
   assert.match(upgradeSource, /finally \{\s*setActivating\(false\)/s)
   assert.match(upgradeSource, /isLoading=\{activating\}/)
 })

@@ -1,25 +1,25 @@
-"use client"
+'use client'
 
-import { useEffect, useState } from "react"
-import { Shield, Copy, Check, Cpu, Lock, Rocket } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { KoneLogo } from "@/components/kone-logo"
-import { getLicenseInfo, submitLicense, requestTrial } from "@/lib/electron-api"
-import { useLicenseStore } from "@/store/licenseStore"
-import { useToast } from "@/hooks/use-toast"
+import { useEffect, useState } from 'react'
+import { Shield, Copy, Check, Cpu, Lock, Rocket } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { KoneLogo } from '@/components/kone-logo'
+import { getLicenseInfo, submitLicense, requestTrial } from '@/lib/electron-api'
+import { useLicenseStore } from '@/store/licenseStore'
+import { useToast } from '@/hooks/use-toast'
 
 type ActivationScreenProps = {
   onActivated: () => void
 }
 
 export function ActivationScreen({ onActivated }: ActivationScreenProps) {
-  const [machineId, setMachineId] = useState("")
-  const [licenseKey, setLicenseKey] = useState("")
+  const [machineId, setMachineId] = useState('')
+  const [licenseKey, setLicenseKey] = useState('')
   const [copied, setCopied] = useState(false)
   const [activating, setActivating] = useState(false)
   const [requestingTrial, setRequestingTrial] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("")
+  const [errorMessage, setErrorMessage] = useState('')
   const refreshLicenseStatus = useLicenseStore((state) => state.refreshLicenseStatus)
   const { toast } = useToast()
 
@@ -27,9 +27,9 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
     const loadInfo = async () => {
       try {
         const info = await getLicenseInfo()
-        setMachineId(info.machineId || "")
+        setMachineId(info.machineId || '')
       } catch {
-        setMachineId("")
+        setMachineId('')
       }
     }
     void loadInfo()
@@ -37,7 +37,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(machineId || "")
+      await navigator.clipboard.writeText(machineId || '')
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -47,36 +47,36 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
 
   const handleActivate = async () => {
     if (!licenseKey.trim()) {
-      const message = "请输入激活码"
+      const message = '请输入激活码'
       setErrorMessage(message)
-      toast({ title: "激活失败", description: message, variant: "destructive" })
+      toast({ title: '激活失败', description: message, variant: 'destructive' })
       return
     }
     setActivating(true)
-    setErrorMessage("")
+    setErrorMessage('')
     try {
       const result = await submitLicense({
         licenseKey: licenseKey.trim(),
       })
       if (result.isExpired) {
-        const message = result.message || "授权已过期，请联系商务续费"
+        const message = result.message || '授权已过期，请联系商务续费'
         setErrorMessage(message)
-        toast({ title: "激活失败", description: message, variant: "destructive" })
+        toast({ title: '激活失败', description: message, variant: 'destructive' })
         return
       }
-      if (result.tier === "unregistered") {
-        const message = result.message || "激活失败，请检查激活码是否正确"
+      if (result.tier === 'unregistered') {
+        const message = result.message || '激活失败，请检查激活码是否正确'
         setErrorMessage(message)
-        toast({ title: "激活失败", description: message, variant: "destructive" })
+        toast({ title: '激活失败', description: message, variant: 'destructive' })
         return
       }
       await refreshLicenseStatus(true)
       await refreshLicenseStatus(true)
       onActivated()
     } catch (error) {
-      const message = error instanceof Error ? error.message : "授权验证失败，请稍后重试"
+      const message = error instanceof Error ? error.message : '授权验证失败，请稍后重试'
       setErrorMessage(message)
-      toast({ title: "激活失败", description: message, variant: "destructive" })
+      toast({ title: '激活失败', description: message, variant: 'destructive' })
     } finally {
       setActivating(false)
     }
@@ -84,27 +84,27 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
 
   const handleRequestTrial = async () => {
     setRequestingTrial(true)
-    setErrorMessage("")
+    setErrorMessage('')
     try {
       const result = await requestTrial()
       if (!result.success) {
-        const message = result.message || "试用申请失败，该设备可能已试用过"
+        const message = result.message || '试用申请失败，该设备可能已试用过'
         setErrorMessage(message)
-        toast({ title: "试用开启失败", description: message, variant: "destructive" })
+        toast({ title: '试用开启失败', description: message, variant: 'destructive' })
         return
       }
       onActivated()
     } catch (error) {
-      const message = error instanceof Error ? error.message : "试用申请失败，请稍后重试"
+      const message = error instanceof Error ? error.message : '试用申请失败，请稍后重试'
       setErrorMessage(message)
-      toast({ title: "试用开启失败", description: message, variant: "destructive" })
+      toast({ title: '试用开启失败', description: message, variant: 'destructive' })
     } finally {
       setRequestingTrial(false)
     }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !activating) {
+    if (e.key === 'Enter' && !activating) {
       void handleActivate()
     }
   }
@@ -112,7 +112,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
   return (
     <div
       className="fixed inset-0 z-[9999] flex min-h-screen bg-background"
-      style={{ userSelect: "none" }}
+      style={{ userSelect: 'none' }}
       data-stage="activation-screen"
     >
       {/* ── Left Branding Panel ── */}
@@ -133,7 +133,8 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             B2B 智能获客系统
           </h1>
           <p className="max-w-md text-lg leading-relaxed text-white/85">
-            面向全球企业市场的智能获客操作系统，融合 AI 线索挖掘与精细化风控能力，帮助销售团队稳定、可持续地拓展高质量 B2B 客户。
+            面向全球企业市场的智能获客操作系统，融合 AI 线索挖掘与精细化风控能力，帮助销售团队稳定、可持续地拓展高质量
+            B2B 客户。
           </p>
         </div>
 
@@ -157,9 +158,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
               <Lock className="size-5 text-primary" />
               软件激活
             </h2>
-            <p className="text-muted-foreground text-sm">
-              请完成以下步骤激活您的许可证，或直接开启免费试用
-            </p>
+            <p className="text-muted-foreground text-sm">请完成以下步骤激活您的许可证，或直接开启免费试用</p>
           </div>
 
           {/* ── Step 1: Machine ID ── */}
@@ -168,16 +167,12 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
               <div className="flex items-center justify-center size-6 rounded-full bg-primary/10">
                 <Cpu className="size-3.5 text-primary" />
               </div>
-              <label className="text-sm font-semibold text-foreground">
-                步骤 1：复制设备识别码
-              </label>
+              <label className="text-sm font-semibold text-foreground">步骤 1：复制设备识别码</label>
             </div>
-            <p className="text-xs text-muted-foreground">
-              将下方设备识别码发送给您的专属顾问，用于生成激活文件
-            </p>
+            <p className="text-xs text-muted-foreground">将下方设备识别码发送给您的专属顾问，用于生成激活文件</p>
             <div className="flex items-center gap-2">
               <div className="flex-1 bg-background rounded-lg px-4 py-2.5 font-mono text-sm text-muted-foreground select-all border border-border break-all">
-                {machineId || "正在获取设备识别码..."}
+                {machineId || '正在获取设备识别码...'}
               </div>
               <Button
                 variant="outline"
@@ -186,11 +181,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
                 onClick={handleCopy}
                 disabled={!machineId}
               >
-                {copied ? (
-                  <Check className="size-4 text-emerald-600" />
-                ) : (
-                  <Copy className="size-4" />
-                )}
+                {copied ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
                 <span className="sr-only">复制设备识别码</span>
               </Button>
             </div>
@@ -202,9 +193,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
               <div className="flex items-center justify-center size-6 rounded-full bg-primary/10">
                 <Shield className="size-3.5 text-primary" />
               </div>
-              <label className="text-sm font-semibold text-foreground">
-                步骤 2：输入激活码
-              </label>
+              <label className="text-sm font-semibold text-foreground">步骤 2：输入激活码</label>
             </div>
             <Textarea
               value={licenseKey}
@@ -230,7 +219,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             isLoading={activating}
           >
             {!activating ? <Shield className="size-5" /> : null}
-            {activating ? "正在验证..." : "立即激活"}
+            {activating ? '正在验证...' : '立即激活'}
           </Button>
 
           {/* ── Divider ── */}
@@ -248,7 +237,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             isLoading={requestingTrial}
           >
             {!requestingTrial ? <Rocket className="size-6" /> : null}
-            {requestingTrial ? "正在开启试用..." : "\uD83D\uDE80 开启 7 天全功能免费试用"}
+            {requestingTrial ? '正在开启试用...' : '\uD83D\uDE80 开启 7 天全功能免费试用'}
           </Button>
 
           <p className="text-xs text-muted-foreground text-center">
