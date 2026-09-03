@@ -17,13 +17,13 @@ test('agents panel has trial meltdown guard: non-premium shows upgrade instead o
 
 test('agents panel has trial badge when trial limit active', () => {
   // P0-5 分层授权：Paid Basic 只开放本地 Email + 低量 WhatsApp，LinkedIn 必须隐藏
-  assert.match(source, /const isPaidBasic = plan === "basic"/)
-  assert.match(source, /isPaidBasic \? agents\.filter\(\(a\) => a\.agentType !== "linkedin"\) : agents/)
+  assert.match(source, /const isPaidBasic = plan === ["']basic["']/)
+  assert.match(source, /isPaidBasic \? agents\.filter\(\(a\) => a\.agentType !== ["']linkedin["']\) : agents/)
 })
 
 test('agents panel has autopilot cruise safety warning', () => {
   assert.match(source, /本地 Autopilot 伴随巡航红线/)
-  assert.match(source, /本地 AI 智能体群正在安全复用/)
+  assert.match(source, /本地 AI\s*智能体群正在安全复用/)
 })
 
 test('agents panel renders agent cards only for premium users', () => {

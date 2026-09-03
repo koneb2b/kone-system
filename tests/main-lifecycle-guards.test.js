@@ -9,7 +9,7 @@ const source = fs.readFileSync(mainFilePath, 'utf8')
 test('electron main entry requests single instance lock before startup', () => {
   assert.match(source, /const hasSingleInstanceLock = app\.requestSingleInstanceLock\(\)/)
   assert.match(source, /if \(!hasSingleInstanceLock\) \{\s*app\.quit\(\)/s)
-  assert.match(source, /app\.whenReady\(\)\.then\(async \(\) => \{\s*if \(!hasSingleInstanceLock\) \{\s*return/s)
+  assert.match(source, /app\s*\.whenReady\(\)\s*\.then\(async \(\) => \{\s*if \(!hasSingleInstanceLock\) \{\s*return/s)
 })
 
 test('electron main entry restores existing window on second instance', () => {
@@ -21,5 +21,8 @@ test('electron main entry restores existing window on second instance', () => {
 })
 
 test('electron main entry quits on non-macOS window-all-closed', () => {
-  assert.match(source, /app\.on\('window-all-closed', \(\) => \{\s*if \(process\.platform !== 'darwin'\) \{\s*app\.quit\(\)/s)
+  assert.match(
+    source,
+    /app\.on\('window-all-closed', \(\) => \{\s*if \(process\.platform !== 'darwin'\) \{\s*app\.quit\(\)/s,
+  )
 })
