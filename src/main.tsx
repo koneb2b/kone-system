@@ -39,7 +39,8 @@ const buildDevAnalysis = (payload: {
   if (payload.scenario === 'reply_coach') {
     const customerText = payload.lead?.customerText?.trim() || 'Please share your best price and lead time.'
     const negotiationRisk = `${company} is likely testing price and lead time before committing. The signal is positive, but it still lacks firm volume and timeline commitment.`
-    const pricingAdvice = 'Keep the baseline offer stable first, then exchange better pricing for clearer quantity, project timing, or sample confirmation.'
+    const pricingAdvice =
+      'Keep the baseline offer stable first, then exchange better pricing for clearer quantity, project timing, or sample confirmation.'
     const replyTemplate = [
       `Hi ${company} team,`,
       '',
@@ -189,7 +190,10 @@ if (import.meta.env.DEV) {
         fetchModels: unsupported as ElectronApi['config']['fetchModels'],
       },
       autopilot: {
-        getState: (async () => ({ success: true, data: { stateKind: 'ready_empty', source: 'dev_shell', state: null } })) as ElectronApi['autopilot']['getState'],
+        getState: (async () => ({
+          success: true,
+          data: { stateKind: 'ready_empty', source: 'dev_shell', state: null },
+        })) as ElectronApi['autopilot']['getState'],
         setState: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['setState'],
         clearLegacy: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['clearLegacy'],
         syncLifecycle: (async () => ({ success: true, data: null })) as ElectronApi['autopilot']['syncLifecycle'],
@@ -222,13 +226,14 @@ if (import.meta.env.DEV) {
           const result = buildDevAnalysis(payload)
           return {
             success: true,
-            data: typeof result === 'string'
-              ? {
-                  content: result,
-                  usedFallback: false,
-                  source: 'dev-shell',
-                }
-              : result,
+            data:
+              typeof result === 'string'
+                ? {
+                    content: result,
+                    usedFallback: false,
+                    source: 'dev-shell',
+                  }
+                : result,
           }
         }) as ElectronApi['analysis']['generate'],
       },
@@ -237,24 +242,60 @@ if (import.meta.env.DEV) {
         exportPdf: unsupported as ElectronApi['files']['exportPdf'],
       },
       cloud: {
-        checkCollision: (async () => ({ success: true, data: { collision: false, domain: '' } })) as ElectronApi['cloud']['checkCollision'],
-        syncLead: (async () => ({ success: true, data: { synced: false, reason: 'Dev shell: 云端未连接' } })) as ElectronApi['cloud']['syncLead'],
-        upsertLead: (async () => ({ success: true, data: { upserted: false, reason: 'Dev shell: 云端未连接' } })) as ElectronApi['cloud']['upsertLead'],
-        checkDomains: (async () => ({ success: true, data: { claimedDomains: [], offline: true } })) as ElectronApi['cloud']['checkDomains'],
-        createCampaign: (async () => ({ success: true, data: { created: false, error: 'Dev shell: 云端未连接' } })) as ElectronApi['cloud']['createCampaign'],
-        fetchTeamLeads: (async () => ({ success: true, data: { leads: [], offline: true } })) as ElectronApi['cloud']['fetchTeamLeads'],
-        fetchTracking: (async () => ({ success: true, data: { tracking: {}, offline: true } })) as ElectronApi['cloud']['fetchTracking'],
+        checkCollision: (async () => ({
+          success: true,
+          data: { collision: false, domain: '' },
+        })) as ElectronApi['cloud']['checkCollision'],
+        syncLead: (async () => ({
+          success: true,
+          data: { synced: false, reason: 'Dev shell: 云端未连接' },
+        })) as ElectronApi['cloud']['syncLead'],
+        upsertLead: (async () => ({
+          success: true,
+          data: { upserted: false, reason: 'Dev shell: 云端未连接' },
+        })) as ElectronApi['cloud']['upsertLead'],
+        checkDomains: (async () => ({
+          success: true,
+          data: { claimedDomains: [], offline: true },
+        })) as ElectronApi['cloud']['checkDomains'],
+        createCampaign: (async () => ({
+          success: true,
+          data: { created: false, error: 'Dev shell: 云端未连接' },
+        })) as ElectronApi['cloud']['createCampaign'],
+        fetchTeamLeads: (async () => ({
+          success: true,
+          data: { leads: [], offline: true },
+        })) as ElectronApi['cloud']['fetchTeamLeads'],
+        fetchTracking: (async () => ({
+          success: true,
+          data: { tracking: {}, offline: true },
+        })) as ElectronApi['cloud']['fetchTracking'],
         subscribeRealtime: (async () => ({ success: true, data: null })) as ElectronApi['cloud']['subscribeRealtime'],
-        unsubscribeRealtime: (async () => ({ success: true, data: null })) as ElectronApi['cloud']['unsubscribeRealtime'],
-        fetchClaimedDomains: (async () => ({ success: true, data: { domains: [], offline: true } })) as ElectronApi['cloud']['fetchClaimedDomains'],
+        unsubscribeRealtime: (async () => ({
+          success: true,
+          data: null,
+        })) as ElectronApi['cloud']['unsubscribeRealtime'],
+        fetchClaimedDomains: (async () => ({
+          success: true,
+          data: { domains: [], offline: true },
+        })) as ElectronApi['cloud']['fetchClaimedDomains'],
       },
       onCloudRealtimeLeadEvent: (() => () => undefined) as ElectronApi['onCloudRealtimeLeadEvent'],
       automation: {
-        verifyEmails: (async () => ({ success: true, data: { results: [] } })) as ElectronApi['automation']['verifyEmails'],
-        startCampaign: (async () => ({ success: true, data: { triggered: false, error: 'Dev shell: n8n 未连接' } })) as ElectronApi['automation']['startCampaign'],
+        verifyEmails: (async () => ({
+          success: true,
+          data: { results: [] },
+        })) as ElectronApi['automation']['verifyEmails'],
+        startCampaign: (async () => ({
+          success: true,
+          data: { triggered: false, error: 'Dev shell: n8n 未连接' },
+        })) as ElectronApi['automation']['startCampaign'],
       },
       accounts: {
-        connect: (async () => ({ success: true, data: { accountId: 'dev-account', status: 'connected' } })) as ElectronApi['accounts']['connect'],
+        connect: (async () => ({
+          success: true,
+          data: { accountId: 'dev-account', status: 'connected' },
+        })) as ElectronApi['accounts']['connect'],
         disconnect: (async () => ({ success: true, data: null })) as ElectronApi['accounts']['disconnect'],
         getList: (async () => ({ success: true, data: { accounts: [] } })) as ElectronApi['accounts']['getList'],
       },
@@ -307,9 +348,29 @@ if (import.meta.env.DEV) {
           },
         })) as ElectronApi['agents']['getList'],
         control: unsupported as ElectronApi['agents']['control'],
-        getLog: (async () => ({ success: true, data: { agentId: '', logEntries: [] } })) as ElectronApi['agents']['getLog'],
+        getLog: (async () => ({
+          success: true,
+          data: { agentId: '', logEntries: [] },
+        })) as ElectronApi['agents']['getLog'],
+        getStatus: (async () => ({
+          success: true,
+          data: { leadKey: '', agentStatus: undefined },
+        })) as ElectronApi['agents']['getStatus'],
+        getSuppressionList: (async () => ({
+          success: true,
+          data: { entries: [] },
+        })) as ElectronApi['agents']['getSuppressionList'],
+        addSuppression: (async () => ({
+          success: true,
+          data: { entries: [] },
+        })) as ElectronApi['agents']['addSuppression'],
+        removeSuppression: (async () => ({
+          success: true,
+          data: { entries: [] },
+        })) as ElectronApi['agents']['removeSuppression'],
       },
       onAgentStatusChanged: (() => () => undefined) as ElectronApi['onAgentStatusChanged'],
+      onAgentLeadStatusUpdated: (() => () => undefined) as ElectronApi['onAgentLeadStatusUpdated'],
       dns: {
         healthCheck: (async (payload) => ({
           success: true,
@@ -323,6 +384,43 @@ if (import.meta.env.DEV) {
             valid: true,
           },
         })) as ElectronApi['dns']['healthCheck'],
+      },
+      providers: {
+        getList: (async () => ({
+          success: true,
+          data: {
+            providers: [
+              { id: 'google_maps', name: 'SerpApi Google Maps', available: true, requiredConfig: ['googleKey'] },
+              { id: 'google_organic', name: 'SerpApi Google Organic', available: true, requiredConfig: ['googleKey'] },
+              {
+                id: 'anysearch',
+                name: 'AnySearch Multi-Source',
+                available: true,
+                requiredConfig: ['anysearchApiKey', 'anysearchBaseUrl'],
+              },
+              {
+                id: 'linkedin_search',
+                name: 'SerpApi LinkedIn Search',
+                available: true,
+                requiredConfig: ['googleKey'],
+              },
+              {
+                id: 'customs_shipment',
+                name: 'SerpApi Customs Shipment Search',
+                available: true,
+                requiredConfig: ['googleKey'],
+              },
+              { id: 'trade_show', name: 'SerpApi Trade Show Search', available: true, requiredConfig: ['googleKey'] },
+              {
+                id: 'facebook_search',
+                name: 'SerpApi Facebook Search',
+                available: true,
+                requiredConfig: ['googleKey'],
+              },
+              { id: 'yellow_pages', name: 'Yellow Pages (deprecated)', available: false, requiredConfig: [] },
+            ],
+          },
+        })) as ElectronApi['providers']['getList'],
       },
     }
     window.electronAPI = devShellApi

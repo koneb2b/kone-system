@@ -3,7 +3,7 @@ import { execSync } from 'child_process'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+
 const { machineIdSync } = require('node-machine-id') as { machineIdSync: (original?: boolean) => string }
 import { IPC_CHANNELS, type IpcChannel } from '../ipc/channels'
 import { createLicenseGuard } from '../security/license-guard'
@@ -32,7 +32,10 @@ const ANCHOR_DIR_NAME = '.kone-anchor'
 const ANCHOR_FILE_NAME = 'anchor.bin'
 const ANCHOR_VERSION = 2
 const STANDARD_TIME_CACHE_MS = 5 * 60 * 1000
-const STANDARD_TIME_FETCH_TIMEOUT_MS = 5000
+// Snappy timeout: license activation and trial-anchor sync fall back to local
+// Date.now() on failure, so a firewalled/offline machine must NOT block the
+// activation UI for a long window. Keep this well under any UI-facing IPC budget.
+const STANDARD_TIME_FETCH_TIMEOUT_MS = 2000
 const TRIAL_FEATURES = [
   'search_basic',
   'search_deep',
@@ -94,7 +97,10 @@ const getHardwareMachineId = (): string => {
     try {
       if (process.platform === 'win32') {
         const raw = execSync('wmic csproduct get uuid', { encoding: 'utf8', timeout: 5000 })
-        const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !/^uuid$/i.test(line))
+        const lines = raw
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line && !/^uuid$/i.test(line))
         const uuid = lines[0] || ''
         if (uuid && uuid !== 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF') return uuid
       } else if (process.platform === 'darwin') {
@@ -102,7 +108,10 @@ const getHardwareMachineId = (): string => {
         const match = raw.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)
         if (match?.[1]) return match[1].trim()
       } else {
-        const raw = execSync('cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+        const raw = execSync('cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null', {
+          encoding: 'utf8',
+          timeout: 5000,
+        })
         if (raw.trim()) return raw.trim()
       }
     } catch {
@@ -140,7 +149,12 @@ const getAnchorUserDataRoot = () => {
 }
 
 const shouldSkipAnchorPersistenceError = (error: unknown) => {
-  const errorCode = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code || '').trim().toUpperCase() : ''
+  const errorCode =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+          .trim()
+          .toUpperCase()
+      : ''
   return errorCode === 'EPERM' || errorCode === 'EACCES'
 }
 
@@ -255,7 +269,10 @@ const readRegistryAnchorBlob = (): string => {
 const writeRegistryAnchorBlob = (blob: string) => {
   if (process.platform !== 'win32') return
   try {
-    execSync(`reg add "${REGISTRY_PATH}" /f /v ${REGISTRY_VALUE} /t REG_SZ /d "${blob}"`, { stdio: 'ignore', timeout: 5000 })
+    execSync(`reg add "${REGISTRY_PATH}" /f /v ${REGISTRY_VALUE} /t REG_SZ /d "${blob}"`, {
+      stdio: 'ignore',
+      timeout: 5000,
+    })
   } catch (error) {
     console.warn('[License] Failed to write registry anchor:', error)
   }
@@ -291,7 +308,8 @@ const persistAnchor = (anchor: AnchorPayload) => {
 
 const isRegressionHarnessEnabled = () => process.env.KONE_REGRESSION_TEST === '1'
 const isRegressionDevHarnessEnabled = () => isRegressionHarnessEnabled() && !app.isPackaged
-const getRegressionWorldTimeApiUrl = () => (isRegressionHarnessEnabled() ? process.env.KONE_WORLD_TIME_API_URL?.trim() || '' : '')
+const getRegressionWorldTimeApiUrl = () =>
+  isRegressionHarnessEnabled() ? process.env.KONE_WORLD_TIME_API_URL?.trim() || '' : ''
 const shouldForceLockedForAudit = () => isRegressionHarnessEnabled() && process.env.KONE_FORCE_LOCKED === '1'
 
 const getStandardTime = async (fallbackFloor = 0): Promise<number> => {
@@ -303,7 +321,10 @@ const getStandardTime = async (fallbackFloor = 0): Promise<number> => {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), STANDARD_TIME_FETCH_TIMEOUT_MS)
     try {
-      const response = await fetch(getRegressionWorldTimeApiUrl() || WORLD_TIME_API_URL, { method: 'GET', signal: controller.signal })
+      const response = await fetch(getRegressionWorldTimeApiUrl() || WORLD_TIME_API_URL, {
+        method: 'GET',
+        signal: controller.signal,
+      })
       if (!response.ok) {
         throw new Error(`worldtimeapi http ${response.status}`)
       }
@@ -422,7 +443,8 @@ export const checkTrialStatus = (store: ConfigStore) => {
     }
   }
 
-  const rollbackDetected = Date.now() + 1000 < Number(anchor.lastCheckDate || 0) || anchor.lockedReason === 'time_rollback'
+  const rollbackDetected =
+    Date.now() + 1000 < Number(anchor.lastCheckDate || 0) || anchor.lockedReason === 'time_rollback'
   const isExpired = rollbackDetected || anchor.expiresAt <= Date.now()
   return {
     isExpired,
@@ -457,7 +479,9 @@ export const ensureTrialAccess = (
     return {
       success: false,
       error: trialStatus.rollbackDetected ? 'SYSTEM_TIME_ABNORMAL' : 'TRIAL_EXPIRED',
-      message: trialStatus.rollbackDetected ? SYSTEM_TIME_ABNORMAL_MESSAGE : `${operationName}不可用：试用期已过期，请完成授权后继续使用`,
+      message: trialStatus.rollbackDetected
+        ? SYSTEM_TIME_ABNORMAL_MESSAGE
+        : `${operationName}不可用：试用期已过期，请完成授权后继续使用`,
       operationName,
       code: 403,
     }
@@ -498,9 +522,7 @@ const buildFeatureDeniedResponse = (operationName: string, error: { message?: st
 const buildStructuredIpcErrorResponse = (operationName: string, error: unknown) => {
   const message = error instanceof Error ? error.message : String(error || `${operationName}失败`)
   const normalizedMessage = String(message || '').trim() || `${operationName}失败`
-  const code = typeof (error as { code?: unknown })?.code === 'number'
-    ? Number((error as { code?: number }).code)
-    : 500
+  const code = typeof (error as { code?: unknown })?.code === 'number' ? Number((error as { code?: number }).code) : 500
 
   return {
     success: false,
@@ -517,17 +539,18 @@ export const registerSecureIpc = <TArgs extends unknown[], TResult>(
   licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
   handler: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult | Promise<TResult>,
   operationName?: SecureOperationName<TArgs>,
-) => ipcMain.handle(channel, async (event, ...args) => {
-  const resolvedOperationName = resolveOperationName(channel, operationName, event, args as TArgs)
-  const trialDenied = ensureTrialAccess(store, licenseGuard, resolvedOperationName)
-  if (trialDenied) return trialDenied
+) =>
+  ipcMain.handle(channel, async (event, ...args) => {
+    const resolvedOperationName = resolveOperationName(channel, operationName, event, args as TArgs)
+    const trialDenied = ensureTrialAccess(store, licenseGuard, resolvedOperationName)
+    if (trialDenied) return trialDenied
 
-  try {
-    return await handler(event, ...(args as TArgs))
-  } catch (error) {
-    return buildStructuredIpcErrorResponse(resolvedOperationName, error)
-  }
-})
+    try {
+      return await handler(event, ...(args as TArgs))
+    } catch (error) {
+      return buildStructuredIpcErrorResponse(resolvedOperationName, error)
+    }
+  })
 
 export const registerSecureFeatureIpc = <TArgs extends unknown[], TResult>(
   ipcMain: Electron.IpcMain,
@@ -537,22 +560,31 @@ export const registerSecureFeatureIpc = <TArgs extends unknown[], TResult>(
   featureName: SecureFeatureName<TArgs>,
   handler: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult | Promise<TResult>,
   operationName?: SecureOperationName<TArgs>,
-) => registerSecureIpc(ipcMain, channel, store, licenseGuard, async (event, ...args) => {
-  const resolvedFeatureName = typeof featureName === 'function' ? featureName(event, ...(args as TArgs)) : featureName
-  const resolvedOperationName = resolveOperationName(channel, operationName, event, args as TArgs)
+) =>
+  registerSecureIpc(
+    ipcMain,
+    channel,
+    store,
+    licenseGuard,
+    async (event, ...args) => {
+      const resolvedFeatureName =
+        typeof featureName === 'function' ? featureName(event, ...(args as TArgs)) : featureName
+      const resolvedOperationName = resolveOperationName(channel, operationName, event, args as TArgs)
 
-  try {
-    if (Array.isArray(resolvedFeatureName)) {
-      licenseGuard.requireAnyFeature(resolvedFeatureName, resolvedOperationName)
-    } else {
-      licenseGuard.requireFeature(resolvedFeatureName, resolvedOperationName)
-    }
-  } catch (error: any) {
-    return buildFeatureDeniedResponse(resolvedOperationName, error)
-  }
+      try {
+        if (Array.isArray(resolvedFeatureName)) {
+          licenseGuard.requireAnyFeature(resolvedFeatureName, resolvedOperationName)
+        } else {
+          licenseGuard.requireFeature(resolvedFeatureName, resolvedOperationName)
+        }
+      } catch (error: any) {
+        return buildFeatureDeniedResponse(resolvedOperationName, error)
+      }
 
-  return handler(event, ...(args as TArgs))
-}, operationName)
+      return handler(event, ...(args as TArgs))
+    },
+    operationName,
+  )
 
 const getInvisibleTrialLicenseState = async (store: ConfigStore) => {
   const machineId = getPhysicalMachineId(store)
@@ -596,7 +628,8 @@ export const createLicenseService = (store: ConfigStore) => {
   const getRegressionLicenseMode = () => process.env.KONE_TEST_LICENSE_MODE?.trim().toLowerCase() || ''
 
   const buildRegressionVerifyError = (mode: string) => {
-    if (mode === 'missing_server') return { success: false, error: '授权服务未配置，请设置 KONE_LICENSE_SERVER', code: 503 }
+    if (mode === 'missing_server')
+      return { success: false, error: '授权服务未配置，请设置 KONE_LICENSE_SERVER', code: 503 }
     if (mode === 'network_error') return { success: false, error: '授权服务不可达：mock network failure', code: 502 }
     if (mode === 'invalid_key') return { success: false, error: '授权码无效：mock invalid key', code: 400 }
     if (mode === 'expired') return { success: false, error: '授权已过期', code: 403 }
@@ -638,9 +671,13 @@ export const createLicenseService = (store: ConfigStore) => {
     const buildIpcErrorResponse = (error: unknown, fallbackMessage: string, code = 500) => ({
       success: false,
       error: String(error instanceof Error ? error.message : fallbackMessage),
-      code: error && typeof error === 'object' && 'code' in error && Number.isFinite(Number((error as { code?: unknown }).code))
-        ? Number((error as { code?: unknown }).code)
-        : code,
+      code:
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        Number.isFinite(Number((error as { code?: unknown }).code))
+          ? Number((error as { code?: unknown }).code)
+          : code,
     })
 
     ipcMain.handle(IPC_CHANNELS.SYSTEM.GET_DEVICE_STATUS, () => {
@@ -658,7 +695,9 @@ export const createLicenseService = (store: ConfigStore) => {
         const machineId = getPhysicalMachineId(store)
         const claims = (getStoredLicenseClaims() || restoreClaimsFromAnchor(machineId)) as StoredLicenseClaims | null
         const isDev = !electronApp.isPackaged
-        const isPaid = Boolean(claims && claims.status === 'active' && claims.expiresAt > Date.now() && claims.plan !== 'trial')
+        const isPaid = Boolean(
+          claims && claims.status === 'active' && claims.expiresAt > Date.now() && claims.plan !== 'trial',
+        )
         const trial = isPaid ? null : await syncTrialAnchor(machineId)
 
         return {
@@ -670,11 +709,25 @@ export const createLicenseService = (store: ConfigStore) => {
             isTrial: Boolean(trial?.active) && !shouldForceLockedForAudit(),
             isLocked: shouldForceLockedForAudit() || Boolean(trial?.locked),
             message: shouldForceLockedForAudit() ? SYSTEM_TIME_ABNORMAL_MESSAGE : trial?.message,
-            daysLeft: isDev ? 365 : trial?.active ? trial.daysRemaining : claims?.expiresAt ? Math.max(0, Math.ceil((claims.expiresAt - Date.now()) / DAY_MS)) : 0,
+            daysLeft: isDev
+              ? 365
+              : trial?.active
+                ? trial.daysRemaining
+                : claims?.expiresAt
+                  ? Math.max(0, Math.ceil((claims.expiresAt - Date.now()) / DAY_MS))
+                  : 0,
             hasLlmApiKey: Boolean(getUserLlmApiKey()),
             plan: isDev ? 'enterprise' : trial?.active ? 'trial' : claims?.plan || 'basic',
-            expiresAt: isDev ? Date.now() + ANNUAL_LICENSE_MS : trial?.active ? trial.expiresAt : Number(claims?.expiresAt || 0),
-            features: isDev ? [...getDevEnterpriseClaims(store).features] : trial?.active ? [...TRIAL_FEATURES] : claims?.features || [],
+            expiresAt: isDev
+              ? Date.now() + ANNUAL_LICENSE_MS
+              : trial?.active
+                ? trial.expiresAt
+                : Number(claims?.expiresAt || 0),
+            features: isDev
+              ? [...getDevEnterpriseClaims(store).features]
+              : trial?.active
+                ? [...TRIAL_FEATURES]
+                : claims?.features || [],
           },
         }
       } catch (error) {
@@ -688,7 +741,12 @@ export const createLicenseService = (store: ConfigStore) => {
         const current = await syncTrialAnchor(machineId)
 
         if (current.locked) {
-          return { success: false, error: SYSTEM_TIME_ABNORMAL_MESSAGE, code: 403, data: { success: false, message: SYSTEM_TIME_ABNORMAL_MESSAGE } }
+          return {
+            success: false,
+            error: SYSTEM_TIME_ABNORMAL_MESSAGE,
+            code: 403,
+            data: { success: false, message: SYSTEM_TIME_ABNORMAL_MESSAGE },
+          }
         }
 
         if (current.active) {
@@ -810,9 +868,22 @@ export const createLicenseService = (store: ConfigStore) => {
         return { success: true, data: { ...claims, tier: getTier(), type: 'license' as const, isExpired: false } }
       } catch (error) {
         const message = String(error instanceof Error ? error.message : 'License verification failed')
-        if (/expired|过期/i.test(message)) return { success: false, error: '授权已过期', code: 403, data: { message: '授权已过期' } }
-        if (/device|识别码|mismatch/i.test(message)) return { success: false, error: '当前授权与本设备不匹配，请核对设备识别码', code: 400, data: { message: '当前授权与本设备不匹配，请核对设备识别码' } }
-        if (/required|invalid|missing|无效/i.test(message)) return { success: false, error: '授权文件无效，请联系顾问重新生成', code: 400, data: { message: '授权文件无效，请联系顾问重新生成' } }
+        if (/expired|过期/i.test(message))
+          return { success: false, error: '授权已过期', code: 403, data: { message: '授权已过期' } }
+        if (/device|识别码|mismatch/i.test(message))
+          return {
+            success: false,
+            error: '当前授权与本设备不匹配，请核对设备识别码',
+            code: 400,
+            data: { message: '当前授权与本设备不匹配，请核对设备识别码' },
+          }
+        if (/required|invalid|missing|无效/i.test(message))
+          return {
+            success: false,
+            error: '授权文件无效，请联系顾问重新生成',
+            code: 400,
+            data: { message: '授权文件无效，请联系顾问重新生成' },
+          }
         return { ...buildIpcErrorResponse(error, message), data: { message } }
       }
     })
@@ -864,9 +935,22 @@ export const createLicenseService = (store: ConfigStore) => {
         return response
       } catch (error) {
         const message = String(error instanceof Error ? error.message : 'License verification failed')
-        if (/expired|过期/i.test(message)) return { success: false, error: '授权已过期', code: 403, data: { message: '授权已过期' } }
-        if (/device|识别码|mismatch/i.test(message)) return { success: false, error: '当前授权与本设备不匹配，请核对设备识别码', code: 400, data: { message: '当前授权与本设备不匹配，请核对设备识别码' } }
-        if (/required|invalid|missing|无效/i.test(message)) return { success: false, error: '授权文件无效，请联系顾问重新生成', code: 400, data: { message: '授权文件无效，请联系顾问重新生成' } }
+        if (/expired|过期/i.test(message))
+          return { success: false, error: '授权已过期', code: 403, data: { message: '授权已过期' } }
+        if (/device|识别码|mismatch/i.test(message))
+          return {
+            success: false,
+            error: '当前授权与本设备不匹配，请核对设备识别码',
+            code: 400,
+            data: { message: '当前授权与本设备不匹配，请核对设备识别码' },
+          }
+        if (/required|invalid|missing|无效/i.test(message))
+          return {
+            success: false,
+            error: '授权文件无效，请联系顾问重新生成',
+            code: 400,
+            data: { message: '授权文件无效，请联系顾问重新生成' },
+          }
         return { ...buildIpcErrorResponse(error, message), data: { message } }
       }
     })
@@ -876,7 +960,18 @@ export const createLicenseService = (store: ConfigStore) => {
         if (process.env.KONE_REGRESSION_TEST === '1') {
           const mode = getRegressionLicenseMode()
           if (mode === 'expired' || mode === 'missing_server') {
-            return { success: true, data: { status: 'expired', expiresAt: 0, features: [], plan: 'trial' as const, type: 'trial' as const, isExpired: true, tier: 'expired' as const } }
+            return {
+              success: true,
+              data: {
+                status: 'expired',
+                expiresAt: 0,
+                features: [],
+                plan: 'trial' as const,
+                type: 'trial' as const,
+                isExpired: true,
+                tier: 'expired' as const,
+              },
+            }
           }
         }
 
@@ -900,11 +995,29 @@ export const createLicenseService = (store: ConfigStore) => {
         }
 
         if (!electronApp.isPackaged) {
-          return { success: true, data: { ...getDevEnterpriseClaims(store), type: 'license' as const, isExpired: false, tier: 'premium' as const } }
+          return {
+            success: true,
+            data: {
+              ...getDevEnterpriseClaims(store),
+              type: 'license' as const,
+              isExpired: false,
+              tier: 'premium' as const,
+            },
+          }
         }
 
         const trialState = await getInvisibleTrialLicenseState(store)
-        return { success: true, data: { ...trialState, tier: trialState.isExpired ? (checkTrialStatus(store).available ? 'unregistered' as const : 'expired' as const) : 'basic' as const } }
+        return {
+          success: true,
+          data: {
+            ...trialState,
+            tier: trialState.isExpired
+              ? checkTrialStatus(store).available
+                ? ('unregistered' as const)
+                : ('expired' as const)
+              : ('basic' as const),
+          },
+        }
       } catch (error) {
         return buildIpcErrorResponse(error, '读取授权状态失败')
       }

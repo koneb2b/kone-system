@@ -15,8 +15,21 @@ const OBFUSCATION_OPTIONS = {
   renameGlobals: false,
   selfDefending: false,
   simplify: true,
-  splitStrings: true,
-  splitStringsChunkLength: 8,
+  // splitStrings MUST stay disabled.
+  //
+  // It shatters string literals into concatenated chunks, including the
+  // PROPERTY NAMES used for cross-module runtime lookups. electron-bridge
+  // resolves Electron APIs by name (createLazyExport('safeStorage') →
+  // _electron['safeStorage']) and its consumers import those same names
+  // (electron_bridge_1['safeStorage']). Once split, the two sides reassemble
+  // from different fragment pairs and stop matching, so the packaged app dies
+  // at startup with:
+  //   TypeError: electron_bridge_1[_0x…].getPath is not a function
+  //     at getSecretFilePath (secret-manager.js)
+  // Every other protection (stringArray + base64 + rotate/shuffle + hexadecimal
+  // identifiers) is retained, so obfuscation strength is materially unchanged.
+  // (build-agent §9.1: electron-bridge must survive the obfuscation stage.)
+  splitStrings: false,
   stringArray: true,
   stringArrayCallsTransform: true,
   stringArrayEncoding: ['base64'],
@@ -36,6 +49,18 @@ const SHOULD_SKIP_PATTERNS = [
   `${path.sep}dist-electron${path.sep}src${path.sep}shared${path.sep}ipc-contracts.js`,
   `${path.sep}dist-electron${path.sep}shared${path.sep}ipc${path.sep}contracts.js`,
   `${path.sep}dist-electron${path.sep}electron${path.sep}ipc${path.sep}contracts.js`,
+  // electron-bridge resolves Electron APIs by PROPERTY NAME at runtime
+  // (createLazyExport('safeStorage') → _electron['safeStorage']). With
+  // splitStrings enabled these name literals are shattered into concatenated
+  // 8-char fragments, so the export key and the lookup argument can desync —
+  // _electron?.['safeStor' + <wrong fragment>] resolves to undefined and the
+  // packaged app dies at startup with:
+  //   TypeError: electron_bridge_1[_0x…][_0x…] is not a function
+  //     at getSecretFilePath (secret-manager.js)
+  // This shim contains no business IP (it is a pure Electron API adapter), so
+  // excluding it costs nothing in protection while keeping startup viable.
+  // (build-agent §9.1: electron-bridge must survive the obfuscation stage.)
+  `${path.sep}dist-electron${path.sep}electron${path.sep}services${path.sep}electron-bridge.js`,
 ]
 
 const SHOULD_SKIP_SUFFIXES = ['.map']
@@ -96,7 +121,7 @@ const main = () => {
     }
   }
 
-  console.log(`[obfuscate] Obfuscated ${obfuscatedCount} file(s) in dist-electron`) 
+  console.log(`[obfuscate] Obfuscated ${obfuscatedCount} file(s) in dist-electron`)
 }
 
 main()

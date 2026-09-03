@@ -72,7 +72,15 @@ export const IPC_CHANNELS = {
     LIST: 'agent:list',
     CONTROL: 'agent:control',
     STATUS_CHANGED: 'agent:status-changed',
+    /* L1-1/F2：per-lead 触达状态实时推送（线索表徽标即时刷新通道） */
+    LEAD_STATUS_UPDATED: 'agent:lead-status-updated',
     GET_LOG: 'agent:get-log',
+    /* P0-1 双管道读端：按 leadKey 读取持久化线索态 agentStatus */
+    GET_STATUS: 'agent:get-status',
+    /* P1-4 邮件合规：退订/DNC 抑制名单管理 */
+    SUPPRESS_LIST: 'agent:suppress-list',
+    SUPPRESS_ADD: 'agent:suppress-add',
+    SUPPRESS_REMOVE: 'agent:suppress-remove',
   },
   /* V1.3 多账号沙箱管理 */
   ACCOUNT: {
@@ -81,14 +89,15 @@ export const IPC_CHANNELS = {
     GET_LIST: 'account:get-list',
     STATUS_UPDATE: 'account:status-update',
   },
-} as const;
+  /* V1.4 Provider 注册表宪法 */
+  PROVIDER: {
+    LIST: 'provider:list',
+    STATUS: 'provider:status',
+  },
+} as const
 
-export type IpcChannelTree = typeof IPC_CHANNELS;
+export type IpcChannelTree = typeof IPC_CHANNELS
 
-type NestedValueOf<T> = T extends string
-  ? T
-  : T extends Record<string, unknown>
-    ? NestedValueOf<T[keyof T]>
-    : never;
+type NestedValueOf<T> = T extends string ? T : T extends Record<string, unknown> ? NestedValueOf<T[keyof T]> : never
 
-export type IpcChannel = NestedValueOf<IpcChannelTree>;
+export type IpcChannel = NestedValueOf<IpcChannelTree>

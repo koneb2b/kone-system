@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS } from '../electron/ipc/channels';
+import { contextBridge, ipcRenderer } from 'electron'
+import { IPC_CHANNELS } from '../electron/ipc/channels'
 import type {
   AnalysisGenerateRequest,
   AccountConnectRequest,
@@ -19,7 +19,7 @@ import type {
   SearchExecuteRequest,
   TestConnectionRequest,
   UpsertLeadRequest,
-} from '../src/shared/ipc-contracts';
+} from '../src/shared/ipc-contracts'
 
 const electronAPI: ElectronApi = {
   // 1. 系统基础
@@ -55,7 +55,8 @@ const electronAPI: ElectronApi = {
     check: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.SECRET.CHECK, key),
   },
   api: {
-    testConnection: (payload: TestConnectionRequest) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH.API_TEST_CONNECTION, payload),
+    testConnection: (payload: TestConnectionRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.SEARCH.API_TEST_CONNECTION, payload),
     proxy: (payload: ProxyRequest) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH.API_PROXY, payload),
   },
   search: {
@@ -123,7 +124,8 @@ const electronAPI: ElectronApi = {
   },
   cloud: {
     checkCollision: (payload: { domain: string }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_COLLISION, payload),
-    syncLead: (payload: { lead: Record<string, unknown>; force?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.SYNC_LEAD, payload),
+    syncLead: (payload: { lead: Record<string, unknown>; force?: boolean }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.SYNC_LEAD, payload),
     upsertLead: (payload: UpsertLeadRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.UPSERT_LEAD, payload),
     checkDomains: (payload: CheckDomainsRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_DOMAINS, payload),
     createCampaign: (payload: CreateCampaignRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CREATE_CAMPAIGN, payload),
@@ -142,7 +144,8 @@ const electronAPI: ElectronApi = {
   },
   automation: {
     verifyEmails: (payload: { emails: string[] }) => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.VERIFY_EMAILS, payload),
-    startCampaign: (payload: CampaignStartRequest) => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN, payload),
+    startCampaign: (payload: CampaignStartRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN, payload),
   },
   accounts: {
     connect: (payload: AccountConnectRequest) => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT.CONNECT, payload),
@@ -162,6 +165,11 @@ const electronAPI: ElectronApi = {
     getList: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT.LIST),
     control: (payload: { agentId: string; action: string }) => ipcRenderer.invoke(IPC_CHANNELS.AGENT.CONTROL, payload),
     getLog: (agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT.GET_LOG, agentId),
+    getStatus: (leadKey: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT.GET_STATUS, leadKey),
+    getSuppressionList: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT.SUPPRESS_LIST),
+    addSuppression: (payload: { email: string; reason?: string; note?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT.SUPPRESS_ADD, payload),
+    removeSuppression: (payload: { email: string }) => ipcRenderer.invoke(IPC_CHANNELS.AGENT.SUPPRESS_REMOVE, payload),
   },
   onAgentStatusChanged: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
@@ -172,9 +180,21 @@ const electronAPI: ElectronApi = {
     ipcRenderer.on(IPC_CHANNELS.AGENT.STATUS_CHANGED, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT.STATUS_CHANGED, listener)
   },
+  onAgentLeadStatusUpdated: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === 'object') {
+        callback(payload as any)
+      }
+    }
+    ipcRenderer.on(IPC_CHANNELS.AGENT.LEAD_STATUS_UPDATED, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT.LEAD_STATUS_UPDATED, listener)
+  },
   dns: {
     healthCheck: (payload: { domain: string }) => ipcRenderer.invoke(IPC_CHANNELS.DNS.HEALTH_CHECK, payload),
   },
-};
+  providers: {
+    getList: () => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER.LIST),
+  },
+}
 
-contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+contextBridge.exposeInMainWorld('electronAPI', electronAPI)

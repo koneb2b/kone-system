@@ -6,7 +6,30 @@ import { ConfigStore } from './config-service'
 import { registerSecureFeatureIpc } from './license-service'
 
 const TRIAL_PDF_EXPORT_LIMIT = 3
-let trialPdfExportCount = 0
+const TRIAL_PDF_COUNT_KEY = 'license.trialPdfExportCount'
+
+/**
+ * 试用版 PDF 白皮书导出次数持久化读写。
+ *
+ * 必须持久化到 config store（而非模块级内存变量），否则用户重启应用即可
+ * 将计数清零，绕过 PRD §一.1 规定的"全局上限硬编码为 3 次"PLG 逼单卡点。
+ */
+const getTrialPdfExportCount = (store: ConfigStore): number => {
+  try {
+    const raw = Number(store.get(TRIAL_PDF_COUNT_KEY, 0))
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0
+  } catch {
+    return 0
+  }
+}
+
+const setTrialPdfExportCount = (store: ConfigStore, value: number): void => {
+  try {
+    store.set(TRIAL_PDF_COUNT_KEY, Math.max(0, Math.floor(value)))
+  } catch {
+    // config 写入失败时静默降级：本次不落盘，但不阻断导出主流程
+  }
+}
 
 const getMachineIdSafe = (store: ConfigStore) => {
   try {
@@ -21,7 +44,12 @@ const buildPdfHtml = (payload: {
   website: string
   country: string
   machineId: string
-  customsData?: { annualImportVolume?: string; topSuppliers?: string[]; originCountries?: string[]; lastShipmentDate?: string }
+  customsData?: {
+    annualImportVolume?: string
+    topSuppliers?: string[]
+    originCountries?: string[]
+    lastShipmentDate?: string
+  }
   exhibitionFootprints?: string[]
   decisionMakers?: Array<{ name: string; title: string; email: string; phone: string; linkedinUrl?: string }>
   strategies?: Array<{ scenario: string; subject: string; body: string }>
@@ -78,29 +106,45 @@ const buildPdfHtml = (payload: {
     ${footprints.length > 0 ? `<p style="margin-top:8px;font-size:11px;"><span class="info-label">历史展会足迹：</span>${footprints.join('、')}</p>` : ''}
   </div>
 
-  ${dm.length > 0 ? `
+  ${
+    dm.length > 0
+      ? `
   <div class="section">
     <h2>决策人图谱 (${dm.length} 人)</h2>
-    ${dm.map((p) => `
+    ${dm
+      .map(
+        (p) => `
       <div class="dm-card">
         <div class="name">${p.name}</div>
         <div class="title">${p.title}</div>
         <div class="contact">${p.email} | ${p.phone}${p.linkedinUrl ? ` | ${p.linkedinUrl}` : ''}</div>
       </div>
-    `).join('')}
-  </div>` : ''}
+    `,
+      )
+      .join('')}
+  </div>`
+      : ''
+  }
 
-  ${strategies.length > 0 ? `
+  ${
+    strategies.length > 0
+      ? `
   <div class="section">
     <h2>销售弹药库</h2>
-    ${strategies.map((s, i) => `
+    ${strategies
+      .map(
+        (s, i) => `
       <div class="strategy-card">
         <h3>场景 ${i + 1}：${s.scenario}</h3>
         <div class="subj">Subject: ${s.subject}</div>
         <div class="body">${s.body}</div>
       </div>
-    `).join('')}
-  </div>` : ''}
+    `,
+      )
+      .join('')}
+  </div>`
+      : ''
+  }
 
   <div class="footer">Kone AI V1.3 — 客户隐私与数据安全本地100%重计算，绝不外泄至公有云 | ${new Date().toISOString()}</div>
 </body></html>`
@@ -111,52 +155,60 @@ export const registerExportHandlers = (
   licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
   store: ConfigStore,
 ) => {
-  registerSecureFeatureIpc(ipcMain, IPC_CHANNELS.FILES.EXPORT_SAVE, store, licenseGuard, ['lead_export', 'export_full'], async (_event, payload: { fileName: string; content: string } | undefined | null) => {
-    try {
-      if (!payload || typeof payload !== 'object') {
-        return { success: false, error: '导出参数无效', code: 400 }
-      }
-      const { fileName, content } = payload
-      if (typeof fileName !== 'string' || typeof content !== 'string') {
-        return { success: false, error: '导出文件名或内容无效', code: 400 }
-      }
-      const safeFileName = path.basename(String(fileName || '')).trim()
-      if (!safeFileName || safeFileName === '.' || safeFileName === '..') {
-        throw new Error('Invalid fileName')
-      }
+  registerSecureFeatureIpc(
+    ipcMain,
+    IPC_CHANNELS.FILES.EXPORT_SAVE,
+    store,
+    licenseGuard,
+    ['lead_export', 'export_full'],
+    async (_event, payload: { fileName: string; content: string } | undefined | null) => {
+      try {
+        if (!payload || typeof payload !== 'object') {
+          return { success: false, error: '导出参数无效', code: 400 }
+        }
+        const { fileName, content } = payload
+        if (typeof fileName !== 'string' || typeof content !== 'string') {
+          return { success: false, error: '导出文件名或内容无效', code: 400 }
+        }
+        const safeFileName = path.basename(String(fileName || '')).trim()
+        if (!safeFileName || safeFileName === '.' || safeFileName === '..') {
+          throw new Error('Invalid fileName')
+        }
 
-      const normalizedContent = licenseGuard.enforceExportLimit(String(content || ''))
+        const normalizedContent = licenseGuard.enforceExportLimit(String(content || ''))
 
-      const extension = path.extname(safeFileName).replace(/^\./, '').toLowerCase()
-      const saveDialogOptions = {
-        title: '导出客户资料 (Export Leads)',
-        defaultPath: safeFileName,
-        filters: [
-          {
-            name: extension ? 'Data Files' : 'All Files',
-            extensions: extension ? [extension] : ['*'],
-          },
-          { name: 'All Files', extensions: ['*'] },
-        ],
+        const extension = path.extname(safeFileName).replace(/^\./, '').toLowerCase()
+        const saveDialogOptions = {
+          title: '导出客户资料 (Export Leads)',
+          defaultPath: safeFileName,
+          filters: [
+            {
+              name: extension ? 'Data Files' : 'All Files',
+              extensions: extension ? [extension] : ['*'],
+            },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        }
+
+        const focusedWindow = BrowserWindow.getFocusedWindow()
+        const dialogResult = focusedWindow
+          ? await dialog.showSaveDialog(focusedWindow, saveDialogOptions)
+          : await dialog.showSaveDialog(saveDialogOptions)
+
+        if (dialogResult.canceled || !dialogResult.filePath) {
+          return { success: false, canceled: true }
+        }
+
+        const filePath = dialogResult.filePath
+        fs.writeFileSync(filePath, normalizedContent, 'utf8')
+        shell.showItemInFolder(filePath)
+        return { success: true, data: { filePath } }
+      } catch (error: any) {
+        return { success: false, error: error?.message || 'Export failed', code: error?.code }
       }
-
-      const focusedWindow = BrowserWindow.getFocusedWindow()
-      const dialogResult = focusedWindow
-        ? await dialog.showSaveDialog(focusedWindow, saveDialogOptions)
-        : await dialog.showSaveDialog(saveDialogOptions)
-
-      if (dialogResult.canceled || !dialogResult.filePath) {
-        return { success: false, canceled: true }
-      }
-
-      const filePath = dialogResult.filePath
-      fs.writeFileSync(filePath, normalizedContent, 'utf8')
-      shell.showItemInFolder(filePath)
-      return { success: true, data: { filePath } }
-    } catch (error: any) {
-      return { success: false, error: error?.message || 'Export failed', code: error?.code }
-    }
-  }, '线索全量导出')
+    },
+    '线索全量导出',
+  )
 
   /* ── V1.3 本地 PDF 客户白皮书导出 ── */
   registerSecureFeatureIpc(
@@ -165,20 +217,28 @@ export const registerExportHandlers = (
     store,
     licenseGuard,
     'analysis_advanced',
-    async (_event, payload: {
-      company: string; website: string; country: string;
-      customsData?: Record<string, unknown>;
-      exhibitionFootprints?: string[];
-      decisionMakers?: Array<Record<string, unknown>>;
-      strategies?: Array<{ scenario: string; subject: string; body: string }>;
-      fileName?: string;
-    } | undefined | null) => {
+    async (
+      _event,
+      payload:
+        | {
+            company: string
+            website: string
+            country: string
+            customsData?: Record<string, unknown>
+            exhibitionFootprints?: string[]
+            decisionMakers?: Array<Record<string, unknown>>
+            strategies?: Array<{ scenario: string; subject: string; body: string }>
+            fileName?: string
+          }
+        | undefined
+        | null,
+    ) => {
       try {
         const claims = licenseGuard.getStoredClaims?.()
         const isTrial = claims?.plan === 'trial'
 
         if (isTrial) {
-          if (trialPdfExportCount >= TRIAL_PDF_EXPORT_LIMIT) {
+          if (getTrialPdfExportCount(store) >= TRIAL_PDF_EXPORT_LIMIT) {
             return {
               success: false,
               code: 429,
@@ -186,7 +246,8 @@ export const registerExportHandlers = (
               error: 'TRIAL_PDF_LIMIT',
             }
           }
-          trialPdfExportCount += 1
+          // 注意：配额在导出成功落盘后才递增（见下方 store.set），
+          // 避免用户取消保存对话框或生成失败时被误扣次数。
         }
 
         if (!payload || typeof payload !== 'object') {
@@ -200,9 +261,11 @@ export const registerExportHandlers = (
           country: String(payload.country || ''),
           machineId,
           customsData: (payload.customsData as any) || undefined,
-          exhibitionFootprints: Array.isArray(payload.exhibitionFootprints) ? payload.exhibitionFootprints as string[] : undefined,
-          decisionMakers: Array.isArray(payload.decisionMakers) ? payload.decisionMakers as any : undefined,
-          strategies: Array.isArray(payload.strategies) ? payload.strategies as any : undefined,
+          exhibitionFootprints: Array.isArray(payload.exhibitionFootprints)
+            ? (payload.exhibitionFootprints as string[])
+            : undefined,
+          decisionMakers: Array.isArray(payload.decisionMakers) ? (payload.decisionMakers as any) : undefined,
+          strategies: Array.isArray(payload.strategies) ? (payload.strategies as any) : undefined,
         })
 
         const focusedWindow = BrowserWindow.getFocusedWindow()
@@ -215,7 +278,9 @@ export const registerExportHandlers = (
           fs.mkdirSync(tempDir, { recursive: true })
         }
 
-        const safeCompanyName = String(payload.company || 'customer').replace(/[<>:"/\\|?*]/g, '_').substring(0, 40)
+        const safeCompanyName = String(payload.company || 'customer')
+          .replace(/[<>:"/\\|?*]/g, '_')
+          .substring(0, 40)
         const defaultFileName = `Kone_白皮书_${safeCompanyName}_${new Date().toISOString().slice(0, 10)}.pdf`
 
         const saveDialogOptions = {
@@ -253,11 +318,19 @@ export const registerExportHandlers = (
         fs.writeFileSync(dialogResult.filePath, pdfBuffer)
         shell.showItemInFolder(dialogResult.filePath)
 
+        // 导出成功后才递增试用配额，并持久化到 config store（防重启绕过）
+        let trialRemaining: number | undefined
+        if (isTrial) {
+          const nextCount = getTrialPdfExportCount(store) + 1
+          setTrialPdfExportCount(store, nextCount)
+          trialRemaining = Math.max(0, TRIAL_PDF_EXPORT_LIMIT - nextCount)
+        }
+
         return {
           success: true,
           data: {
             filePath: dialogResult.filePath,
-            trialRemaining: isTrial ? Math.max(0, TRIAL_PDF_EXPORT_LIMIT - trialPdfExportCount) : undefined,
+            trialRemaining,
           },
         }
       } catch (error: any) {
@@ -268,6 +341,6 @@ export const registerExportHandlers = (
         }
       }
     },
-    '客户白皮书 PDF 导出'
+    '客户白皮书 PDF 导出',
   )
 }

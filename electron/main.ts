@@ -1,5 +1,5 @@
 import path from 'path'
-import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from './services/electron-bridge'
+import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from 'electron'
 import { registerAuthHandlers } from './services/auth-service'
 import {
   assertConfigWritable,
@@ -17,17 +17,21 @@ import { registerAutomationHandlers } from './services/automation-service'
 import { registerSandboxHandlers } from './services/sandbox-service'
 import { registerAgentHandlers } from './services/agent-service'
 import { registerDnsHandlers } from './services/dns-service'
+import { registerProviderHandlers } from './services/provider-service'
 import { createMainWindow } from './services/window-service'
 import { IPC_CHANNELS } from './ipc/channels'
+import { registry } from './ipc/registry'
 import type { AutopilotLifecycle } from '../src/shared/ipc-contracts'
 
-process.on('uncaughtException', (error) => {
-  console.error('❌ [Main] Uncaught exception:', error)
-})
+import { initCrashReporter } from './services/crash-reporter'
+import { initBackupService } from './services/backup-service'
+import { initAutoUpdater } from './services/auto-updater'
 
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ [Main] Unhandled rejection:', reason)
-})
+// Initialize crash reporter before any other code
+initCrashReporter()
+
+// Initialize backup service (non-blocking, runs in background)
+initBackupService()
 
 if (process.env.KONE_TEST_USER_DATA_DIR?.trim()) {
   app.setPath('userData', process.env.KONE_TEST_USER_DATA_DIR.trim())
@@ -82,6 +86,12 @@ const registerIpcHandlers = () => {
   registerSandboxHandlers(ipcMain, store)
   registerAgentHandlers(ipcMain, store)
   registerDnsHandlers(ipcMain, store)
+  registerProviderHandlers(ipcMain, store)
+
+  // P0-4：注册中心网关接通。当前生产 handler 仍走 register*Handlers 直挂 ipcMain，
+  // registry 仅绑定已通过 registerIpc() 登记的通道（迁移过程中逐步增加）。
+  // 迁移完成后 assertAllRegistered 将作为启动门禁生效。
+  registry.attach(ipcMain)
 }
 
 const getTrayIcon = () => {
@@ -187,29 +197,39 @@ app.on('child-process-gone', (_event, details) => {
   console.error('❌ [Main] Child process crashed:', details)
 })
 
-app.whenReady().then(async () => {
-  if (!hasSingleInstanceLock) {
-    return
-  }
-
-  migrateLegacySecretsFromConfig(store)
-  clearLegacyAutopilotNode(store)
-  registerIpcHandlers()
-  const mainWindow = await createMainWindow()
-  mainWindowRef = mainWindow
-  createTray(mainWindow)
-  bindWindowCloseToTray(mainWindow)
-  ipcMain.handle(IPC_CHANNELS.AUTOPILOT.SYNC_STATE, (_event, lifecycle: unknown) => {
-    if (lifecycle === 'idle' || lifecycle === 'running' || lifecycle === 'paused' || lifecycle === 'completed' || lifecycle === 'error') {
-      autopilotLifecycle = lifecycle
-      refreshTrayMenu(mainWindow)
-      return { success: true, data: null }
+app
+  .whenReady()
+  .then(async () => {
+    if (!hasSingleInstanceLock) {
+      return
     }
-    return { success: false, error: 'Invalid autopilot lifecycle', code: 400 }
+
+    migrateLegacySecretsFromConfig(store)
+    clearLegacyAutopilotNode(store)
+    registerIpcHandlers()
+    const mainWindow = await createMainWindow()
+    mainWindowRef = mainWindow
+    createTray(mainWindow)
+    bindWindowCloseToTray(mainWindow)
+    initAutoUpdater()
+    ipcMain.handle(IPC_CHANNELS.AUTOPILOT.SYNC_STATE, (_event, lifecycle: unknown) => {
+      if (
+        lifecycle === 'idle' ||
+        lifecycle === 'running' ||
+        lifecycle === 'paused' ||
+        lifecycle === 'completed' ||
+        lifecycle === 'error'
+      ) {
+        autopilotLifecycle = lifecycle
+        refreshTrayMenu(mainWindow)
+        return { success: true, data: null }
+      }
+      return { success: false, error: 'Invalid autopilot lifecycle', code: 400 }
+    })
   })
-}).catch((error) => {
-  console.error('❌ [Main] App startup failed:', error)
-})
+  .catch((error) => {
+    console.error('❌ [Main] App startup failed:', error)
+  })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
