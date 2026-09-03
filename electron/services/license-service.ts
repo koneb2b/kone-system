@@ -238,6 +238,15 @@ const writeFileAnchorBlob = (blob: string) => {
     }
 
     const filePath = getAnchorFilePath()
+    /* Windows 上 fs.writeFileSync 对已隐藏文件写会报 EPERM：先摘掉隐藏属性，
+       写入成功后再恢复（否则首次 attrib +h 之后所有后续锚点更新都会静默失败）。 */
+    if (process.platform === 'win32' && fs.existsSync(filePath)) {
+      try {
+        execSync(`attrib -h "${filePath}"`, { stdio: 'ignore' })
+      } catch {
+        // 属性摘除失败不阻断写入；写入失败仍有 shouldSkipAnchorPersistenceError 兜底
+      }
+    }
     fs.writeFileSync(filePath, blob, 'utf8')
     if (process.platform === 'win32') {
       try {
