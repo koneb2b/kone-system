@@ -34,7 +34,7 @@ export function LocationInputs({ country, city, onCountryChange, onCityChange }:
             className="w-full h-10 px-3 rounded-lg border border-input bg-slate-50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-primary transition-all"
           />
           <p className="text-slate-400 text-xs mt-1">
-            💡 提示：谷歌地图依赖具体城市名。若识别受阻，系统将自动切换至全球网页搜索模式。
+            提示：谷歌地图依赖具体城市名。若识别受阻，系统将自动切换至全球网页搜索模式。
           </p>
         </div>
       </div>

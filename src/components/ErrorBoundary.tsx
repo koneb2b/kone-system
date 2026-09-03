@@ -20,7 +20,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('❌ [Renderer] Uncaught React error:', error, errorInfo)
+    console.error('[Renderer] Uncaught React error:', error, errorInfo)
   }
 
   handleReload = () => {
@@ -41,7 +41,8 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               <div>
                 <h1 className="text-3xl font-black tracking-tight">Something went wrong</h1>
                 <p className="mt-3 text-sm leading-6 text-white/72">
-                  Kone encountered an unexpected rendering error. The app is still protected, and you can safely reload to restore the workspace.
+                  Kone encountered an unexpected rendering error. The app is still protected, and you can safely reload
+                  to restore the workspace.
                 </p>
               </div>
 
@@ -54,7 +55,9 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               <Button className="h-10 px-5 text-sm font-semibold" onClick={this.handleReload}>
                 Reload App
               </Button>
-              <span className="text-xs text-white/45">If this keeps happening, please capture logs and contact support.</span>
+              <span className="text-xs text-white/45">
+                If this keeps happening, please capture logs and contact support.
+              </span>
             </div>
           </div>
         </div>

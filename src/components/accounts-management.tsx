@@ -263,7 +263,7 @@ export function AccountsManagement() {
             <div className="text-center">
               <p className="text-lg font-medium text-slate-600">尚未绑定任何账号沙箱</p>
               <p className="text-sm text-slate-400 mt-1 max-w-md text-center">
-                💡 操作向导：本工作台采用本地独立沙箱环境，复用您本机真实的住宅网络 IP
+                操作向导：本工作台采用本地独立沙箱环境，复用您本机真实的住宅网络 IP
                 执行安全外拓。请先点击下方卡片，连接您的企业发信箱（试用版放行）或社盟大号（高级版独占），为 AI
                 销售智能体注入巡航燃料。
               </p>

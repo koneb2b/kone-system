@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
-  Zap,
   Mail,
   CheckCircle2,
   XCircle,
@@ -12,11 +11,12 @@ import {
   Eye,
   Globe,
   Clock,
-  Sparkles,
   ShieldCheck,
   ChevronRight,
   Crown,
   AlertTriangle,
+  Workflow,
+  MailCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -433,7 +433,7 @@ export function AutomationWorkflow() {
 
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center size-10 rounded-xl bg-blue-600 shadow-md">
-            <Zap className="size-5 text-white" />
+            <Workflow className="size-5 text-white" />
           </div>
           <div>
             <h2 className="text-lg font-bold text-foreground">智能触达工作流</h2>
@@ -581,7 +581,7 @@ export function AutomationWorkflow() {
                       } else {
                         toast({
                           title: '域名检测通过',
-                          description: `MX: ${result.hasMX ? '✔' : '✗'} SPF: ${result.hasSPF ? '✔' : '✗'} DKIM: ${result.hasDKIM ? '✔' : '✗'} DMARC: ${result.hasDMARC ? '✔' : '✗'}`,
+                          description: `MX ${result.hasMX ? '达标' : '未通过'} · SPF ${result.hasSPF ? '达标' : '未通过'} · DKIM ${result.hasDKIM ? '达标' : '未通过'} · DMARC ${result.hasDMARC ? '达标' : '未通过'}`,
                           variant: 'default',
                         })
                       }
@@ -630,10 +630,10 @@ export function AutomationWorkflow() {
                   </div>
                   {dnsResult.error && <p>{dnsResult.error}</p>}
                   <div className="flex gap-3 text-[10px] opacity-75">
-                    <span>MX: {dnsResult.hasMX ? '✓' : '✗'}</span>
-                    <span>SPF: {dnsResult.hasSPF ? '✓' : '✗'}</span>
-                    <span>DKIM: {dnsResult.hasDKIM ? '✓' : '✗'}</span>
-                    <span>DMARC: {dnsResult.hasDMARC ? '✓' : '✗'}</span>
+                    <span>MX {dnsResult.hasMX ? '达标' : '未通过'}</span>
+                    <span>SPF {dnsResult.hasSPF ? '达标' : '未通过'}</span>
+                    <span>DKIM {dnsResult.hasDKIM ? '达标' : '未通过'}</span>
+                    <span>DMARC {dnsResult.hasDMARC ? '达标' : '未通过'}</span>
                   </div>
                 </div>
               )}
@@ -683,7 +683,7 @@ export function AutomationWorkflow() {
                 <div
                   className={`mt-3 text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${campaignResult.triggered ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}
                 >
-                  {campaignResult.triggered ? <Sparkles className="size-3.5" /> : <XCircle className="size-3.5" />}
+                  {campaignResult.triggered ? <MailCheck className="size-3.5" /> : <XCircle className="size-3.5" />}
                   {campaignResult.message}
                 </div>
               )}

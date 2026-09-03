@@ -11,8 +11,8 @@ import {
   MapPin,
   Radio,
   Settings,
-  Sparkles,
   Loader2,
+  CloudCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
@@ -254,7 +254,7 @@ export function TeamDashboard() {
               <div className="flex flex-col gap-5">
                 <div className="flex items-start gap-3">
                   <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
-                    <Sparkles className="size-5" />
+                    <CloudCog className="size-5" />
                   </div>
                   <div>
                     <h3 className="text-base font-semibold text-slate-900">企业云端引擎尚未启用</h3>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, AlertCircle, AlertTriangle } from 'lucide-react'
+import { AlertCircle, AlertTriangle, BookMarked, Radar, FolderOpen, Link2, Activity, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Textarea } from '@/components/ui/textarea'
@@ -686,7 +686,10 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         <Accordion type="single" collapsible className="w-full rounded-xl border border-border bg-card p-5 shadow-sm">
           <AccordionItem value="b2b-search-syntax" className="border-none">
             <AccordionTrigger className="py-0 text-sm font-semibold text-slate-900 hover:no-underline">
-              ✨ 高质量 B2B 搜索语法与模板
+              <span className="flex items-center gap-1.5">
+                <BookMarked className="size-4 text-slate-400" />
+                高质量 B2B 搜索语法与模板
+              </span>
             </AccordionTrigger>
             <AccordionContent className="pb-0 pt-4">
               <p className="text-xs leading-relaxed text-slate-500">
@@ -763,7 +766,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
             isLoading={isLoading}
             onClick={handleSearch}
           >
-            {!isLoading ? <Sparkles className="size-4" /> : null}
+            {!isLoading ? <Globe className="size-4" /> : null}
             {isLoading ? 'AI 正在全球检索中...' : '立即开始 AI 获客'}
           </Button>
         </div>
@@ -771,7 +774,10 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         <Accordion type="single" collapsible className="rounded-2xl border border-slate-200 bg-slate-50 px-4 shadow-sm">
           <AccordionItem value="autopilot-console" className="border-none">
             <AccordionTrigger className="py-4 text-sm font-semibold text-slate-900 hover:no-underline">
-              🚀 伴随式后台巡航
+              <span className="flex items-center gap-1.5">
+                <Radar className="size-4 text-slate-400" />
+                伴随式后台巡航
+              </span>
             </AccordionTrigger>
             <AccordionContent className="pb-4">
               <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -812,7 +818,8 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                       disabled={autopilotRuntime.lifecycle === 'running'}
                       className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     >
-                      📁 导入 CSV
+                      <FolderOpen className="size-4" />
+                      导入 CSV
                     </Button>
                     <Button
                       onClick={handleStartAutopilot}
@@ -878,7 +885,8 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                         onClick={handleNavigateLeads}
                         className="mt-2 text-[11px] font-medium text-slate-500 underline underline-offset-2 hover:text-slate-600"
                       >
-                        🔗 前往线索管理查看
+                        <Link2 className="mr-1 inline size-3.5 -translate-y-px" />
+                        前往线索管理查看
                       </button>
                     </div>
                   </div>
@@ -964,7 +972,10 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                   当前结果 {Math.min(displayedResults.length, OMNI_SEARCH_RESULT_LIMIT)} 条
                 </div>
               )}
-              <div className="text-[11px] text-slate-400">⚡ 数据源: 实时全网商业搜索</div>
+              <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                <Activity className="size-3.5 text-emerald-500" />
+                数据源: 实时全网商业搜索
+              </div>
             </div>
           </div>
           <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-4">
@@ -1176,7 +1187,10 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           ) : trialExpired ? (
             <div className="p-8">
               <div className="mx-auto flex max-w-2xl flex-col items-center rounded-2xl border border-amber-200 bg-white px-6 py-8 text-center shadow-sm">
-                <div className="text-lg font-semibold text-amber-900">⚠️ 当前授权已失效</div>
+                <div className="flex items-center justify-center gap-2 text-lg font-semibold text-amber-900">
+                  <AlertTriangle className="size-5" />
+                  当前授权已失效
+                </div>
                 <p className="mt-3 text-sm leading-6 text-slate-600">
                   请前往激活中心完成授权后，继续使用智能获客与高级分析功能。
                 </p>

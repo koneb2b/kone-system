@@ -208,7 +208,7 @@ export function AgentsPanel() {
         }
         toast({
           title: '启动失败',
-          description: `⚠️ 启动失败：检测到您的本地 [${labels[agent.agentType]}] 尚未连接安全持久化沙箱环境。请先前去 [账号管理] 页面配置连接并登录您的${agent.agentType === 'email' ? 'SMTP/IMAP' : '社媒环境'}，激活本地 Autopilot 伴随巡航助理。`,
+          description: `启动失败：检测到您的本地 [${labels[agent.agentType]}] 尚未连接安全持久化沙箱环境。请先前去 [账号管理] 页面配置连接并登录您的${agent.agentType === 'email' ? 'SMTP/IMAP' : '社媒环境'}，激活本地 Autopilot 伴随巡航助理。`,
           variant: 'destructive',
         })
         return
@@ -259,7 +259,7 @@ export function AgentsPanel() {
                 <Crown className="size-8 text-white" />
               </div>
               <p className="text-base leading-relaxed text-slate-700">
-                💎 专属特权：AI
+                专属特权：AI
                 销售团队功能目前仅对【商业高级版】完全开放。升级高级版将解锁本地多开独立沙箱与邮件多轮序列；WhatsApp 与
                 LinkedIn
                 为实验性本地辅助能力，仅生成待触达队列与破冰文案，全程需人工确认后发送，效果与稳定性受第三方平台风控影响。

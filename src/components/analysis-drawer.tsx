@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Sparkles,
   Globe,
   MapPin,
   Copy,
@@ -14,6 +13,9 @@ import {
   Users,
   FileDown,
   Loader2,
+  Ship,
+  Landmark,
+  PenLine,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -56,7 +58,7 @@ const formatErrorMessage = (error: unknown, fallback: string) => {
 }
 
 const SETTINGS_GUIDE_MESSAGE =
-  '⚠️ 请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像，即可解锁深度分析与自动写信功能。'
+  '请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像，即可解锁深度分析与自动写信功能。'
 
 const scenarioLabels = {
   direct_quote: '直接报价切入',
@@ -625,7 +627,8 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
                         title="基于公开贸易数据网页的近似海关信息（非官方海关提单数据库直连），仅供参考"
                         className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700"
                       >
-                        📦 海关数据（参考）
+                        <Ship className="size-3" />
+                        海关数据（参考）
                         {leadMeta.customsData.annualImportVolume ? ` ${leadMeta.customsData.annualImportVolume}` : ''}
                       </span>
                     ) : null}
@@ -634,7 +637,8 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
                         title="基于公开展会目录网页的近似展会足迹（非官方展会名录接口），仅供参考"
                         className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700"
                       >
-                        🏛️ {leadMeta.exhibitionFootprints.length} 个展会足迹（参考）
+                        <Landmark className="size-3" />
+                        {leadMeta.exhibitionFootprints.length} 个展会足迹（参考）
                       </span>
                     ) : null}
                   </div>
@@ -703,7 +707,7 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
                     isLoading={isGenerating}
                     className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
                   >
-                    {!isGenerating ? <Sparkles className="size-3.5" /> : null}
+                    {!isGenerating ? <PenLine className="size-3.5" /> : null}
                     {isGenerating
                       ? '生成中'
                       : analysisLocked
@@ -811,7 +815,7 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
                     <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                          <Sparkles className="size-4 text-blue-600" />
+                          <Target className="size-4 text-blue-600" />
                           博弈策略
                         </div>
                         <Button
@@ -908,7 +912,7 @@ function StrategyReportPanel({
     return (
       <div className="min-h-[220px] rounded-lg border border-blue-200 bg-blue-50 px-4 py-4 text-xs text-blue-700">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Sparkles className="size-4 animate-pulse" />
+          <Loader2 className="size-4 animate-spin" />
           AI 正在生成情报报告与写信动作...
         </div>
         <div className="mt-4 space-y-2 text-[13px] leading-6 text-blue-700/95">

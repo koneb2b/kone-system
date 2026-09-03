@@ -21,10 +21,11 @@ import {
   Radar,
   MessageSquare,
   ShieldCheck,
-  Zap,
-  Sparkles,
   Copy,
   CheckCircle2,
+  Mail,
+  PenLine,
+  Reply,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -92,7 +93,7 @@ const formatAnalysisActionError = (error: unknown, fallback: string) => {
     semantic?.code === 'missing_icp_profile' ||
     semantic?.settingsActionable
   ) {
-    return '⚠️ 请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像。'
+    return '请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像。'
   }
   if (semantic?.code === 'provider_timeout') return 'AI 数据流连接异常，请稍后重试。'
   if (semantic?.code === 'provider_unavailable') return '当前智能分析服务响应异常，请稍后重试。'
@@ -139,7 +140,7 @@ const COUNTRY_LANGUAGE_HINTS: Array<{ match: RegExp; language: string; label: st
 ]
 
 const leadStatusConfig: Record<LeadStatus, { label: string; color: string; bgColor: string; borderColor: string }> = {
-  new: { label: '待跟进', color: 'text-slate-700', bgColor: 'bg-slate-100', borderColor: 'border-slate-200' },
+  new: { label: '待跟进', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-slate-200' },
   contacting: { label: '联系中', color: 'text-blue-700', bgColor: 'bg-blue-100', borderColor: 'border-blue-200' },
   replied: { label: '已回复', color: 'text-emerald-700', bgColor: 'bg-emerald-100', borderColor: 'border-emerald-200' },
   archived: { label: '已归档', color: 'text-amber-700', bgColor: 'bg-amber-100', borderColor: 'border-amber-200' },
@@ -158,15 +159,15 @@ const hasAnalysisResult = (analysisCache?: Record<string, unknown>) =>
   )
 
 const emptyStats = [
-  { label: '总线索数', value: 0, icon: Users, color: 'text-slate-700', bgColor: 'bg-slate-100' },
-  { label: '本月新增', value: 0, icon: UserPlus, color: 'text-[hsl(var(--deep-blue))]', bgColor: 'bg-blue-50' },
-  { label: '跟进中', value: 0, icon: Target, color: 'text-amber-600', bgColor: 'bg-amber-50' },
+  { label: '总线索数', value: 0, icon: Users, color: 'text-primary', bgColor: 'bg-primary/10' },
+  { label: '本月新增', value: 0, icon: UserPlus, color: 'text-primary', bgColor: 'bg-primary/10' },
+  { label: '跟进中', value: 0, icon: Target, color: 'text-primary', bgColor: 'bg-primary/10' },
   {
     label: '成交转化率',
     value: '0%',
     icon: TrendingUp,
-    color: 'text-[hsl(var(--brand-green))]',
-    bgColor: 'bg-emerald-50',
+    color: 'text-primary',
+    bgColor: 'bg-primary/10',
   },
 ]
 
@@ -444,27 +445,27 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
   const funnelStats =
     leads.length > 0
       ? [
-          { label: '总线索数', value: leads.length, icon: Users, color: 'text-slate-700', bgColor: 'bg-slate-100' },
+          { label: '总线索数', value: leads.length, icon: Users, color: 'text-primary', bgColor: 'bg-primary/10' },
           {
             label: '本月新增',
             value: leads.filter((lead) => lead.addedDate.slice(0, 7) === new Date().toISOString().slice(0, 7)).length,
             icon: UserPlus,
-            color: 'text-[hsl(var(--deep-blue))]',
-            bgColor: 'bg-blue-50',
+            color: 'text-primary',
+            bgColor: 'bg-primary/10',
           },
           {
             label: '跟进中',
             value: leads.filter((lead) => lead.status === 'contacting').length,
             icon: Target,
-            color: 'text-amber-600',
-            bgColor: 'bg-amber-50',
+            color: 'text-primary',
+            bgColor: 'bg-primary/10',
           },
           {
             label: '已回复占比',
             value: `${Math.round((leads.filter((lead) => lead.status === 'replied').length / leads.length) * 100)}%`,
             icon: TrendingUp,
-            color: 'text-[hsl(var(--brand-green))]',
-            bgColor: 'bg-emerald-50',
+            color: 'text-primary',
+            bgColor: 'bg-primary/10',
           },
         ]
       : emptyStats
@@ -1035,7 +1036,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                                       isLoading={isGeneratingEmail && emailComposerLead?.id === lead.id}
                                     >
                                       {!(isGeneratingEmail && emailComposerLead?.id === lead.id) ? (
-                                        <Sparkles className="size-3.5" />
+                                        <PenLine className="size-3.5" />
                                       ) : null}
                                       撰写开发信
                                     </Button>
@@ -1046,7 +1047,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                                         className="h-8 gap-1.5 rounded-full border-amber-200/90 bg-amber-50/80 px-2.5 text-[11px] font-medium text-amber-700 shadow-[0_0_0_1px_rgba(251,191,36,0.06)] transition-all hover:border-amber-300 hover:bg-amber-100/80 animate-[pulse_2.6s_ease-in-out_infinite]"
                                         onClick={() => void handleAnalyze(lead, { focusReplyCoachInput: true })}
                                       >
-                                        <Zap className="size-3.5" />
+                                        <Reply className="size-3.5" />
                                         拆解回信
                                       </Button>
                                     ) : null}
@@ -1288,7 +1289,8 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                 重新生成
               </Button>
               <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={handleLaunchMailClient}>
-                ✉️ 唤起本地邮箱发送
+                <Mail className="size-4" />
+                唤起本地邮箱发送
               </Button>
             </div>
           </DialogFooter>

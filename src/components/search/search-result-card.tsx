@@ -159,7 +159,7 @@ export function SearchResultCard({
           {settlementMeta.showPending ? (
             <div className="mt-1 inline-flex items-center gap-2 text-xs text-blue-500">
               <div className="size-3 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-              🤖 AI 正在分析该线索...
+              AI 正在分析该线索...
             </div>
           ) : null}
           {settlementMeta.showFallback ? (

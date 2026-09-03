@@ -6,7 +6,6 @@ import {
   TrendingDown,
   Globe,
   Users,
-  Zap,
   BarChart3,
   ArrowUpRight,
   Calendar,
@@ -15,6 +14,7 @@ import {
   Phone,
   Clock3,
   Database,
+  Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -326,8 +326,8 @@ export function DataCenter({
         change: total ? '实时' : '-',
         up: true,
         icon: Users,
-        color: 'text-[hsl(var(--deep-blue))]',
-        bgColor: 'bg-blue-50',
+        color: 'text-primary',
+        bgColor: 'bg-primary/10',
       },
       {
         label: '今日新增',
@@ -335,8 +335,8 @@ export function DataCenter({
         change: todayAdded ? '新增' : '-',
         up: todayAdded > 0,
         icon: Calendar,
-        color: 'text-[hsl(var(--brand-green))]',
-        bgColor: 'bg-emerald-50',
+        color: 'text-primary',
+        bgColor: 'bg-primary/10',
       },
       {
         label: '已触达客户',
@@ -344,8 +344,8 @@ export function DataCenter({
         change: contactedCount ? '跟进中' : '-',
         up: true,
         icon: Phone,
-        color: 'text-amber-600',
-        bgColor: 'bg-amber-50',
+        color: 'text-primary',
+        bgColor: 'bg-primary/10',
       },
       {
         label: '高分线索数',
@@ -353,8 +353,8 @@ export function DataCenter({
         change: typeof avgMatch === 'number' ? `均值 ${avgMatch}%` : '--',
         up: highScoreCount > 0,
         icon: BarChart3,
-        color: 'text-[hsl(var(--deep-blue))]',
-        bgColor: 'bg-blue-50',
+        color: 'text-primary',
+        bgColor: 'bg-primary/10',
       },
       {
         label: '海关数据覆盖',
@@ -362,8 +362,8 @@ export function DataCenter({
         change: customsPct,
         up: customsDataCount > 0,
         icon: Database,
-        color: 'text-emerald-600',
-        bgColor: 'bg-emerald-50',
+        color: 'text-primary',
+        bgColor: 'bg-primary/10',
       },
       {
         label: '决策人覆盖',
@@ -371,8 +371,8 @@ export function DataCenter({
         change: decisionMakerPct,
         up: decisionMakerCount > 0,
         icon: Users,
-        color: 'text-purple-600',
-        bgColor: 'bg-purple-50',
+        color: 'text-primary',
+        bgColor: 'bg-primary/10',
       },
     ]
   }, [contactedCount, highScoreCount, leads, todayKey, customsDataCount, decisionMakerCount])
@@ -867,7 +867,7 @@ export function DataCenter({
                   </div>
                 </div>
                 <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-600 border-emerald-200">
-                  <Zap className="size-3 mr-1" />
+                  <Activity className="size-3 mr-1" />
                   业务诊断
                 </Badge>
               </div>

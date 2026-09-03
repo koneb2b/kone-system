@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Check, Copy, Crown, Fingerprint, Headset, QrCode, Rocket, Shield } from 'lucide-react'
+import { Check, Copy, Crown, Fingerprint, Headset, QrCode, Shield, ArrowUpRight } from 'lucide-react'
 import { submitLicense } from '@/lib/electron-api'
 import { useLicenseStore } from '@/store/licenseStore'
 import wechatQrUrl from '@/assets/wechat-qr.png'
@@ -236,7 +236,7 @@ export function UpgradeModal({ open, intent = 'premium', onOpenChange, onActivat
                   isLoading={activating}
                   className="mt-5 h-12 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-md transition-colors hover:bg-blue-700"
                 >
-                  {!activating ? <Rocket className="size-4.5" /> : null}
+                  {!activating ? <ArrowUpRight className="size-4.5" /> : null}
                   {activating ? `正在解锁${intent === 'basic' ? '基础版' : '高级版'}...` : copy.activateButtonLabel}
                 </Button>
               </div>

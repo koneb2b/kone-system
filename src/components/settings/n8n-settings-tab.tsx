@@ -3,7 +3,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Lock, Rocket } from 'lucide-react'
+import { Lock, ArrowUpRight } from 'lucide-react'
 
 type N8nSettings = {
   webhookUrl: string
@@ -53,7 +53,7 @@ export function N8nSettingsTab({
                 onClick={onRequestUpgrade}
                 className="mt-6 gap-2 bg-slate-900 text-white hover:bg-slate-800"
               >
-                <Rocket className="size-4" />
+                <ArrowUpRight className="size-4" />
                 立即升级高级版
               </Button>
             </div>

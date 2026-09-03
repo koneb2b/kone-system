@@ -119,7 +119,7 @@ if (import.meta.env.DEV) {
 
     const unsupported = async () => ({
       success: false,
-      error: '当前开发环境未连接 Electron 主进程，请通过 npm run dev 启动真实链路。',
+      error: '本地引擎未连接，该能力需在桌面应用中使用。',
       code: 503,
     })
 
@@ -310,7 +310,7 @@ if (import.meta.env.DEV) {
                 agentType: 'whatsapp',
                 status: 'idle',
                 label: 'WhatsApp 拓客猎手',
-                description: '开发壳模式：真实自动触达请通过 npm run dev 启动 Electron 主进程。',
+                description: '本地引擎未连接：请在桌面应用中完成账号配置后使用自动触达。',
                 progress: 0,
                 totalTargets: 0,
                 completedCount: 0,
@@ -323,7 +323,7 @@ if (import.meta.env.DEV) {
                 agentType: 'linkedin',
                 status: 'idle',
                 label: 'LinkedIn 商务买手',
-                description: '开发壳模式：真实沙箱会话请通过 npm run dev 启动 Electron 主进程。',
+                description: '本地引擎未连接：请在桌面应用中完成账号配置后使用沙箱会话。',
                 progress: 0,
                 totalTargets: 0,
                 completedCount: 0,
@@ -336,7 +336,7 @@ if (import.meta.env.DEV) {
                 agentType: 'email',
                 status: 'idle',
                 label: '邮件跟进助理',
-                description: '开发壳模式：真实 SMTP/IMAP 请通过 npm run dev 启动 Electron 主进程。',
+                description: '本地引擎未连接：请在桌面应用中配置 SMTP/IMAP 后启用邮件跟进。',
                 progress: 0,
                 totalTargets: 0,
                 completedCount: 0,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Shield, Copy, Check, Cpu, Lock, Rocket } from 'lucide-react'
+import { Shield, Copy, Check, Cpu, Lock, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { KoneLogo } from '@/components/kone-logo'
@@ -236,7 +236,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             disabled={requestingTrial || activating}
             isLoading={requestingTrial}
           >
-            {!requestingTrial ? <Rocket className="size-6" /> : null}
+            {!requestingTrial ? <ArrowRight className="size-6" /> : null}
             {requestingTrial ? '正在开启试用...' : '\uD83D\uDE80 开启 7 天全功能免费试用'}
           </Button>
 

@@ -31,7 +31,7 @@ export function SearchInput({ value, onChange, onSearch }: SearchInputProps) {
               onSearch()
             }
           }}
-          placeholder="🤖 支持直接输入纯自然语言描述，例如：帮我找 50 家在德国做高性能储能电池的独立站经销商，要求有采购高管邮箱且能做批发..."
+          placeholder="支持直接输入纯自然语言描述，例如：帮我找 50 家在德国做高性能储能电池的独立站经销商，要求有采购高管邮箱且能做批发..."
           className="w-full h-10 pl-9 pr-4 rounded-lg border border-input bg-slate-50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-primary transition-all"
         />
       </div>

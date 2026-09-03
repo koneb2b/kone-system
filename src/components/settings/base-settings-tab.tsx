@@ -288,7 +288,7 @@ export function BaseSettingsTab({
     } catch (error) {
       setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
       onUpdateConfig(api.id, { status: 'error' })
-      const description = `⚠️ 校验失败：${api.name} 密钥无效或连接海外服务器超时，请检查网络。`
+      const description = `校验失败：${api.name} 密钥无效或连接海外服务器超时，请检查网络。`
       toast({ title: '测试连接失败', description, variant: 'destructive' })
     } finally {
       setTestingById((prev) => ({ ...prev, [api.id]: false }))

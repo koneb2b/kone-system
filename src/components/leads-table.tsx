@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Sparkles, Filter, Download, Mail, Phone, Lock, Rocket, MessageCircle, Send, AlertCircle } from 'lucide-react'
+import { Filter, Download, Mail, Phone, Lock, MessageCircle, Send, AlertCircle, ScanSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { stableHash } from '@/lib/utils'
@@ -574,7 +574,7 @@ export function LeadsTable({
                           }
                         }}
                       >
-                        {!analysisLoading || analysisLoading !== lead.id ? <Sparkles className="size-3.5" /> : null}
+                        {!analysisLoading || analysisLoading !== lead.id ? <ScanSearch className="size-3.5" /> : null}
                         {analysisLoading === lead.id
                           ? '加载中'
                           : savedLeadIds.has(lead.id)
@@ -588,7 +588,7 @@ export function LeadsTable({
                         disabled={sendingCloud === lead.id || !onSendToCloud || !canUseCloudSend}
                         isLoading={sendingCloud === lead.id}
                       >
-                        {sendingCloud !== lead.id ? <Rocket className="size-3.5" /> : null}
+                        {sendingCloud !== lead.id ? <Send className="size-3.5" /> : null}
                         {sendingCloud === lead.id ? '发送中' : canUseCloudSend ? '发送至云端' : '高级版锁定'}
                       </Button>
                     </div>

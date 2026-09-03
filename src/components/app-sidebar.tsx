@@ -18,6 +18,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   Bot,
+  KeyRound,
 } from 'lucide-react'
 import { useLicenseStore } from '@/store/licenseStore'
 
@@ -235,8 +236,9 @@ export function AppSidebar({
         {navItems.map(renderNavButton)}
         <div className="my-2 mx-2 border-t border-white/[0.06]" />
         <div className="hidden md:flex items-center gap-1.5 px-3 py-2">
-          <span className="text-[10px] font-semibold tracking-wide text-slate-500">
-            💎 Kone AI 自航拓客特权港 [高级版本]
+          <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-slate-500">
+            <KeyRound className="size-3" />
+            Kone AI 自航拓客特权港 [高级版本]
           </span>
         </div>
         {premiumNavItems.map(renderNavButton)}
