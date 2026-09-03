@@ -1,0 +1,94 @@
+name: Kone CI
+
+on:
+  push:
+    branches: [main, dev, 'release/*']
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ═══════════════════════════════════════════════
+  # LAYER 1: Unit Tests (fast, no Electron needed)
+  # ═══════════════════════════════════════════════
+  unit:
+    name: 'Layer 1 — Unit Tests'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit
+        timeout-minutes: 3
+
+  # ═══════════════════════════════════════════════
+  # LAYER 2: IPC Contract Tests (needs tsc build)
+  # ═══════════════════════════════════════════════
+  ipc:
+    name: 'Layer 2 — IPC Contracts'
+    runs-on: windows-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:electron:dev
+      - run: node --test tests/ipc-contract-sweep.test.ts tests/ipc-contracts-v2.test.ts
+        timeout-minutes: 3
+
+  # ═══════════════════════════════════════════════
+  # LAYER 3: Authorization & Environment Tests
+  # ═══════════════════════════════════════════════
+  auth:
+    name: 'Layer 2 — Auth & Env Isolation'
+    runs-on: windows-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:electron:dev
+      - run: node --test tests/license-gateway.test.js tests/env-isolation.test.ts tests/dev-bypass.test.ts tests/e2e/permission-lock.test.js
+        timeout-minutes: 3
+
+  # ═══════════════════════════════════════════════
+  # BUILD: Electron tsc compilation check
+  # ═══════════════════════════════════════════════
+  build:
+    name: 'Build — Electron tsc'
+    runs-on: windows-latest
+    needs: [ipc, auth]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:electron:dev
+        timeout-minutes: 5
+
+  # ═══════════════════════════════════════════════
+  # GATE: All layers must pass
+  # ═══════════════════════════════════════════════
+  gate:
+    name: 'Gate — All Clear'
+    runs-on: windows-latest
+    needs: [build]
+    if: always()
+    steps:
+      - run: |
+          $result = "${{ needs.unit.result }} ${{ needs.ipc.result }} ${{ needs.auth.result }} ${{ needs.build.result }}"
+          if ($result -match 'failure|cancelled') { exit 1 }
+          Write-Host "✅ ALL LAYERS PASSED"
