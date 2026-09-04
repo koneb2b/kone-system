@@ -357,7 +357,7 @@ export function AgentsPanel() {
             return (
               <Card
                 key={agent.agentId}
-                className={`relative overflow-hidden group border-l-4 ${notConfigured ? 'border-slate-300' : meta.accent}`}
+                className={`relative overflow-hidden group border-l-4 transition-shadow duration-200 hover:shadow-md ${notConfigured ? 'border-slate-300' : meta.accent}`}
               >
                 <div className={`absolute top-0 left-0 right-0 h-1 ${notConfigured ? 'bg-slate-300' : meta.color}`} />
                 <CardHeader className="pb-2">
