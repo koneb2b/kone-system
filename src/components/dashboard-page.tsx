@@ -234,7 +234,8 @@ export function DashboardPage() {
           </div>
         </header>
 
-        <div className="flex-1 p-6 flex flex-col gap-5 overflow-auto">
+        {/* 视图切换入场动效：key 驱动每次导航重新入场，300ms fade+微上移，克制不抢戏 */}
+        <div key={activeNav} className="flex-1 p-6 flex flex-col gap-5 overflow-auto animate-kone-view-enter">
           {activeNav === 'search' && (
             <Suspense fallback={<SectionSkeleton label="搜索模块加载中..." />}>
               <>

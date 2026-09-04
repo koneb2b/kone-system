@@ -63,3 +63,21 @@ a:active,
   background: #ffffff;
   box-shadow: 0 8px 18px rgba(0, 21, 41, 0.08);
 }
+
+/* 视图切换入场动效（零依赖自实现；tailwindcss-animate 未安装，
+   tailwind.config.cjs 的 plugins 在 Tailwind v4 CSS-first 模式下不加载，
+   因此 animate-in/animate-out 等类此前均为死类） */
+@keyframes kone-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-kone-view-enter {
+  animation: kone-view-enter 0.3s ease-out both;
+}
