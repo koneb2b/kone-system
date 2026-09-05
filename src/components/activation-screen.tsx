@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Shield, Copy, Check, Cpu, Lock, ArrowRight } from 'lucide-react'
+import { Shield, Copy, Check, Cpu, Lock, BadgeCheck } from 'lucide-react'
+import brandLogoWhiteUrl from '@/assets/kone-logo-white.png'
+import brandLogoDarkUrl from '@/assets/kone-logo-transparent.png'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { KoneLogo } from '@/components/kone-logo'
 import { getLicenseInfo, submitLicense, requestTrial } from '@/lib/electron-api'
 import { useLicenseStore } from '@/store/licenseStore'
 import { useToast } from '@/hooks/use-toast'
@@ -124,7 +125,8 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
           <div className="absolute top-1/2 left-1/4 w-40 h-40 rounded-full border border-white/15" />
         </div>
 
-        <KoneLogo variant="light" />
+        {/* 完整品牌 logo：白色透明版，直接叠加在深蓝渐变上，大比例展示 */}
+        <img src={brandLogoWhiteUrl} alt="Kone 智能获客" className="relative z-10 h-14 w-auto object-contain" />
 
         <div className="relative z-10 flex-1 flex flex-col justify-center gap-6">
           <h1 className="text-4xl font-bold text-white leading-tight text-balance">
@@ -149,7 +151,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
         <div className="w-full max-w-lg flex flex-col gap-7">
           {/* Mobile logo */}
           <div className="lg:hidden">
-            <KoneLogo variant="dark" />
+            <img src={brandLogoDarkUrl} alt="Kone 智能获客" className="h-9 w-auto object-contain" />
           </div>
 
           {/* Header */}
@@ -236,8 +238,8 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             disabled={requestingTrial || activating}
             isLoading={requestingTrial}
           >
-            {!requestingTrial ? <ArrowRight className="size-6" /> : null}
-            {requestingTrial ? '正在开启试用...' : '\uD83D\uDE80 开启 7 天全功能免费试用'}
+            {!requestingTrial ? <BadgeCheck className="size-6" /> : null}
+            {requestingTrial ? '正在开启试用...' : '开启 7 天全功能免费试用'}
           </Button>
 
           <p className="text-xs text-muted-foreground text-center">

@@ -133,20 +133,41 @@ if (import.meta.env.DEV) {
           },
         })) as ElectronApi['license']['verify'],
         checkStatus: getLicenseStatus as ElectronApi['license']['checkStatus'],
-        getInfo: (async () => ({
-          success: true,
-          data: {
-            tier: 'premium' as const,
-            machineId: 'DEV-SHELL-MOCK',
-            isDev: true,
-            isTrial: false,
-            daysLeft: 365,
-            hasLlmApiKey: false,
-            plan: 'enterprise',
-            expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-            features: [...DEV_ENTERPRISE_FEATURES],
-          },
-        })) as ElectronApi['license']['getInfo'],
+        getInfo: (async () => {
+          /* dev-shell 预览开关：?view=activation / ?view=locked 可在浏览器预览
+             登录/锁定界面（仅 devShell fallback 生效，打包版不受影响） */
+          const previewView = new URLSearchParams(window.location.search).get('view')
+          if (previewView === 'activation' || previewView === 'locked') {
+            return {
+              success: true,
+              data: {
+                tier: 'unregistered' as const,
+                machineId: 'DEV-SHELL-MOCK',
+                isDev: false,
+                isTrial: false,
+                daysLeft: 0,
+                hasLlmApiKey: false,
+                plan: 'basic' as const,
+                expiresAt: 0,
+                features: [],
+              },
+            }
+          }
+          return {
+            success: true,
+            data: {
+              tier: 'premium' as const,
+              machineId: 'DEV-SHELL-MOCK',
+              isDev: true,
+              isTrial: false,
+              daysLeft: 365,
+              hasLlmApiKey: false,
+              plan: 'enterprise',
+              expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+              features: [...DEV_ENTERPRISE_FEATURES],
+            },
+          }
+        }) as ElectronApi['license']['getInfo'],
         submit: (async () => ({
           success: true,
           data: {
