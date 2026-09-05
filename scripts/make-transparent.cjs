@@ -135,7 +135,8 @@ function whiteToTransparent(rgba, width, height, fgColor) {
     const g = rgba[i + 1]
     const b = rgba[i + 2]
     const a = rgba[i + 3]
-    if (a < 10) {
+    if (a < 100) {
+      // 浅噪声/极浅抗锯齿像素整体清除，确保裁剪边界紧贴实体图形
       out[i + 3] = 0
       continue
     }
