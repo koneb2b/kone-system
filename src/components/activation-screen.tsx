@@ -125,13 +125,14 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
           <div className="absolute top-1/2 left-1/4 w-40 h-40 rounded-full border border-white/15" />
         </div>
 
-        {/* 品牌区块：logo 与标题上下连贯、左对齐，整体居中 */}
+        {/* 品牌 logo：靠上独立放置（不贴顶），与居中的标题组由面板高度自然拉开大间距 */}
+        <img
+          src={brandLogoWhiteUrl}
+          alt="Kone 智能获客"
+          className="relative z-10 mt-10 block h-9 w-auto object-contain self-start"
+        />
+
         <div className="relative z-10 flex-1 flex flex-col justify-center gap-7">
-          <img
-            src={brandLogoWhiteUrl}
-            alt="Kone 智能获客"
-            className="block h-9 w-auto object-contain self-start mb-6"
-          />
           <h1 className="text-4xl font-bold text-white leading-tight text-balance">
             Kone AI
             <br />
