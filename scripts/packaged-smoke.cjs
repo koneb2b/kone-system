@@ -1,6 +1,6 @@
 const fs = require('fs')
 const path = require('path')
-const { spawn } = require('child_process')
+const { spawn, execSync } = require('child_process')
 const puppeteer = require('puppeteer-core')
 
 const rootDir = path.resolve(__dirname, '..')
@@ -15,6 +15,16 @@ async function run() {
   if (!fs.existsSync(executablePath)) {
     throw new Error(`Unpacked executable not found: ${executablePath}`)
   }
+
+  /* 清理残留实例：KoneAI.exe 固定绑定 9222 调试端口，若上次冒烟/审计异常退出
+     留下旧进程，新实例绑定端口失败，puppeteer.connect 会连到残留旧实例导致
+     检测全 false。spawn 前先强制结束本应用所有进程。 */
+  try {
+    execSync('taskkill /f /im KoneAI.exe /t', { stdio: 'ignore' })
+  } catch {
+    // 无残留进程时 taskkill 报错可忽略
+  }
+  await wait(800)
 
   const childEnv = {
     ...process.env,
