@@ -3244,7 +3244,10 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                   icpProfile: userConfig?.icpProfile || undefined,
                   skipLlmProbe,
                 }),
-                llmTimeoutMs,
+                /* 外层守卫必须 ≥ 内部最坏耗时（官网抓取 15s + LLM 深探 20s = 35s），
+                   否则高分线索的深探总是被外层守卫砍掉，表现为大量
+                   "官网访问超时或 AI 评估失败"（此前 llmTimeoutMs 恒 60s 掩盖了此问题）。 */
+                llmTimeoutMs + WEBSITE_PROBE_TIMEOUT_MS,
                 `Enrich lead ${item.company || item.website || index}`,
               )
               enrichedResults[index] = applySchemaDefaults(enriched)
