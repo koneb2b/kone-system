@@ -1605,14 +1605,18 @@ const extractWebsiteContent = async (url: string, timeoutMs: number) => {
   }
 
   const successfulContacts: WebsiteContentProbe[] = []
-  for (const contactUrl of contactUrls) {
-    try {
-      const contactResult = await fetchWebsiteContent(contactUrl, strictTimeoutMs)
-      if (contactResult.ok) successfulContacts.push(contactResult)
-    } catch {
-      // ignore individual contact page failures
-    }
-  }
+  /* 联系页并行抓取：/contact 与 /contact-us 串行时最坏 2×15s；
+     并行后单条线索的抓取上限回落到 15s（不改变富化线索并发=2 的宪法约束） */
+  await Promise.all(
+    contactUrls.map(async (contactUrl) => {
+      try {
+        const contactResult = await fetchWebsiteContent(contactUrl, strictTimeoutMs)
+        if (contactResult.ok) successfulContacts.push(contactResult)
+      } catch {
+        // ignore individual contact page failures
+      }
+    }),
+  )
 
   if (successfulContacts.length === 0) {
     return homepage
@@ -2446,7 +2450,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         const dataSourceType = payload?.dataSourceType
         const configuredSearchTimeoutMs = Number(userConfig?.searchTimeoutMs) || DEFAULT_SEARCH_TIMEOUT_MS
         const timeoutMs = Math.max(DEFAULT_SEARCH_TIMEOUT_MS, configuredSearchTimeoutMs)
-        const llmTimeoutMs = Math.max(DEFAULT_SEARCH_TIMEOUT_MS, Math.min(timeoutMs, SEARCH_LLM_TIMEOUT_MS))
+        /* LLM 超时上限 = SEARCH_LLM_TIMEOUT_MS (20s)。
+           注意此处不能用 Math.max(DEFAULT_SEARCH_TIMEOUT_MS, ...)：那会把
+           下限抬到 60s，导致 LLM 失败时每条线索等满 60s 才超时（50 条×并发2
+           的最坏路径拖慢搜索 25 分钟以上）。 */
+        const llmTimeoutMs = Math.min(timeoutMs, SEARCH_LLM_TIMEOUT_MS)
         probeLog('[Probe-Config] Quality controls:', {
           priorityWebsite: Boolean(filterOptions?.priorityWebsite),
           localDomainOnly: Boolean(filterOptions?.localDomainOnly),
@@ -3082,8 +3090,26 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
         const cleanedResults: SearchExecuteResult[] = []
         let completedCount = 0
+        /* LLM 持续失败快速降级：连续失败达到阈值即熔断，剩余线索直接走确定性
+           兜底（诚实标注 deterministic），避免 50 条逐条等满超时拖垮整体进度。
+           LLM 服务恢复后下次搜索自动回到全量 AI 评分。 */
+        const LLM_FAILURE_CIRCUIT_THRESHOLD = 5
+        let llmFailureStreak = 0
+        let llmCircuitOpen = false
         await runLimitedConcurrency(leadsForScoring, SEARCH_LLM_CONCURRENCY, async (candidate, index) => {
           if (myJobId !== activeJobIdFor()) return
+          if (llmCircuitOpen) {
+            const fallbackLead = applySchemaDefaults({
+              ...candidate,
+              scoreSource: 'deterministic',
+              matchReasons: ['AI 评估服务不可达，已降级为基础评分'],
+              riskFlags: ['官网访问超时或 AI 评估失败'],
+            })
+            cleanedResults[index] = fallbackLead
+            completedCount += 1
+            emitLeadScored(_event.sender, fallbackLead, completedCount, leadsForScoring.length)
+            return
+          }
           try {
             probeLog('[Probe-LLM] Scoring candidate:', {
               index,
@@ -3131,6 +3157,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             const nextLead = scoredLead
               ? applySchemaDefaults({ ...scoredLead, scoreSource: 'ai' })
               : applySchemaDefaults({ ...candidate, scoreSource: 'deterministic' })
+            if (scoredLead) llmFailureStreak = 0
             cleanedResults[index] = nextLead
             completedCount += 1
             emitLeadScored(_event.sender, nextLead, completedCount, leadsForScoring.length)
@@ -3143,6 +3170,15 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               error instanceof Error ? error.message : String(error || ''),
               error instanceof Error ? error.stack : '',
             )
+            llmFailureStreak += 1
+            if (!llmCircuitOpen && llmFailureStreak >= LLM_FAILURE_CIRCUIT_THRESHOLD) {
+              llmCircuitOpen = true
+              probeError('[Probe-LLM] Failure circuit opened:', {
+                threshold: LLM_FAILURE_CIRCUIT_THRESHOLD,
+                remaining: leadsForScoring.length - completedCount,
+              })
+              emitStage(_event.sender, 'scoring', 'AI 评估服务持续不可达，剩余线索已降级为基础评分')
+            }
             const fallbackLead = applySchemaDefaults({
               ...candidate,
               scoreSource: 'deterministic',
@@ -3166,6 +3202,12 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
           await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
             if (myJobId !== activeJobIdFor()) return
+            /* 熔断联动：LLM 服务不可达时跳过官网深探（其依赖 LLM 补充分析），
+               直接保留确定性评分结果，避免二次等待拖慢整体进度 */
+            if (llmCircuitOpen) {
+              enrichedResults[index] = applySchemaDefaults(baseResults[index])
+              return
+            }
             try {
               const enriched = await withTimeoutGuard(
                 enrichLeadWithDeepProbe({
