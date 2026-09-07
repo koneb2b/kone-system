@@ -139,6 +139,51 @@ const COUNTRY_LANGUAGE_HINTS: Array<{ match: RegExp; language: string; label: st
   { match: /canada/i, language: 'French', label: '法语' },
 ]
 
+/* 语言显示名 → ISO 639-1 码（小语种翻译传给后端）。未识别语言回退 'en' */
+const LANGUAGE_LABEL_TO_ISO: Record<string, string> = {
+  English: 'en',
+  Chinese: 'zh',
+  简体中文: 'zh',
+  German: 'de',
+  德语: 'de',
+  French: 'fr',
+  法语: 'fr',
+  Spanish: 'es',
+  西班牙语: 'es',
+  Italian: 'it',
+  意大利语: 'it',
+  Japanese: 'ja',
+  日语: 'ja',
+  Korean: 'ko',
+  韩语: 'ko',
+  Portuguese: 'pt',
+  葡萄牙语: 'pt',
+  Russian: 'ru',
+  俄语: 'ru',
+  Dutch: 'nl',
+  荷兰语: 'nl',
+  Polish: 'pl',
+  波兰语: 'pl',
+  Turkish: 'tr',
+  土耳其语: 'tr',
+  Vietnamese: 'vi',
+  越南语: 'vi',
+  Thai: 'th',
+  泰语: 'th',
+  Indonesian: 'id',
+  印尼语: 'id',
+  Malay: 'ms',
+  马来语: 'ms',
+  Arabic: 'ar',
+  阿拉伯语: 'ar',
+}
+
+const languageLabelToIso = (label?: string): string | undefined => {
+  const key = String(label || '').trim()
+  if (!key) return undefined
+  return LANGUAGE_LABEL_TO_ISO[key] || (key.length === 2 ? key.toLowerCase() : undefined)
+}
+
 const leadStatusConfig: Record<LeadStatus, { label: string; color: string; bgColor: string; borderColor: string }> = {
   new: { label: '待跟进', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-slate-200' },
   contacting: { label: '联系中', color: 'text-blue-700', bgColor: 'bg-blue-100', borderColor: 'border-blue-200' },
@@ -541,6 +586,9 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
           salesStrategy: lead.salesStrategy,
         },
         scenario: 'direct_quote',
+        /* 小语种同步翻译：将 UI 选择的目标语言（如 German/French）映射为
+           ISO 码传给后端，LLM 直接按目标语言生成邮件 */
+        language: languageLabelToIso(language),
       })
 
       const draft = parseGeneratedEmailDraft(

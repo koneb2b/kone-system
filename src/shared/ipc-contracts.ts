@@ -294,6 +294,9 @@ export type AnalysisGenerateRequest = {
     customerText?: string
   }
   scenario: string
+  /* 邮件生成语言（ISO 639-1，如 en/de/fr/es/zh）。缺省时后端按 lead.country
+     推导官方语言；推导不出则回退英文。 */
+  language?: string
 }
 
 export type AnalysisGenerateData = {

@@ -51,6 +51,37 @@ const hasAnalysisResult = (analysisCache?: Record<string, unknown>) =>
     }),
   )
 
+/* 国家 → 邮件语言（ISO 639-1）。非英文国家生成对应语言开发信；未知回退英文 */
+const COUNTRY_LANG: Array<{ match: RegExp; lang: string }> = [
+  { match: /germany|deutschland|austria|switzerland/i, lang: 'de' },
+  { match: /france|belgium|canada/i, lang: 'fr' },
+  { match: /spain|mexico|argentina|colombia|chile|peru/i, lang: 'es' },
+  { match: /italy|italia/i, lang: 'it' },
+  { match: /japan/i, lang: 'ja' },
+  { match: /korea/i, lang: 'ko' },
+  { match: /brazil|portugal/i, lang: 'pt' },
+  { match: /russia/i, lang: 'ru' },
+  { match: /netherlands|holland/i, lang: 'nl' },
+  { match: /poland/i, lang: 'pl' },
+  { match: /turkey/i, lang: 'tr' },
+  { match: /vietnam/i, lang: 'vi' },
+  { match: /thailand/i, lang: 'th' },
+  { match: /indonesia/i, lang: 'id' },
+  { match: /malaysia/i, lang: 'ms' },
+  { match: /saudi|uae|united arab|egypt|qatar|kuwait/i, lang: 'ar' },
+  { match: /sweden/i, lang: 'sv' },
+  { match: /denmark/i, lang: 'da' },
+  { match: /norway/i, lang: 'no' },
+  { match: /finland/i, lang: 'fi' },
+]
+
+const inferCountryLanguage = (country?: string): string | undefined => {
+  const raw = String(country || '').trim()
+  if (!raw) return undefined
+  const hit = COUNTRY_LANG.find(({ match }) => match.test(raw))
+  return hit?.lang
+}
+
 type SettlementMeta = {
   state: string
   showPending: boolean
@@ -107,6 +138,8 @@ export function SearchResultCard({
           salesStrategy: lead.salesStrategy,
         },
         scenario: 'direct_quote',
+        /* 小语种同步翻译：按线索国家推导官方语言，非英文客户生成对应语言开发信 */
+        language: inferCountryLanguage(lead.country),
       })
       const subject = String(response?.emailSubject || '').trim()
       const body = String(response?.emailBody || response?.content || '').trim()

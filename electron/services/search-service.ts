@@ -92,6 +92,57 @@ type SearchIntentMutation = {
   localizedKeywords?: Record<string, string[]>
 }
 
+/* 邮件生成目标语言的显示标签（ISO 639-1 → 语言名），供 prompt 与前端使用 */
+export const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  zh: 'Chinese',
+  de: 'German',
+  fr: 'French',
+  es: 'Spanish',
+  it: 'Italian',
+  ja: 'Japanese',
+  ko: 'Korean',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  nl: 'Dutch',
+  pl: 'Polish',
+  tr: 'Turkish',
+  vi: 'Vietnamese',
+  th: 'Thai',
+  id: 'Indonesian',
+  ms: 'Malay',
+  ar: 'Arabic',
+  sv: 'Swedish',
+  da: 'Danish',
+  no: 'Norwegian',
+  fi: 'Finnish',
+  cs: 'Czech',
+  el: 'Greek',
+  hu: 'Hungarian',
+  ro: 'Romanian',
+  uk: 'Ukrainian',
+  he: 'Hebrew',
+  hi: 'Hindi',
+}
+
+/* 按国家解析邮件目标语言：优先显式 language，缺省取国家官方语言（非英文
+   返回首个非 en 语言，英文国家回 en）；无法推导回退 en。 */
+const resolveEmailLanguage = (country?: string, explicitLanguage?: string): string => {
+  const explicit = String(explicitLanguage || '')
+    .trim()
+    .toLowerCase()
+  if (explicit && LANGUAGE_LABELS[explicit]) return explicit
+  if (explicit) return explicit // 合法 ISO 但未在标签表，仍透传
+  const langs =
+    COUNTRY_LANGUAGE_MAP[
+      String(country || '')
+        .trim()
+        .toLowerCase()
+    ] || []
+  const nonEnglish = langs.find((l) => l !== 'en')
+  return nonEnglish || 'en'
+}
+
 const COUNTRY_LANGUAGE_MAP: Record<string, string[]> = {
   germany: ['de', 'en'],
   france: ['fr', 'en'],
@@ -1462,8 +1513,20 @@ const buildUniversalIcpPrompt = (userConfig?: {
   )
 }
 
-const buildAnalysisSystemPrompt = (knowledgeBaseText: string) =>
-  mergePromptParts(
+const buildAnalysisSystemPrompt = (knowledgeBaseText: string, emailLanguage = 'en') => {
+  const langLabel = LANGUAGE_LABELS[emailLanguage] || emailLanguage
+  const emailLangInstr =
+    emailLanguage === 'en'
+      ? [
+          'emailSubject must be a concise high-open-rate English subject line. ',
+          'emailBody must be a professional English cold email body tailored to the target company, without markdown. ',
+        ]
+      : [
+          `emailSubject must be a concise high-open-rate subject line written in ${langLabel}. `,
+          `emailBody must be a professional cold email body written in ${langLabel}, tailored to the target company, without markdown. `,
+          'Keep companyProfile/painPoints/valueMapping analysis fields in Chinese; only the email subject/body follow the target language. ',
+        ]
+  return mergePromptParts(
     'You are a world-class B2B export sales director and strategic account planner. ',
     'Your job is to analyze one target company and produce a conversion-ready outreach brief. ',
     'You must reason in three stages: 1) company profile and buying context, 2) map the customer pain points to the seller knowledge base, 3) generate a highly targeted outreach email. ',
@@ -1476,14 +1539,14 @@ const buildAnalysisSystemPrompt = (knowledgeBaseText: string) =>
     'companyProfile must summarize company scale cues, core business model, target market, and likely buying role in Chinese. ',
     "painPoints must infer the customer's likely operational or commercial pain points in Chinese. ",
     'valueMapping must explicitly map which seller advantage/product/knowledge point solves which customer pain point in Chinese. ',
-    'emailSubject must be a concise high-open-rate English subject line. ',
-    'emailBody must be a professional English cold email body tailored to the target company, without markdown. ',
+    ...emailLangInstr,
     'confidence must be an integer from 0 to 100. ',
     'Keep static reasoning rules here; dynamic company and website data will be passed separately.\n\n',
     '[KNOWLEDGE BASE DATA:\n',
     knowledgeBaseText,
     '\n]',
   )
+}
 
 const buildReplyCoachSystemPrompt = () =>
   mergePromptParts(
@@ -1962,6 +2025,7 @@ const buildAnalysisPrompt = (payload: {
   }
   scenario: 'direct_quote' | 'competitor_switch' | 'factory_strength'
   websiteText: string
+  language?: string
 }) => {
   const scenarioMap = {
     direct_quote: 'Direct Quote Entry',
@@ -1977,7 +2041,7 @@ const buildAnalysisPrompt = (payload: {
         .join('\n\n')
     : '暂无知识库内容，请仅基于线索与网站信息分析。'
   return {
-    system: buildAnalysisSystemPrompt(knowledgeBaseText),
+    system: buildAnalysisSystemPrompt(knowledgeBaseText, payload.language || 'en'),
     user: JSON.stringify({
       scenario: scenarioMap[payload.scenario],
       icpProfile: payload.icpProfile,
@@ -3347,6 +3411,8 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           customerText?: string
         }
         scenario: string
+        /* 邮件目标语言（ISO 639-1），缺省按 lead.country 推导官方语言 */
+        language?: string
       },
     ) => {
       try {
@@ -3480,12 +3546,15 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         const knowledgeBase = pickRelevantKnowledgeEntries(knowledgeBaseEntries, scenario, 5)
         const usedKnowledgeTitles = knowledgeBase.map((entry) => entry.title).filter(Boolean)
 
+        /* 小语种同步翻译：缺省按 lead.country 推导官方语言，显式 language 优先 */
+        const emailLanguage = resolveEmailLanguage(lead.country, payload?.language)
         const { system, user } = buildAnalysisPrompt({
           knowledgeBase,
           icpProfile: userConfig?.icpProfile || {},
           lead,
           scenario,
           websiteText,
+          language: emailLanguage,
         })
 
         probeLlmRequest(llmBaseUrl)
