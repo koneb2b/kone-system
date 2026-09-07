@@ -296,10 +296,16 @@ export function BaseSettingsTab({
   }
 
   const handleFetchModels = async (api: ApiKeyConfig) => {
+    /* 密钥加密存于 secret-manager，前端 drafts.key 恒为空串（hydrateConfigs 强制
+       key:''）。因此不能要求 apiKey 非空——后端 fetch-models handler 有
+       getUserLlmApiKey(store) fallback 能取回已保存密钥；只有 baseUrl 必填。 */
     const apiKey = drafts[api.id]?.key?.trim() || ''
     const baseUrl = drafts[api.id]?.baseUrl?.trim() || ''
 
-    if (!apiKey || !baseUrl) return
+    if (!baseUrl) {
+      toast({ title: '识别模型失败', description: '请先填写 LLM Base URL', variant: 'destructive' })
+      return
+    }
 
     setFetchingModels(true)
 
