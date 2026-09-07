@@ -1,8 +1,11 @@
 'use client'
 
-import { Check, AlertTriangle, Radar } from 'lucide-react'
+import { useState } from 'react'
+import { Check, AlertTriangle, Radar, Mail, Loader2, Copy, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useToast } from '@/hooks/use-toast'
+import { analysisGenerate } from '@/lib/electron-api'
 import { stableHash } from '@/lib/utils'
 import type { LeadSearchResult } from '@/store/leads-store'
 
@@ -75,6 +78,62 @@ export function SearchResultCard({
   onSaveLead,
   onCloudSendHint,
 }: SearchResultCardProps) {
+  const { toast } = useToast()
+  const [generatingEmail, setGeneratingEmail] = useState(false)
+  const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  /* 针对性开发信一键生成（个性化输出）：基于该线索真实情报（角色/跟进建议/
+     风险/官网/行业）调用 LLM 生成 subject + body，就地展示可复制。 */
+  const handleGenerateEmail = async () => {
+    if (generatingEmail) return
+    setGeneratingEmail(true)
+    try {
+      const response = await analysisGenerate({
+        lead: {
+          company: lead.company,
+          industry: lead.industry,
+          country: lead.country,
+          website: lead.website,
+          address: lead.address,
+          phone: lead.phone,
+          contact: lead.contact,
+          contactTitle: lead.contactTitle,
+          snippet: lead.snippet,
+          matchReasons: lead.matchReasons,
+          riskFlags: lead.riskFlags,
+          inferredRole: lead.inferredRole,
+          source: lead.source,
+          salesStrategy: lead.salesStrategy,
+        },
+        scenario: 'direct_quote',
+      })
+      const subject = String(response?.emailSubject || '').trim()
+      const body = String(response?.emailBody || response?.content || '').trim()
+      if (!body) throw new Error('AI 生成失败')
+      setEmailDraft({ subject, body })
+    } catch (error) {
+      toast({
+        title: '生成开发信失败',
+        description: error instanceof Error ? error.message : 'AI 生成失败',
+        variant: 'destructive',
+      })
+    } finally {
+      setGeneratingEmail(false)
+    }
+  }
+
+  const handleCopyEmail = async () => {
+    const text = `${emailDraft?.subject || ''}\n\n${emailDraft?.body || ''}`
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast({ title: '复制失败', description: '无法访问剪贴板，请手动复制', variant: 'destructive' })
+    }
+  }
+
   return (
     <div
       key={stableHash(`${lead.id}-${index}`)}
@@ -220,6 +279,18 @@ export function SearchResultCard({
         <div className="flex items-center gap-2">
           <Button
             size="sm"
+            variant="outline"
+            className="text-xs gap-1.5"
+            onClick={handleGenerateEmail}
+            disabled={generatingEmail}
+            isLoading={generatingEmail}
+            data-testid="btn-gen-email"
+          >
+            {!generatingEmail ? <Mail className="size-3.5" /> : <Loader2 className="size-3.5 animate-spin" />}
+            {generatingEmail ? '生成中...' : emailDraft ? '重新生成' : '生成开发信'}
+          </Button>
+          <Button
+            size="sm"
             className="bg-blue-600 text-white hover:bg-blue-700 transition-all"
             data-testid="btn-save-lead"
             disabled={savingLeadId === lead.id || savedLeadIds.has(lead.id)}
@@ -233,6 +304,29 @@ export function SearchResultCard({
           </Button>
         </div>
       </div>
+      {emailDraft ? (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-3.5 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-900">
+              <Mail className="size-3.5" />
+              针对性开发信
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] gap-1" onClick={handleCopyEmail}>
+                {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+                {copied ? '已复制' : '复制'}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEmailDraft(null)}>
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 text-xs font-medium text-slate-800">主题：{emailDraft.subject || '（无主题）'}</div>
+          <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600 max-h-44 overflow-y-auto">
+            {emailDraft.body}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1728,6 +1728,7 @@ const enrichLeadWithDeepProbe = async (payload: {
   country?: string
   googleKey: string
   icpProfile?: { targetProduct?: string; buyerPersona?: string; coreAdvantage?: string; negativeIcp?: string }
+  skipLlmProbe?: boolean
 }) => {
   const website = normalizeWebsiteUrl(payload.candidate.website)
   const snippet = String(payload.candidate.snippet || '').trim()
@@ -1742,7 +1743,9 @@ const enrichLeadWithDeepProbe = async (payload: {
   )
 
   let llmInferred: Record<string, unknown> | null = null
-  if (website && payload.llmEndpoint && payload.llmKey) {
+  /* skipLlmProbe：LLM 服务熔断时跳过 LLM 深探，但保留官网抓取（邮箱/电话
+     提取独立于 LLM，仍有价值），避免熔断后连官网信息也丢掉 */
+  if (!payload.skipLlmProbe && website && payload.llmEndpoint && payload.llmKey) {
     const { system, user } = buildDeepProbePrompt({
       company: String(payload.candidate.company || '').trim(),
       website,
@@ -3090,19 +3093,36 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
         const cleanedResults: SearchExecuteResult[] = []
         let completedCount = 0
-        /* LLM 持续失败快速降级：连续失败达到阈值即熔断，剩余线索直接走确定性
-           兜底（诚实标注 deterministic），避免 50 条逐条等满超时拖垮整体进度。
-           LLM 服务恢复后下次搜索自动回到全量 AI 评分。 */
-        const LLM_FAILURE_CIRCUIT_THRESHOLD = 5
-        let llmFailureStreak = 0
+        /* LLM 持续失败快速降级（v2）：
+           - 失败率滑动窗口（最近 10 次请求中网络失败 ≥ 50%）触发熔断，替代早期
+             "连续失败 5 次"——对 LLM 偶发抖动更宽容，避免误伤整轮评分
+           - 仅"服务不可达"类失败（网络/超时/5xx）计入窗口；HTTP 4xx（key 无效
+             等配置错误）直接兜底提示、不熔断；LLM 200 但内容解析失败视为
+             "可达"，不进失败窗口
+           - 熔断后剩余线索走确定性兜底（诚实标注），LLM 恢复后下次搜索自动
+             回到全量 AI 评分 */
+        const CIRCUIT_WINDOW = 10
+        const CIRCUIT_FAIL_RATE = 0.5
+        const recentOutcomes: boolean[] = []
         let llmCircuitOpen = false
+        const recordOutcome = (ok: boolean): boolean => {
+          recentOutcomes.push(ok)
+          if (recentOutcomes.length > CIRCUIT_WINDOW) recentOutcomes.shift()
+          if (recentOutcomes.length < CIRCUIT_WINDOW) return false
+          const fails = recentOutcomes.filter((o) => !o).length
+          return fails / recentOutcomes.length >= CIRCUIT_FAIL_RATE
+        }
+        const isServiceUnavailableError = (error: unknown): boolean =>
+          isTimeoutError(error) ||
+          (typeof (error as { status?: unknown })?.status === 'number' &&
+            Number((error as { status?: unknown }).status) >= 500)
         await runLimitedConcurrency(leadsForScoring, SEARCH_LLM_CONCURRENCY, async (candidate, index) => {
           if (myJobId !== activeJobIdFor()) return
           if (llmCircuitOpen) {
             const fallbackLead = applySchemaDefaults({
               ...candidate,
               scoreSource: 'deterministic',
-              matchReasons: ['AI 评估服务不可达，已降级为基础评分'],
+              matchReasons: ['AI 评估服务持续不可达，已降级为基础评分'],
               riskFlags: ['官网访问超时或 AI 评估失败'],
             })
             cleanedResults[index] = fallbackLead
@@ -3153,11 +3173,12 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
             const llmJson: any = await llmResponse.json().catch(() => ({}))
             const scoredLead = mergeLlmResultsWithCandidates([candidate], extractLlmResults(llmJson))[0]
-            /* P1-1 置信标识：LLM 评分成功 → ai；评分失败走模板兜底 → deterministic */
+            /* P1-1 置信标识：LLM 评分成功 → ai；评分失败走模板兜底 → deterministic。
+               LLM 可达（200 且可解析）即记成功——即使未解析出结构化分也不计失败窗口 */
+            recordOutcome(true)
             const nextLead = scoredLead
               ? applySchemaDefaults({ ...scoredLead, scoreSource: 'ai' })
               : applySchemaDefaults({ ...candidate, scoreSource: 'deterministic' })
-            if (scoredLead) llmFailureStreak = 0
             cleanedResults[index] = nextLead
             completedCount += 1
             emitLeadScored(_event.sender, nextLead, completedCount, leadsForScoring.length)
@@ -3170,11 +3191,13 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               error instanceof Error ? error.message : String(error || ''),
               error instanceof Error ? error.stack : '',
             )
-            llmFailureStreak += 1
-            if (!llmCircuitOpen && llmFailureStreak >= LLM_FAILURE_CIRCUIT_THRESHOLD) {
+            /* 仅服务不可达类失败（网络/超时/5xx）计入失败窗口；HTTP 4xx 为配置
+               错误不熔断（每次都会快速兜底提示），避免误伤整轮评分 */
+            if (isServiceUnavailableError(error) && !llmCircuitOpen && recordOutcome(false)) {
               llmCircuitOpen = true
               probeError('[Probe-LLM] Failure circuit opened:', {
-                threshold: LLM_FAILURE_CIRCUIT_THRESHOLD,
+                window: CIRCUIT_WINDOW,
+                failRate: CIRCUIT_FAIL_RATE,
                 remaining: leadsForScoring.length - completedCount,
               })
               emitStage(_event.sender, 'scoring', 'AI 评估服务持续不可达，剩余线索已降级为基础评分')
@@ -3202,12 +3225,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
           await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
             if (myJobId !== activeJobIdFor()) return
-            /* 熔断联动：LLM 服务不可达时跳过官网深探（其依赖 LLM 补充分析），
-               直接保留确定性评分结果，避免二次等待拖慢整体进度 */
-            if (llmCircuitOpen) {
-              enrichedResults[index] = applySchemaDefaults(baseResults[index])
-              return
-            }
+            /* 性能/成本平衡：仅对高分线索（≥60，会进入 Agent 管道）做 LLM 深探；
+               低分线索只做官网抓取（邮箱/电话提取独立于 LLM，仍有价值）。
+               熔断时同样跳过 LLM 深探但保留官网抓取。 */
+            const highValue = typeof item.matchScore === 'number' && item.matchScore >= 60
+            const skipLlmProbe = llmCircuitOpen || !highValue
             try {
               const enriched = await withTimeoutGuard(
                 enrichLeadWithDeepProbe({
@@ -3220,6 +3242,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                   country,
                   googleKey,
                   icpProfile: userConfig?.icpProfile || undefined,
+                  skipLlmProbe,
                 }),
                 llmTimeoutMs,
                 `Enrich lead ${item.company || item.website || index}`,
