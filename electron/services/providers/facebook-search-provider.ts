@@ -6,6 +6,7 @@ import {
   type ProviderExecuteResult,
   type ProviderResult,
 } from '../provider-registry'
+import { getSerpApiCached, setSerpApiCached } from '../serpapi-cache'
 
 const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 const FETCH_LIMIT = 50
@@ -64,6 +65,15 @@ export class FacebookSearchProvider implements SearchProvider {
       for (let page = 0; page < 2; page++) {
         // Use SerpApi Facebook search engine
         const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(`site:facebook.com ${keyword}`)}&api_key=${encodeURIComponent(googleKey)}&start=${page * 10}&num=${FETCH_LIMIT}`
+
+        // 成本优化（P0）：缓存命中直接复用，不再消耗 SerpApi 额度。
+        const cached = getSerpApiCached(url)
+        if (cached !== undefined) {
+          const cachedResults = Array.isArray((cached as any)?.organic_results) ? (cached as any).organic_results : []
+          results.push(...cachedResults.map(normalizeFacebookResult))
+          break
+        }
+
         const response = await fetchWithRetry(url, { method: 'GET' }, getDefaultSerpApiTimeoutMs(timeoutMs || 30000), {
           retries: 2,
           shouldRetry: (res: Response | null, err: unknown) => {
@@ -75,9 +85,12 @@ export class FacebookSearchProvider implements SearchProvider {
         if (!response.ok) break
         const rawText = await response.text()
         const json = rawText ? JSON.parse(rawText) : {}
+        setSerpApiCached(url, json)
         const pageResults = Array.isArray(json?.organic_results) ? json.organic_results : []
 
         results.push(...pageResults.map(normalizeFacebookResult))
+        // 成本优化（P0）：命中即停——第一页已有结果不再翻第二页。
+        if (page === 0 && pageResults.length > 0) break
         if (pageResults.length === 0 || results.length >= FETCH_LIMIT) break
       }
 

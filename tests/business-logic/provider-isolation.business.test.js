@@ -52,9 +52,18 @@ const loadProvider = (providerPath, fetchMock, activeJobId = ACTIVE_JOB_ID, runn
       },
       // Provider 通过 `await import('../search-service')` 做时间隔离判断
       '../search-service': { isKnownActiveJobId: (id) => id === activeJobId },
+      // 成本优化（P0）：serpapi-cache 是真实共享单例，测试必须隔离为空缓存，
+      // 否则前序测试写入的 URL 缓存会污染后序"非 200 隔离"等断言。
+      '../serpapi-cache': {
+        getSerpApiCached: () => undefined,
+        setSerpApiCached: () => {},
+        getSerpApiCacheStats: () => ({ hits: 0, misses: 0, size: 0 }),
+        clearSerpApiCache: () => {},
+      },
       // 编译产物会 require('proxy-service')（无相对前缀的 CJS 解析）
       'proxy-service': null,
       'search-service': null,
+      'serpapi-cache': null,
     },
     async () => {
       resetModule(providerPath)

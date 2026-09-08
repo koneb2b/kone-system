@@ -6,9 +6,12 @@ import {
   type ProviderExecuteResult,
   type ProviderResult,
 } from '../provider-registry'
+import { getSerpApiCached, setSerpApiCached } from '../serpapi-cache'
 
 const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 const FETCH_LIMIT = 50
+/** 成本优化（P0）：命中即停阈值——单站点拿到 ≥ 该数量结果即视为命中，不再请求后续站点 */
+const SITE_HIT_STOP_THRESHOLD = 3
 const TRADE_SHOW_SITES = [
   'site:10times.com',
   'site:trade-show.trade-events.com',
@@ -103,6 +106,16 @@ export class TradeShowProvider implements SearchProvider {
       for (const site of TRADE_SHOW_SITES) {
         if (results.length >= FETCH_LIMIT) break
         const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(`${site} ${keyword}`)}&api_key=${encodeURIComponent(googleKey)}&num=10`
+
+        // 成本优化（P0）：缓存命中直接复用，不再消耗 SerpApi 额度。
+        const cached = getSerpApiCached(url)
+        if (cached !== undefined) {
+          const cachedResults = Array.isArray((cached as any)?.organic_results) ? (cached as any).organic_results : []
+          results.push(...cachedResults.map((r: SerpApiOrganicItem) => normalizeTradeShowResult(r, site)))
+          if (results.length >= SITE_HIT_STOP_THRESHOLD) break
+          continue
+        }
+
         const response = await fetchWithRetry(url, { method: 'GET' }, getDefaultSerpApiTimeoutMs(timeoutMs || 30000), {
           retries: 1,
           shouldRetry: (res: Response | null, err: unknown) => {
@@ -114,8 +127,12 @@ export class TradeShowProvider implements SearchProvider {
         if (!response.ok) continue
         const rawText = await response.text()
         const json = rawText ? JSON.parse(rawText) : {}
+        setSerpApiCached(url, json)
         const pageResults = Array.isArray(json?.organic_results) ? json.organic_results : []
         results.push(...pageResults.map((r: SerpApiOrganicItem) => normalizeTradeShowResult(r, site)))
+        // 成本优化（P0）：命中即停——某站点已有足量结果即不再请求剩余站点，
+        // 站点调用从 4 次收敛为通常 1~2 次。
+        if (results.length >= SITE_HIT_STOP_THRESHOLD) break
       }
 
       return { results }
