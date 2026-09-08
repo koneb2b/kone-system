@@ -52,13 +52,25 @@ const licenseServiceMock = {
 
 Module._load = function mockLoad(request, parent, isMain) {
   if (request === 'electron') return electronMock
-  if (request === './secret-manager' && parent && /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)) {
+  if (
+    request === './secret-manager' &&
+    parent &&
+    /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)
+  ) {
     return secretManagerMock
   }
-  if (request === './secret-manager' && parent && /electron[\\/]services[\\/]config-service\.js$/.test(parent.filename)) {
+  if (
+    request === './secret-manager' &&
+    parent &&
+    /electron[\\/]services[\\/]config-service\.js$/.test(parent.filename)
+  ) {
     return secretManagerMock
   }
-  if (request === './license-service' && parent && /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)) {
+  if (
+    request === './license-service' &&
+    parent &&
+    /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)
+  ) {
     return licenseServiceMock
   }
   return originalLoad.call(this, request, parent, isMain)
@@ -96,9 +108,10 @@ const textResponse = (status, text) => ({
   },
 })
 
-const llmResponse = (payload) => jsonResponse(200, {
-  choices: [{ message: { content: JSON.stringify(payload) } }],
-})
+const llmResponse = (payload) =>
+  jsonResponse(200, {
+    choices: [{ message: { content: JSON.stringify(payload) } }],
+  })
 
 const createStore = () => ({
   values: {
@@ -143,6 +156,13 @@ const resetState = () => {
   observedQueries.length = 0
   senderEvents.length = 0
   handlers.clear()
+  // P0 成本优化：serpapi-cache 是共享单例，测试场景间必须清缓存，
+  // 否则前序场景写入的 URL 响应会污染后序场景的 mock 断言。
+  try {
+    require('../../dist-electron/electron/services/serpapi-cache.js').clearSerpApiCache()
+  } catch {
+    // dist 未编译时静默跳过
+  }
 }
 
 const assert403ErrorShapes = () => {
@@ -212,9 +232,7 @@ test('A: 官网 403 触发社交源查询并标记 social_blind_score', async ()
         }
         if (query.includes('site:kompass.com')) {
           return jsonResponse(200, {
-            organic_results: [
-              { title: 'Blocked Parts Co - Kompass', snippet: 'B2B industrial supplier profile' },
-            ],
+            organic_results: [{ title: 'Blocked Parts Co - Kompass', snippet: 'B2B industrial supplier profile' }],
           })
         }
         if (query.includes('site:europages.com')) {
@@ -228,7 +246,11 @@ test('A: 官网 403 触发社交源查询并标记 social_blind_score', async ()
       }
     }
 
-    if (target === 'https://blocked.example' || target === 'https://blocked.example/contact' || target === 'https://blocked.example/contact-us') {
+    if (
+      target === 'https://blocked.example' ||
+      target === 'https://blocked.example/contact' ||
+      target === 'https://blocked.example/contact-us'
+    ) {
       return textResponse(403, 'forbidden')
     }
 
@@ -323,7 +345,11 @@ test('B: 社交源全部为空时仍优雅降级并完成流闭环', async () =>
       }
     }
 
-    if (target === 'https://blocked.example' || target === 'https://blocked.example/contact' || target === 'https://blocked.example/contact-us') {
+    if (
+      target === 'https://blocked.example' ||
+      target === 'https://blocked.example/contact' ||
+      target === 'https://blocked.example/contact-us'
+    ) {
       return textResponse(403, 'forbidden')
     }
 
@@ -364,16 +390,17 @@ test('B: 社交源全部为空时仍优雅降级并完成流闭环', async () =>
 
   assert.equal(result.success, true)
   assert.ok(Array.isArray(result.data.results))
-  assert.ok(
-    (result.data.results[0].matchReasons || []).includes('⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）'),
-  )
+  assert.ok((result.data.results[0].matchReasons || []).includes('⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）'))
 
   const completedEvent = senderEvents.find((event) => event.channel === IPC_CHANNELS.SEARCH.STREAM_COMPLETE)
   assert.ok(completedEvent)
 })
 
 test('C: 三级降级链路 location 400 -> keyword fallback -> organic', async () => {
-  const { resolveSerpSearchPlan, normalizeSearchResponseCandidates } = require('../../dist-electron/electron/services/search-service.js')
+  const {
+    resolveSerpSearchPlan,
+    normalizeSearchResponseCandidates,
+  } = require('../../dist-electron/electron/services/search-service.js')
 
   const stageEvents = []
   const calls = []

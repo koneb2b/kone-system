@@ -33,6 +33,8 @@ import { buildAgentTaskQueue, withPipelineIsolation } from './agent-pipeline'
 import { stageAgentsFromPipeline } from './agent-service'
 import { getOrCreateProviderRegistry } from './provider-service'
 import type { ProviderQuery, ProviderResult } from './provider-registry'
+import { getSerpApiCached, setSerpApiCached } from './serpapi-cache'
+import { buildLlmScoreCacheKey, getLlmScoreCached, setLlmScoreCached } from './llm-score-cache'
 
 type SearchExecutePayload = {
   keyword: string
@@ -1726,7 +1728,25 @@ const buildSocialFallbackQueries = (company: string, country?: string) => [
 ]
 
 const fetchSocialFallbackSnippet = async (query: string, googleKey: string, timeoutMs: number) => {
-  const response = await fetchSerpApiWithRetry(buildSerpApiOrganicEndpoint(query, googleKey), timeoutMs)
+  const url = buildSerpApiOrganicEndpoint(query, googleKey)
+
+  // 成本优化（P0）：403 盲评兜底查询同样走缓存，避免重复烧额度。
+  const cached = getSerpApiCached(url)
+  if (cached !== undefined) {
+    const cachedOrganic = Array.isArray((cached as any)?.organic_results) ? (cached as any).organic_results : []
+    return sanitizePlainText(
+      cachedOrganic
+        .slice(0, 3)
+        .map((item: any) =>
+          [String(item?.title || '').trim(), String(item?.snippet || '').trim()].filter(Boolean).join(' - '),
+        )
+        .filter(Boolean)
+        .join(' '),
+      900,
+    )
+  }
+
+  const response = await fetchSerpApiWithRetry(url, timeoutMs)
   const rawText = await response.text()
   probeLog('[Probe-403-Fallback] SerpApi social query status:', {
     query,
@@ -1743,6 +1763,8 @@ const fetchSocialFallbackSnippet = async (query: string, googleKey: string, time
   } catch {
     parsed = null
   }
+
+  if (parsed !== null) setSerpApiCached(url, parsed)
 
   const organicResults = Array.isArray(parsed?.organic_results) ? parsed.organic_results : []
   return sanitizePlainText(
@@ -2667,6 +2689,24 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               const pageEndpoint = useOrganic
                 ? buildSerpApiOrganicEndpoint(modeQuery, googleKey, page * 10)
                 : buildSerpApiMapsEndpoint(modeQuery, googleKey, modeLocation, page * 20)
+
+              // 成本优化（P0）：先查内存缓存——同一关键词/位置/分页组合在
+              // 一次会话内多次搜索（如调整 ICP 后重搜）命中时不再消耗 SerpApi 额度。
+              const cachedJson = getSerpApiCached(pageEndpoint)
+              if (cachedJson !== undefined) {
+                nextOrganic.push(
+                  ...(Array.isArray((cachedJson as any)?.organic_results) ? (cachedJson as any).organic_results : []),
+                )
+                nextLocal.push(
+                  ...(Array.isArray((cachedJson as any)?.local_results)
+                    ? (cachedJson as any).local_results
+                    : Array.isArray((cachedJson as any)?.local_results?.places)
+                      ? (cachedJson as any).local_results.places
+                      : []),
+                )
+                break
+              }
+
               const searchResponse = await fetchSerpApiWithRetry(pageEndpoint, timeoutMs)
 
               const rawText = await searchResponse.text()
@@ -2702,6 +2742,10 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                 throw new Error('SerpApi 响应解析失败，请检查查询参数或稍后重试')
               }
 
+              // 成本优化（P0）：仅缓存 HTTP 200 的成功响应；失败/降级响应不入缓存，
+              // 避免把"当前被限流/降级"的状态错误复用到后续搜索。
+              setSerpApiCached(pageEndpoint, searchJson)
+
               const pageOrganic = Array.isArray(searchJson?.organic_results) ? searchJson.organic_results : []
               const pageLocal = useOrganic
                 ? []
@@ -2714,6 +2758,9 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               nextOrganic.push(...pageOrganic)
               nextLocal.push(...pageLocal)
 
+              // 成本优化（P0）：命中即停——第一页已有结果就不再翻第二页，
+              // 单次搜索的 SerpApi 页调用从 2 次收敛为 1 次。
+              if (page === 0 && (pageLocal.length > 0 || pageOrganic.length > 0)) break
               if (!useOrganic && pageLocal.length === 0) break
               if (useOrganic && pageOrganic.length === 0) break
               if (nextLocal.length >= SEARCH_CHANNEL_FETCH_LIMIT || nextOrganic.length >= SEARCH_CHANNEL_FETCH_LIMIT)
@@ -3194,7 +3241,29 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             emitLeadScored(_event.sender, fallbackLead, completedCount, leadsForScoring.length)
             return
           }
+          /* P0 成本优化：评分缓存——同 ICP + 同关键词 + 同公司 24h 内复用评分结果，
+             命中时跳过 LLM 调用（零网络等待、进度条照常推进）。ICP 或关键词
+             变化自动换 key，不会跨评估上下文误用旧评分。key 提升到 try 外以便
+             catch 分支记录诊断信息。 */
+          const scoreCacheKey = buildLlmScoreCacheKey(userConfig?.icpProfile || undefined, scoringKeyword, candidate)
           try {
+            const cachedLlmResult = getLlmScoreCached<SearchExecuteResult[]>(scoreCacheKey)
+            if (Array.isArray(cachedLlmResult) && cachedLlmResult.length > 0) {
+              probeLog('[Probe-LLM-Cache] Score cache hit:', {
+                company: candidate.company,
+                website: candidate.website,
+                key: scoreCacheKey,
+              })
+              const cachedScoredLead = mergeLlmResultsWithCandidates([candidate], cachedLlmResult)[0]
+              recordOutcome(true)
+              const nextLead = cachedScoredLead
+                ? applySchemaDefaults({ ...cachedScoredLead, scoreSource: 'ai' })
+                : applySchemaDefaults({ ...candidate, scoreSource: 'deterministic' })
+              cleanedResults[index] = nextLead
+              completedCount += 1
+              emitLeadScored(_event.sender, nextLead, completedCount, leadsForScoring.length)
+              return
+            }
             probeLog('[Probe-LLM] Scoring candidate:', {
               index,
               company: candidate.company,
@@ -3236,7 +3305,14 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             if (!llmResponse.ok) throw new Error(mapHttpError(llmResponse.status, 'LLM'))
 
             const llmJson: any = await llmResponse.json().catch(() => ({}))
-            const scoredLead = mergeLlmResultsWithCandidates([candidate], extractLlmResults(llmJson))[0]
+            const llmResults = extractLlmResults(llmJson)
+            /* P0 成本优化：评分成功即写入缓存（同 ICP+关键词+公司 24h 复用），
+               仅缓存 LLM 语义字段（extractLlmResults 输出），不含线索 UUID；
+               命中时走完全相同的 merge/applySchemaDefaults 路径，口径零差异。 */
+            if (Array.isArray(llmResults) && llmResults.length > 0) {
+              setLlmScoreCached(scoreCacheKey, llmResults)
+            }
+            const scoredLead = mergeLlmResultsWithCandidates([candidate], llmResults)[0]
             /* P1-1 置信标识：LLM 评分成功 → ai；评分失败走模板兜底 → deterministic。
                LLM 可达（200 且可解析）即记成功——即使未解析出结构化分也不计失败窗口 */
             recordOutcome(true)
@@ -3255,6 +3331,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               error instanceof Error ? error.message : String(error || ''),
               error instanceof Error ? error.stack : '',
             )
+            probeLog('[Probe-LLM-Error-Ctx] Cache key:', scoreCacheKey)
             /* 仅服务不可达类失败（网络/超时/5xx）计入失败窗口；HTTP 4xx 为配置
                错误不熔断（每次都会快速兜底提示），避免误伤整轮评分 */
             if (isServiceUnavailableError(error) && !llmCircuitOpen && recordOutcome(false)) {

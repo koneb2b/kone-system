@@ -53,13 +53,25 @@ const licenseServiceMock = {
 
 Module._load = function mockLoad(request, parent, isMain) {
   if (request === 'electron') return electronMock
-  if (request === './secret-manager' && parent && /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)) {
+  if (
+    request === './secret-manager' &&
+    parent &&
+    /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)
+  ) {
     return secretManagerMock
   }
-  if (request === './secret-manager' && parent && /electron[\\/]services[\\/]config-service\.js$/.test(parent.filename)) {
+  if (
+    request === './secret-manager' &&
+    parent &&
+    /electron[\\/]services[\\/]config-service\.js$/.test(parent.filename)
+  ) {
     return secretManagerMock
   }
-  if (request === './license-service' && parent && /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)) {
+  if (
+    request === './license-service' &&
+    parent &&
+    /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)
+  ) {
     return licenseServiceMock
   }
   return originalLoad.call(this, request, parent, isMain)
@@ -97,9 +109,10 @@ const textResponse = (status, text) => ({
   },
 })
 
-const llmResponse = (payload) => jsonResponse(200, {
-  choices: [{ message: { content: JSON.stringify(payload) } }],
-})
+const llmResponse = (payload) =>
+  jsonResponse(200, {
+    choices: [{ message: { content: JSON.stringify(payload) } }],
+  })
 
 const parseLlmUserPayload = (options) => {
   try {
@@ -149,6 +162,13 @@ const createStore = () => ({
 const executeSearch = async (payload) => {
   senderEvents.length = 0
   handlers.clear()
+  // P0 成本优化：serpapi-cache 是共享单例，每个场景执行前必须清缓存，
+  // 否则前序场景写入的 URL 响应会污染后序场景的 mock 断言。
+  try {
+    require('../../dist-electron/electron/services/serpapi-cache.js').clearSerpApiCache()
+  } catch {
+    // dist 未编译时静默跳过
+  }
 
   const { registerSearchHandlers } = require('../../dist-electron/electron/services/search-service.js')
   const { IPC_CHANNELS } = require('../../dist-electron/electron/ipc/channels.js')
@@ -165,18 +185,21 @@ const executeSearch = async (payload) => {
   const executeHandler = handlers.get(IPC_CHANNELS.SEARCH.EXECUTE)
   assert.equal(typeof executeHandler, 'function')
 
-  const result = await executeHandler({
-    sender: {
-      send(channel, eventPayload) {
-        senderEvents.push({ channel, payload: eventPayload })
+  const result = await executeHandler(
+    {
+      sender: {
+        send(channel, eventPayload) {
+          senderEvents.push({ channel, payload: eventPayload })
+        },
       },
     },
-  }, {
-    keyword: payload.keyword || 'Industrial battery dealer',
-    country: payload.country || 'Germany',
-    city: payload.city || '',
-    filterOptions: {},
-  })
+    {
+      keyword: payload.keyword || 'Industrial battery dealer',
+      country: payload.country || 'Germany',
+      city: payload.city || '',
+      filterOptions: {},
+    },
+  )
 
   return { result, IPC_CHANNELS }
 }
@@ -197,7 +220,11 @@ const createScenario = (overrides = {}) => ({
     throw new Error(`Unexpected SerpApi engine: ${engine || ''}`)
   },
   website(target) {
-    if (target === 'https://target.example' || target === 'https://target.example/contact' || target === 'https://target.example/contact-us') {
+    if (
+      target === 'https://target.example' ||
+      target === 'https://target.example/contact' ||
+      target === 'https://target.example/contact-us'
+    ) {
       throw new Error('network timeout')
     }
     throw new Error(`Unexpected website target: ${target}`)
@@ -207,15 +234,17 @@ const createScenario = (overrides = {}) => ({
 
     if (userPayload && userPayload.mode === 'snippet_fallback') {
       return llmResponse({
-        results: [{
-          company: 'Target Battery Co',
-          website: 'https://target.example',
-          totalScore: 76,
-          matchReason: '简介显示工业电池分销角色明确',
-          salesStrategy: '先沟通交付稳定性与供货节奏',
-          riskFlags: ['官网访问受限，建议人工复核'],
-          isB2B: true,
-        }],
+        results: [
+          {
+            company: 'Target Battery Co',
+            website: 'https://target.example',
+            totalScore: 76,
+            matchReason: '简介显示工业电池分销角色明确',
+            salesStrategy: '先沟通交付稳定性与供货节奏',
+            riskFlags: ['官网访问受限，建议人工复核'],
+            isB2B: true,
+          },
+        ],
       })
     }
 
@@ -224,15 +253,17 @@ const createScenario = (overrides = {}) => ({
     }
 
     return llmResponse({
-      results: [{
-        company: 'Target Battery Co',
-        website: 'https://target.example',
-        totalScore: 74,
-        matchReason: '初步信息符合工业电池分销画像',
-        salesStrategy: '优先询问采购频次与品牌偏好',
-        riskFlags: [],
-        isB2B: true,
-      }],
+      results: [
+        {
+          company: 'Target Battery Co',
+          website: 'https://target.example',
+          totalScore: 74,
+          matchReason: '初步信息符合工业电池分销画像',
+          salesStrategy: '优先询问采购频次与品牌偏好',
+          riskFlags: [],
+          isB2B: true,
+        },
+      ],
     })
   },
   ...overrides,
@@ -277,7 +308,11 @@ test('Scenario A: 官网超时触发 snippet 盲评并完成流式闭环', async
 test('Scenario B: 官网 DNS 失败触发盲评且带有风险提示', async () => {
   global.__scenario = createScenario({
     website(target) {
-      if (target === 'https://target.example' || target === 'https://target.example/contact' || target === 'https://target.example/contact-us') {
+      if (
+        target === 'https://target.example' ||
+        target === 'https://target.example/contact' ||
+        target === 'https://target.example/contact-us'
+      ) {
         throw new Error('getaddrinfo ENOTFOUND target.example')
       }
       throw new Error(`Unexpected website target: ${target}`)
@@ -298,7 +333,11 @@ test('Scenario B: 官网 DNS 失败触发盲评且带有风险提示', async () 
 test('Scenario C: 官网返回空白 HTML 时系统不崩溃且能完成', async () => {
   global.__scenario = createScenario({
     website(target) {
-      if (target === 'https://target.example' || target === 'https://target.example/contact' || target === 'https://target.example/contact-us') {
+      if (
+        target === 'https://target.example' ||
+        target === 'https://target.example/contact' ||
+        target === 'https://target.example/contact-us'
+      ) {
         return textResponse(200, '<html><body></body></html>')
       }
       throw new Error(`Unexpected website target: ${target}`)
@@ -329,7 +368,11 @@ test('Scenario D: snippet 为空且官网失败时不应死锁或抛未捕获异
       throw new Error(`Unexpected SerpApi engine: ${engine || ''}`)
     },
     website(target) {
-      if (target === 'https://target.example' || target === 'https://target.example/contact' || target === 'https://target.example/contact-us') {
+      if (
+        target === 'https://target.example' ||
+        target === 'https://target.example/contact' ||
+        target === 'https://target.example/contact-us'
+      ) {
         throw new Error('network timeout')
       }
       throw new Error(`Unexpected website target: ${target}`)
@@ -338,26 +381,30 @@ test('Scenario D: snippet 为空且官网失败时不应死锁或抛未捕获异
       const userPayload = parseLlmUserPayload(options)
       if (userPayload && userPayload.mode === 'snippet_fallback') {
         return llmResponse({
-          results: [{
-            company: 'Target Battery Co',
-            website: 'https://target.example',
-            matchReason: '信息不足，保留人工判断空间',
-            riskFlags: ['官网访问受限，建议人工复核'],
-            isB2B: true,
-          }],
+          results: [
+            {
+              company: 'Target Battery Co',
+              website: 'https://target.example',
+              matchReason: '信息不足，保留人工判断空间',
+              riskFlags: ['官网访问受限，建议人工复核'],
+              isB2B: true,
+            },
+          ],
         })
       }
       if (Object.prototype.hasOwnProperty.call(userPayload || {}, 'websiteText')) {
         return llmResponse({ outreachAngle: '' })
       }
       return llmResponse({
-        results: [{
-          company: 'Target Battery Co',
-          website: 'https://target.example',
-          matchReason: '基础信息不足，暂不输出分数',
-          riskFlags: ['官网访问受限，建议人工复核'],
-          isB2B: true,
-        }],
+        results: [
+          {
+            company: 'Target Battery Co',
+            website: 'https://target.example',
+            matchReason: '基础信息不足，暂不输出分数',
+            riskFlags: ['官网访问受限，建议人工复核'],
+            isB2B: true,
+          },
+        ],
       })
     },
   })
@@ -401,10 +448,21 @@ test('Scenario E: 正常评分与盲评并存时两条候选均应返回', async
       throw new Error(`Unexpected SerpApi engine: ${engine || ''}`)
     },
     website(target) {
-      if (target === 'https://good.example' || target === 'https://good.example/contact' || target === 'https://good.example/contact-us') {
-        return textResponse(200, '<html><head><title>Good Power GmbH</title></head><body>Industrial battery OEM and distributor contact sales@good.example</body></html>')
+      if (
+        target === 'https://good.example' ||
+        target === 'https://good.example/contact' ||
+        target === 'https://good.example/contact-us'
+      ) {
+        return textResponse(
+          200,
+          '<html><head><title>Good Power GmbH</title></head><body>Industrial battery OEM and distributor contact sales@good.example</body></html>',
+        )
       }
-      if (target === 'https://bad.example' || target === 'https://bad.example/contact' || target === 'https://bad.example/contact-us') {
+      if (
+        target === 'https://bad.example' ||
+        target === 'https://bad.example/contact' ||
+        target === 'https://bad.example/contact-us'
+      ) {
         throw new Error('network timeout')
       }
       throw new Error(`Unexpected website target: ${target}`)
@@ -414,15 +472,17 @@ test('Scenario E: 正常评分与盲评并存时两条候选均应返回', async
 
       if (userPayload && userPayload.mode === 'snippet_fallback') {
         return llmResponse({
-          results: [{
-            company: 'Bad Battery Ltd',
-            website: 'https://bad.example',
-            totalScore: 65,
-            matchReason: '仅基于简介进行轻量判断',
-            salesStrategy: '先小样测试后放量',
-            riskFlags: ['官网访问受限，建议人工复核'],
-            isB2B: true,
-          }],
+          results: [
+            {
+              company: 'Bad Battery Ltd',
+              website: 'https://bad.example',
+              totalScore: 65,
+              matchReason: '仅基于简介进行轻量判断',
+              salesStrategy: '先小样测试后放量',
+              riskFlags: ['官网访问受限，建议人工复核'],
+              isB2B: true,
+            },
+          ],
         })
       }
 
