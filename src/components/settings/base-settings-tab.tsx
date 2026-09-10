@@ -182,6 +182,44 @@ export function BaseSettingsTab({
     }
   }, [apiKeys])
 
+  /* 状态自愈（P0 体验修复）：持久化 connectionStatus 为 error 的 provider，
+     挂载时对已保存密钥做一次静默重校验。旧 error 标记可能是历史网络抖动/
+     额度耗尽时期写入的，API 已恢复时自动刷新为 connected，避免设置页长期
+     误显示"未联通"；仍失败则保持 error 不打扰用户。 */
+  useEffect(() => {
+    let cancelled = false
+
+    const revalidateStaleErrors = async () => {
+      const staleProviders = apiKeys.filter((api) => {
+        const status = connectionStatus[api.id]
+        const saved = secretState[api.id]
+        return status === 'error' && (saved?.exists || Boolean(secretKeysByProvider[api.id]))
+      })
+      if (staleProviders.length === 0) return
+
+      await Promise.all(
+        staleProviders.map(async (api) => {
+          try {
+            await testConnection({ provider: api.id, key: '', baseUrl: api.baseUrl })
+            if (!cancelled) {
+              setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'connected' }))
+              onUpdateConfig(api.id, { status: 'connected' })
+            }
+          } catch {
+            // 仍失败：保留 error 状态，等待用户手动测试连接
+          }
+        }),
+      )
+    }
+
+    void revalidateStaleErrors()
+
+    return () => {
+      cancelled = true
+    }
+    // 依赖 connectionStatus/secretState：两者就绪后触发一次自愈
+  }, [apiKeys, connectionStatus, secretState])
+
   const updateDraft = (id: string, patch: Partial<{ key: string; baseUrl: string }>) => {
     setDrafts((prev) => {
       const current = prev[id] ?? { key: '', baseUrl: '' }
