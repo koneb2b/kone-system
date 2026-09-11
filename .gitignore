@@ -24,3 +24,5 @@ gen_article2.js
 # 用户放置的品牌 logo 源文件（已拷贝进 src/ 入库，根目录原件不入库）
 /kone-logo.png
 /kone_图标Logo (1).png
+.env
+.env.*
