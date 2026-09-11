@@ -152,7 +152,7 @@ async function scenarioFirstTrial() {
       throw new Error(`首次试用场景异常进入 locked: ${await page.evaluate(() => document.body.innerText || '')}`)
     }
     if (stage === 'activation-screen') {
-      await clickButtonByText(page, '开启 7 天全功能免费试用')
+      await clickButtonByText(page, '开启 7 天免费试用')
       const started = Date.now()
       let nextStage = stage
       while (Date.now() - started < 30000) {

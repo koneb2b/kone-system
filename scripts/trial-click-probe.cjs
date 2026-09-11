@@ -81,7 +81,7 @@ async function main() {
 
     const clicked = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'))
-      const target = buttons.find((btn) => (btn.textContent || '').includes('开启 7 天全功能免费试用'))
+      const target = buttons.find((btn) => /开启 7 天.*试用/.test(btn.textContent || ''))
       if (!target) return false
       target.click()
       return true
