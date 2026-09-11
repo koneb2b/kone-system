@@ -34,11 +34,11 @@ export const createMainWindow = async () => {
   })
 
   mainWindow.on('unresponsive', () => {
-    console.error('❌ [Window] Main window became unresponsive')
+    console.error(' [Window] Main window became unresponsive')
   })
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('❌ [Window] Renderer process gone:', details)
+    console.error(' [Window] Renderer process gone:', details)
   })
 
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -51,13 +51,13 @@ export const createMainWindow = async () => {
       await mainWindow.loadURL(devUrl)
       mainWindow.webContents.openDevTools()
     } catch (error) {
-      console.error('❌ [System] Dev URL load failed:', error)
+      console.error(' [System] Dev URL load failed:', error)
     }
   } else {
     try {
       await mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'))
     } catch (error) {
-      console.error('❌ [Window] Production index load failed:', error)
+      console.error(' [Window] Production index load failed:', error)
     }
   }
 

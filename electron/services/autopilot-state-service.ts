@@ -31,7 +31,7 @@ const readAutopilotStateEnvelope = <T = unknown>(): AutopilotStateEnvelope<T> =>
       state: JSON.parse(raw) as T,
     }
   } catch (error: any) {
-    console.error('❌ [AutopilotState] Read failed:', error)
+    console.error(' [AutopilotState] Read failed:', error)
     return {
       stateKind: 'state_unavailable',
       source: 'persisted',
@@ -76,7 +76,7 @@ export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store:
     try {
       return { success: true, data: readAutopilotStateEnvelope() }
     } catch (error: any) {
-      console.error('❌ [AutopilotState] Get failed:', error)
+      console.error(' [AutopilotState] Get failed:', error)
       return { success: false, error: error?.message || 'Autopilot state read failed', code: error?.code }
     }
   })
@@ -86,7 +86,7 @@ export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store:
       writeAutopilotState(payload?.state ?? null)
       return { success: true, data: null }
     } catch (error: any) {
-      console.error('❌ [AutopilotState] Set failed:', error)
+      console.error(' [AutopilotState] Set failed:', error)
       return { success: false, error: error?.message || 'Autopilot state write failed', code: error?.code }
     }
   })
@@ -96,7 +96,7 @@ export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store:
       clearLegacyAutopilotNode(store)
       return { success: true, data: null }
     } catch (error: any) {
-      console.error('❌ [AutopilotState] Legacy clear failed:', error)
+      console.error(' [AutopilotState] Legacy clear failed:', error)
       return { success: false, error: error?.message || 'Autopilot legacy clear failed', code: error?.code }
     }
   })

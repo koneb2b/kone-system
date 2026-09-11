@@ -53,12 +53,16 @@ const base64UrlEncode = (buf: Buffer) =>
 const sha256 = (input: string) => crypto.createHash('sha256').update(input).digest()
 
 const getTokenEndpoint = (issuerBaseUrl: string, realm: string) => {
-  const normalizedIssuer = issuerBaseUrl.replace(/\/+$/g, '')
+  const normalizedIssuer = String(issuerBaseUrl || '')
+    .trim()
+    .replace(/\/+$/g, '')
   return `${normalizedIssuer}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`
 }
 
 const getLogoutEndpoint = (issuerBaseUrl: string, realm: string) => {
-  const normalizedIssuer = issuerBaseUrl.replace(/\/+$/g, '')
+  const normalizedIssuer = String(issuerBaseUrl || '')
+    .trim()
+    .replace(/\/+$/g, '')
   return `${normalizedIssuer}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/logout`
 }
 
@@ -283,7 +287,12 @@ export const startAuthFlow = (options: StartAuthFlowOptions): Promise<AuthFlowRe
     errorEventChannel = 'auth:login-error',
   } = options
 
-  const normalizedIssuer = issuerBaseUrl.replace(/\/+$/g, '')
+  const normalizedIssuer = String(issuerBaseUrl || '')
+    .trim()
+    .replace(/\/+$/g, '')
+  if (!normalizedIssuer) {
+    return Promise.reject(new Error('认证服务地址未配置，请检查认证参数'))
+  }
   const authEndpoint = `${normalizedIssuer}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/auth`
 
   const codeVerifier = base64UrlEncode(crypto.randomBytes(32))
@@ -363,30 +372,34 @@ export const startAuthFlow = (options: StartAuthFlowOptions): Promise<AuthFlowRe
     server.on('error', (err) => finish(err))
 
     server.listen(0, '127.0.0.1', () => {
-      const addr = server.address()
-      if (!addr || typeof addr === 'string') {
-        finish(new Error('无法绑定本地回调服务器'))
-        return
+      try {
+        const addr = server.address()
+        if (!addr || typeof addr === 'string') {
+          finish(new Error('无法绑定本地回调服务器'))
+          return
+        }
+
+        serverPort = addr.port
+        redirectUri = `http://127.0.0.1:${serverPort}${callbackPath}`
+
+        const u = new URL(authEndpoint)
+        u.searchParams.set('client_id', clientId)
+        u.searchParams.set('response_type', 'code')
+        u.searchParams.set('redirect_uri', redirectUri)
+        u.searchParams.set('scope', scopes.join(' '))
+        u.searchParams.set('state', state)
+        u.searchParams.set('nonce', nonce)
+        u.searchParams.set('code_challenge', codeChallenge)
+        u.searchParams.set('code_challenge_method', 'S256')
+
+        for (const [k, v] of Object.entries(extraAuthParams)) {
+          if (v !== undefined) u.searchParams.set(k, v)
+        }
+
+        void shell.openExternal(u.toString())
+      } catch (e: any) {
+        finish(new Error(e?.message || '构造认证请求失败，请检查认证服务地址配置'))
       }
-
-      serverPort = addr.port
-      redirectUri = `http://127.0.0.1:${serverPort}${callbackPath}`
-
-      const u = new URL(authEndpoint)
-      u.searchParams.set('client_id', clientId)
-      u.searchParams.set('response_type', 'code')
-      u.searchParams.set('redirect_uri', redirectUri)
-      u.searchParams.set('scope', scopes.join(' '))
-      u.searchParams.set('state', state)
-      u.searchParams.set('nonce', nonce)
-      u.searchParams.set('code_challenge', codeChallenge)
-      u.searchParams.set('code_challenge_method', 'S256')
-
-      for (const [k, v] of Object.entries(extraAuthParams)) {
-        if (v !== undefined) u.searchParams.set(k, v)
-      }
-
-      void shell.openExternal(u.toString())
     })
 
     const timer = setTimeout(() => {

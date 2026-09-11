@@ -194,7 +194,7 @@ const bindWindowCloseToTray = (mainWindow: Electron.BrowserWindow) => {
 }
 
 app.on('child-process-gone', (_event, details) => {
-  console.error('❌ [Main] Child process crashed:', details)
+  console.error('[Main] Child process crashed:', details)
 })
 
 app
@@ -228,7 +228,7 @@ app
     })
   })
   .catch((error) => {
-    console.error('❌ [Main] App startup failed:', error)
+    console.error('[Main] App startup failed:', error)
   })
 
 app.on('window-all-closed', () => {

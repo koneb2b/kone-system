@@ -39,7 +39,7 @@ export const registerAuthHandlers = (ipcMain: Electron.IpcMain) => {
           } as const,
         }
       } catch (error: any) {
-        console.error('❌ [Auth] Login failed:', error)
+        console.error(' [Auth] Login failed:', error)
         return { success: false, error: error?.message || 'Login failed', code: error?.code }
       }
     },
@@ -50,7 +50,7 @@ export const registerAuthHandlers = (ipcMain: Electron.IpcMain) => {
       await logoutSession()
       return { success: true, data: { loggedOut: true } }
     } catch (error: any) {
-      console.error('❌ [Auth] Logout failed:', error)
+      console.error(' [Auth] Logout failed:', error)
       return { success: false, error: error?.message || 'Logout failed', code: error?.code }
     }
   })
@@ -71,7 +71,7 @@ export const registerAuthHandlers = (ipcMain: Electron.IpcMain) => {
       const sessionState = await getSessionState()
       return { success: true, data: sessionState }
     } catch (error: any) {
-      console.error('❌ [Auth] Get session failed:', error)
+      console.error(' [Auth] Get session failed:', error)
       return { success: false, error: error?.message || 'Get session failed', code: error?.code }
     }
   })

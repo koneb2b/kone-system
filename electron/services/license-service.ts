@@ -25,7 +25,11 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const TRIAL_DURATION_DAYS = 7
 const TRIAL_DURATION_MS = TRIAL_DURATION_DAYS * DAY_MS
 const SYSTEM_TIME_ABNORMAL_MESSAGE = '系统环境异常，请恢复标准北京时间'
-const WORLD_TIME_API_URL = 'http://worldtimeapi.org/api/timezone/Etc/UTC'
+// 标准时间源：强制 HTTPS 且双源冗余，防止明文劫持或单点故障影响试用判定
+const STANDARD_TIME_SOURCES: Array<{ url: string; parse: (payload: any) => number }> = [
+  { url: 'https://worldtimeapi.org/api/timezone/Etc/UTC', parse: (payload) => Number(payload?.unixtime || 0) * 1000 },
+  { url: 'https://timeapi.io/api/time/current/utc', parse: (payload) => Date.parse(String(payload?.dateTime || '')) },
+]
 const REGISTRY_PATH = 'HKCU\\Software\\KoneAI\\LicenseAnchor'
 const REGISTRY_VALUE = 'TrialBlob'
 const ANCHOR_DIR_NAME = '.kone-anchor'
@@ -326,30 +330,35 @@ const getStandardTime = async (fallbackFloor = 0): Promise<number> => {
     return Math.max(cachedStandardTime.value, fallbackFloor)
   }
 
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), STANDARD_TIME_FETCH_TIMEOUT_MS)
+  const regressionUrl = getRegressionWorldTimeApiUrl()
+  const sources = regressionUrl
+    ? [{ url: regressionUrl, parse: (payload: any) => Number(payload?.unixtime || 0) * 1000 }]
+    : STANDARD_TIME_SOURCES
+
+  for (const source of sources) {
     try {
-      const response = await fetch(getRegressionWorldTimeApiUrl() || WORLD_TIME_API_URL, {
-        method: 'GET',
-        signal: controller.signal,
-      })
-      if (!response.ok) {
-        throw new Error(`worldtimeapi http ${response.status}`)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), STANDARD_TIME_FETCH_TIMEOUT_MS)
+      try {
+        const response = await fetch(source.url, { method: 'GET', signal: controller.signal })
+        if (!response.ok) {
+          throw new Error(`standard time http ${response.status}`)
+        }
+        const payload: any = await response.json()
+        const value = source.parse(payload)
+        if (!Number.isFinite(value) || value <= 0) {
+          throw new Error('invalid world time payload')
+        }
+        cachedStandardTime = { value, fetchedAt: Date.now() }
+        return Math.max(value, fallbackFloor)
+      } finally {
+        clearTimeout(timeoutId)
       }
-      const payload: any = await response.json()
-      const value = Number(payload?.unixtime || 0) * 1000
-      if (!Number.isFinite(value) || value <= 0) {
-        throw new Error('invalid world time payload')
-      }
-      cachedStandardTime = { value, fetchedAt: Date.now() }
-      return Math.max(value, fallbackFloor)
-    } finally {
-      clearTimeout(timeoutId)
+    } catch {
+      // 当前时间源失败，继续尝试下一个；全部失败时回退本地时间地板
     }
-  } catch {
-    return Math.max(Date.now(), fallbackFloor)
   }
+  return Math.max(Date.now(), fallbackFloor)
 }
 
 const buildTrialClaims = (anchor: AnchorPayload): StoredLicenseClaims => ({

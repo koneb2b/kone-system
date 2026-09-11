@@ -103,7 +103,7 @@ class IpcRegistry {
       this.assertRegistered(ch)
     }
     if (isContractDevMode()) {
-      console.log(`[Registry] ✅ ${channels.length} 个核心通道全部注册通过`)
+      console.log(`[Registry]  ${channels.length} 个核心通道全部注册通过`)
     }
   }
 

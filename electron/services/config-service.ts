@@ -156,7 +156,7 @@ export const assertConfigWritable = (store: ConfigStore) => {
     const storePath = (store as NativeStore).path || path.join(fallbackUserData(), 'kone-config.json')
     fs.accessSync(storePath, fs.constants.W_OK)
   } catch {
-    console.warn('⚠️ [Config] Store path is not writable')
+    console.warn(' [Config] Store path is not writable')
   }
 }
 

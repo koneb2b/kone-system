@@ -1188,7 +1188,7 @@ export const resolveSerpSearchPlan = async (payload: {
   }
 
   if (payload.dataSourceType === 'google_organic') {
-    payload.onStage?.('🔍 正在通过 Google 网页搜索引擎进行全局线索采集...', 'organic-fallback')
+    payload.onStage?.(' 正在通过 Google 网页搜索引擎进行全局线索采集...', 'organic-fallback')
     await runOrganicFallbackSearch()
   } else if (city) {
     const levelOneSucceeded = await runMapsLocationSearch()
@@ -1970,10 +1970,10 @@ const enrichLeadWithDeepProbe = async (payload: {
             ? payload.candidate.matchReasons
             : []),
         blindScoreFailed && websiteBlockedBy403
-          ? '⚠️ 官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核'
+          ? '官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核'
           : usedSocialFallback
-            ? '⚠️ 官网访问受限，已基于 LinkedIn/Kompass/Europages 简介轻量评估'
-            : '⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）',
+            ? '官网访问受限，已基于 LinkedIn/Kompass/Europages 简介轻量评估'
+            : '官网访问受限，基于简介轻量评估（官网无法访问）',
       ]
         .filter(Boolean)
         .slice(0, 2),
@@ -2612,8 +2612,8 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           _event.sender,
           'fetching',
           hasLocalizedVariants
-            ? `🤖 AI 智能解构成功！当前目标国家 [${country || 'Global'}] 语言 [${localizedLanguages}]，正在全渠道并发穿透以下高价值 B2B 变种词（含本地语言）：${allSearchKeywords.map((item) => `[${item.keyword}]`).join(', ')}`
-            : `🤖 AI 智能解构成功！当前目标国家 [${country || 'Global'}]，正在全渠道并发穿透以下高价值 B2B 变种词：${intentKeywords.map((item) => `[${item}]`).join(', ')}`,
+            ? `AI 智能解构成功！当前目标国家 [${country || 'Global'}] 语言 [${localizedLanguages}]，正在全渠道并发穿透以下高价值 B2B 变种词（含本地语言）：${allSearchKeywords.map((item) => `[${item.keyword}]`).join(', ')}`
+            : `AI 智能解构成功！当前目标国家 [${country || 'Global'}]，正在全渠道并发穿透以下高价值 B2B 变种词：${intentKeywords.map((item) => `[${item}]`).join(', ')}`,
           'maps',
           {
             intentMutated: {
@@ -2629,13 +2629,13 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           emitStage(
             _event.sender,
             'fetching',
-            `🌍 检测到多语言搜索需求 [${localizedLanguages}]，English + 本地语言变体并行搜索中...`,
+            ` 检测到多语言搜索需求 [${localizedLanguages}]，English + 本地语言变体并行搜索中...`,
             'maps',
           )
           emitStage(
             _event.sender,
             'localized_search',
-            `🌍 本地语言搜索变体已加入搜索管道: ${localizedLanguages}`,
+            ` 本地语言搜索变体已加入搜索管道: ${localizedLanguages}`,
             'maps',
             { localizedLanguages },
           )
@@ -2659,7 +2659,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           emitStage(
             _event.sender,
             'fetching',
-            '🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...',
+            'AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...',
             'anysearch',
           )
         }
@@ -2667,8 +2667,8 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           _event.sender,
           'fetching',
           dataSourceType === 'google_organic'
-            ? '🔍 正在通过 Google 网页搜索引擎进行全局线索采集...'
-            : '🌐 正在抓取 Google Maps / SerpApi 搜索结果...',
+            ? ' 正在通过 Google 网页搜索引擎进行全局线索采集...'
+            : '正在抓取 Google Maps / SerpApi 搜索结果...',
           dataSourceType === 'google_organic' ? 'organic-fallback' : 'maps',
         )
 
@@ -3006,14 +3006,14 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           }
         }
 
-        emitStage(_event.sender, 'normalizing', '🧩 正在整理候选客户并去重...')
+        emitStage(_event.sender, 'normalizing', '正在整理候选客户并去重...')
         const { filteredLocalResults, normalizedCandidates } = normalizeSearchResponseCandidates(
           allOrganic,
           allLocal,
           city,
           locationString,
         )
-        emitStage(_event.sender, 'prefiltering', '🔍 正在执行相关度预筛，剔除泛化结果...')
+        emitStage(_event.sender, 'prefiltering', ' 正在执行相关度预筛，剔除泛化结果...')
         probeLog('[Probe-Filter] Filter applied:', {
           priorityWebsite: Boolean(filterOptions?.priorityWebsite),
           localDomainOnly: Boolean(filterOptions?.localDomainOnly),
@@ -3135,7 +3135,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
         if (targetedLeads.length === 0) {
           probeLog('[Probe-IPC] Zero-candidate path reached, emitting complete stage and stream complete')
-          emitStage(_event.sender, 'complete', '✅ 分析完成，未发现符合条件的线索')
+          emitStage(_event.sender, 'complete', '分析完成，未发现符合条件的线索')
           emitStreamComplete(_event.sender)
           return { success: true, data: { results: [] } }
         }
@@ -3177,7 +3177,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const fallbackSourceLabel = targetedLeads.some((item) => String(item.source || '').includes('Organic'))
             ? '网页搜索'
             : 'Google Maps'
-          emitStage(_event.sender, 'complete', `✅ 已返回 ${fallbackSourceLabel} 基础结果（未启用 AI 评分）`)
+          emitStage(_event.sender, 'complete', `已返回 ${fallbackSourceLabel} 基础结果（未启用 AI 评分）`)
           emitStreamComplete(_event.sender)
           // Pipeline: STAGE qualified leads for human review (never auto-send)
           withPipelineIsolation(async (runId) => {
@@ -3191,7 +3191,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           candidateCount: leadsForScoring.length,
           concurrency: SEARCH_LLM_CONCURRENCY,
         })
-        emitStage(_event.sender, 'scoring', '🤖 正在进行 ICP 智能评估...')
+        emitStage(_event.sender, 'scoring', '正在进行 ICP 智能评估...')
 
         if (!llmKey || !llmEndpoint) {
           probeError('[Probe-Auth] LLM config inconsistent after scoring gate', {
@@ -3361,7 +3361,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         })
 
         if (cleanedResults.length > 0) {
-          emitStage(_event.sender, 'enriching', '🔎 正在补全官网与商业信号...')
+          emitStage(_event.sender, 'enriching', '正在补全官网与商业信号...')
           const baseResults = cleanedResults.filter(Boolean)
           const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
           await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
@@ -3430,7 +3430,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               ? { ...scored, id: item.id || scored.id }
               : applySchemaDefaults({ ...item, scoreSource: 'deterministic' })
           })
-          emitStage(_event.sender, 'complete', '✅ 分析完成，线索已更新')
+          emitStage(_event.sender, 'complete', '分析完成，线索已更新')
           emitStreamComplete(_event.sender)
           // Pipeline: STAGE enriched leads for human review (never auto-send)
           withPipelineIsolation(async (runId) => {
@@ -3440,7 +3440,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           return { success: true, data: { results: finalResults.slice(0, SEARCH_TARGETED_LEAD_LIMIT) || [] } }
         }
 
-        emitStage(_event.sender, 'complete', '✅ 分析完成，线索已更新')
+        emitStage(_event.sender, 'complete', '分析完成，线索已更新')
         emitStreamComplete(_event.sender)
         return { success: true, data: { results: [] } }
       } catch (error: any) {

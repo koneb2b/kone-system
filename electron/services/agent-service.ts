@@ -993,8 +993,8 @@ const stopAgent = async (agentId: string) => {
 
 const applyLicenseLimits = (claims: { plan?: string } | null | undefined, store?: ConfigStore) => {
   const plan = claims?.plan
-  const isBasic = plan === 'basic'
-  const isTrial = plan === 'trial'
+  // Fail-Closed：claims 缺失（未激活/读取异常）时按最受限的试用档展示，绝不落入 Basic
+  const isTrial = plan === 'trial' || !plan
 
   // Try store.user_config.agentDailyLimits first; fall back to hardcoded defaults
   let userConfigLimits: Record<string, { trial: number; basic: number; premium: number }> | undefined | null
