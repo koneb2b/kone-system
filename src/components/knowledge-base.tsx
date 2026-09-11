@@ -303,7 +303,9 @@ export function KnowledgeBase() {
 
         {visibleEntries.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
-            未找到匹配的知识条目，请调整搜索关键词。
+            {searchQuery.trim()
+              ? '未找到匹配的知识条目，请调整搜索关键词。'
+              : '知识库还是空的——点击上方“新增条目”，把产品卖点、优势与案例沉淀为 AI 可引用的私域知识。'}
           </div>
         ) : null}
       </div>

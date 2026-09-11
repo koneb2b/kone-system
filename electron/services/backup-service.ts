@@ -63,8 +63,8 @@ function getSourceFiles(): Record<string, string> {
   const userData = app.getPath('userData')
   const files: Record<string, string> = {}
 
-  // Config store files
-  const configCandidates = ['config.json', 'config-store.json', 'user-config.json']
+  // Config store files（真实文件名为 electron-store 的 kone-config.json）
+  const configCandidates = ['kone-config.json', 'config.json', 'config-store.json', 'user-config.json']
   for (const name of configCandidates) {
     const p = path.join(userData, name)
     if (fs.existsSync(p)) {
@@ -73,12 +73,29 @@ function getSourceFiles(): Record<string, string> {
     }
   }
 
-  // License/anchor files
+  // 加密密钥库（API Key / 授权编号，safeStorage 加密）
+  const secretsPath = path.join(userData, 'kone-secrets.json')
+  if (fs.existsSync(secretsPath)) {
+    files['kone-secrets.json'] = secretsPath
+  }
+
+  // License/anchor files（双锚点之文件锚点：APPDATA/KoneAI(.Dev)/.kone-anchor/anchor.bin）
   const anchorCandidates = ['anchor.bin', '.anchor.bin', '.anchor']
   for (const name of anchorCandidates) {
     const p = path.join(userData, name)
     if (fs.existsSync(p)) {
       files[name] = p
+      break
+    }
+  }
+
+  const anchorRoot = app.isPackaged || process.env.NODE_ENV === 'production' ? 'KoneAI' : 'KoneAI-Dev'
+  const anchorDir = path.join(process.env.APPDATA || app.getPath('appData'), anchorRoot, '.kone-anchor')
+  const realAnchorCandidates = ['anchor.bin', '.anchor.bin']
+  for (const name of realAnchorCandidates) {
+    const p = path.join(anchorDir, name)
+    if (fs.existsSync(p)) {
+      files[`anchor-${name}`] = p
       break
     }
   }
@@ -338,6 +355,9 @@ export function initBackupService(): void {
     const result = triggerBackup()
     if (result.success) {
       console.log(`[BackupService] Auto-backup completed: ${result.path}`)
+    } else if (String(result.error || '').includes('No source files')) {
+      // 全新安装尚无可备份文件，属正常状态，安静跳过
+      console.log('[BackupService] No backup sources yet (fresh install), skipping')
     } else {
       console.warn(`[BackupService] Auto-backup failed: ${result.error}`)
     }
