@@ -164,7 +164,7 @@ export const mergeLeads = (current: LeadItem[], incoming: LeadItem[]) => {
 }
 
 const probeLeadStore = (count: number) => {
-  console.log("📊 [Probe-Store] Store 纯内存态更新，当前线索数:", count)
+  console.log("[Probe-Store] Store 纯内存态更新，当前线索数:", count)
 }
 
 type LeadsState = {

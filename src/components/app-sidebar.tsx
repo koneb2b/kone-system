@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { HelpDialog } from "@/components/help-dialog"
 import logoUrl from "@/logo.png"
 import {
   Search,
@@ -155,6 +156,7 @@ export function AppSidebar({
   onUpgradeClick?: (intent: UpgradeIntent) => void
 }) {
   const { loading, isLicensed, plan, tier, isTrial, daysRemaining, expiresAt, refreshLicenseStatus } = useLicenseStore()
+  const [helpOpen, setHelpOpen] = useState(false)
   const displayName = "Kone智能获客"
   const statusText = loading
     ? "正在同步权限..."
@@ -234,7 +236,16 @@ export function AppSidebar({
         {premiumNavItems.map(renderNavButton)}
       </nav>
 
-      <div className="hidden md:block px-3 pb-2">
+      <div className="hidden md:block px-3 pb-2 space-y-2">
+        <button
+          type="button"
+          data-testid="btn-open-help"
+          onClick={() => setHelpOpen(true)}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+        >
+          <BookOpen className="size-3.5" />
+          使用指南
+        </button>
         <LicenseStatusPanel
           isTrial={isTrial}
           daysRemaining={daysRemaining}

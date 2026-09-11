@@ -31,7 +31,7 @@ const formatErrorMessage = (error: unknown, fallback: string) => {
   return "当前智能分析服务暂不可用，请稍后重试或联系顾问。"
 }
 
-const SETTINGS_GUIDE_MESSAGE = "⚠️ 请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像，即可解锁深度分析与自动写信功能。"
+const SETTINGS_GUIDE_MESSAGE = "请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像，即可解锁深度分析与自动写信功能。"
 
 const scenarioLabels = {
   direct_quote: "直接报价切入",

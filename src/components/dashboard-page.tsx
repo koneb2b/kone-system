@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense, lazy, useState, useCallback, useEffect } from "react"
-import { Bell, Shield, Wifi } from "lucide-react"
+import { Shield, Wifi } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { UpgradeModal } from "@/components/upgrade-modal"
 import { ContactModal } from "@/components/contact-modal"
@@ -196,11 +196,6 @@ export function DashboardPage() {
               {showLocalEnhancedMode ? <Shield className="size-3.5" /> : <Wifi className="size-3.5" />}
               {showLocalEnhancedMode ? "本地增强模式" : "系统已联通"}
             </div>
-            <button className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-              <Bell className="size-5" />
-              <span className="absolute top-1.5 right-1.5 size-2 bg-destructive rounded-full" />
-              <span className="sr-only">通知</span>
-            </button>
           </div>
         </header>
 
@@ -208,7 +203,7 @@ export function DashboardPage() {
           {activeNav === "search" && (
             <Suspense fallback={<SectionSkeleton label="搜索模块加载中..." />}>
               <>
-                <SearchEngine userRole={currentRole} />
+                <SearchEngine userRole={currentRole} onSendToCloud={handleSendToCloud} />
                 <StatsCards onLeadsNavigate={() => setActiveNav("leads")} />
                 <LeadsTable
                   onAnalyze={handleAnalyze}
@@ -221,7 +216,7 @@ export function DashboardPage() {
           )}
           {activeNav === "leads" && (
             <Suspense fallback={<SectionSkeleton label="线索模块加载中..." />}>
-              <LeadsManagement userRole={currentRole} onAcquireNavigate={() => setActiveNav("search")} />
+              <LeadsManagement userRole={currentRole} onAcquireNavigate={() => setActiveNav("search")} onAnalyze={handleAnalyze} />
             </Suspense>
           )}
           {activeNav === "data" && (

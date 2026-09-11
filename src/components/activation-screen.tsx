@@ -248,7 +248,7 @@ export function ActivationScreen({ onActivated }: ActivationScreenProps) {
             isLoading={requestingTrial}
           >
             {!requestingTrial ? <Rocket className="size-6" /> : null}
-            {requestingTrial ? "正在开启试用..." : "\uD83D\uDE80 开启 7 天全功能免费试用"}
+            {requestingTrial ? "正在开启试用..." : "开启 7 天免费试用"}
           </Button>
 
           <p className="text-xs text-muted-foreground text-center">

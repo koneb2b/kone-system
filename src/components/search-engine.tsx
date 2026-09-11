@@ -13,11 +13,12 @@ import { Progress } from "@/components/ui/progress"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext } from "@/components/ui/pagination"
-import { useLeadsStore, LeadSearchResult, getLeadUniqueKey } from "@/store/leads-store"
+import { useLeadsStore, LeadSearchResult, LeadItem, getLeadUniqueKey } from "@/store/leads-store"
 import { useAutopilotStore } from "@/store/autopilot-store"
 import { autopilotSyncLifecycle, onAutopilotAction, onSearchBasicResults, onSearchLeadScored, onSearchStage, onSearchStreamComplete, onSearchStreamError, onSearchStreamStart, searchExecute, secretCheck } from "@/lib/electron-api"
 import { useFeatureGate } from "@/lib/feature-gate"
 import { useConfigStore } from "@/store/config-store"
+import { UpgradeModal } from "@/components/upgrade-modal"
 
 const formatErrorMessage = (error: unknown, fallback: string) => {
   const message = error instanceof Error ? error.message : fallback
@@ -82,6 +83,7 @@ type SearchDataSource = 'google' | 'linkedin_company' | 'facebook_pages'
 
 interface SearchEngineProps {
   userRole?: UserRole | null
+  onSendToCloud?: (lead: LeadItem) => Promise<{ skipped: boolean; reason?: string } | void>
 }
 
 const DIRECTORY_HOST_PATTERNS = [
@@ -363,7 +365,7 @@ const readFileAsText = (file: File) =>
     reader.readAsText(file)
   })
 
-export function SearchEngine({ userRole }: SearchEngineProps) {
+export function SearchEngine({ userRole, onSendToCloud }: SearchEngineProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [analyzingUrl, setAnalyzingUrl] = useState('')
@@ -371,6 +373,8 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [savingLeadId, setSavingLeadId] = useState<number | null>(null)
   const [savedLeadIds, setSavedLeadIds] = useState<Set<number>>(new Set())
+  const [cloudSendingId, setCloudSendingId] = useState<number | null>(null)
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState("")
   const [searchDataSource, setSearchDataSource] = useState<SearchDataSource>('google')
   const [searchCountry, setSearchCountry] = useState("")
@@ -969,6 +973,43 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     }
   }
 
+  const handleSendResultToCloud = async (lead: LeadSearchResult) => {
+    if (!featureGate.canAccess("cloud_send")) {
+      toast({ title: "高级发送能力未开通", description: "云端发送为高级版功能，请先升级授权。", variant: "destructive" })
+      setUpgradeOpen(true)
+      return
+    }
+    if (cloudSendingId === lead.id) return
+    setCloudSendingId(lead.id)
+    try {
+      const mapped = mapSearchResultToLeadItem(lead, {
+        country: lead.country || "Global",
+        countryCode: lead.countryCode || "GL",
+        industry: lead.industry,
+      })
+      const result = await onSendToCloud?.(mapped)
+      if (result && typeof result === "object" && result.skipped) {
+        toast({
+          title: "推送被拦截",
+          description: result.reason || "推送被拦截：线索评分低于系统设定的最低阈值或角色不符。",
+          variant: "destructive",
+          className: "bg-amber-50 border-amber-200 text-amber-900",
+        })
+        return
+      }
+      toast({
+        title: "发送成功",
+        description: `已将线索 "${lead.company}" 提交至云端发送队列`,
+        variant: "default",
+        className: "bg-emerald-50 border-emerald-200 text-emerald-800",
+      })
+    } catch (error) {
+      toast({ title: "发送失败", description: formatErrorMessage(error, "发送到云端失败"), variant: "destructive" })
+    } finally {
+      setCloudSendingId(null)
+    }
+  }
+
   const handleAnalyzeUrl = async () => {
     if (!searchLimit.allowDeepAnalysis) {
       toast({
@@ -1158,7 +1199,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         {/* 第一行：数据源与关键词输入 */}
         <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
           <div className="flex flex-col gap-1.5 w-full">
-            <label className="text-xs font-medium text-muted-foreground">数据源 (Data Source)</label>
+            <label className="text-xs font-medium text-muted-foreground">数据源</label>
             <Select value={searchDataSource} onValueChange={(value) => setSearchDataSource(value as SearchDataSource)}>
               <SelectTrigger className="h-10 w-full rounded-lg border-input bg-slate-50 text-sm text-foreground focus-visible:ring-blue-500/10">
                 <SelectValue placeholder="选择数据源" />
@@ -1191,7 +1232,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         <Accordion type="single" collapsible className="w-full rounded-xl border border-border bg-card p-5 shadow-sm">
           <AccordionItem value="b2b-search-syntax" className="border-none">
             <AccordionTrigger className="py-0 text-sm font-semibold text-slate-900 hover:no-underline">
-              ✨ 高质量 B2B 搜索语法与模板
+              高质量 B2B 搜索语法与模板
             </AccordionTrigger>
             <AccordionContent className="pb-0 pt-4">
               <p className="text-xs leading-relaxed text-slate-500">
@@ -1271,7 +1312,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
               placeholder="例如：Los Angeles 或 全选"
               className="w-full h-10 px-3 rounded-lg border border-input bg-slate-50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-primary transition-all"
             />
-            <p className="text-slate-400 text-xs mt-1">💡 提示：谷歌地图依赖具体城市名。若识别受阻，系统将自动切换至全球网页搜索模式。</p>
+            <p className="text-slate-400 text-xs mt-1">提示：谷歌地图依赖具体城市名。若识别受阻，系统将自动切换至全球网页搜索模式。</p>
           </div>
         </div>
 
@@ -1303,7 +1344,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         <Accordion type="single" collapsible className="rounded-2xl border border-slate-200 bg-slate-50 px-4 shadow-sm">
           <AccordionItem value="autopilot-console" className="border-none">
             <AccordionTrigger className="py-4 text-sm font-semibold text-slate-900 hover:no-underline">
-              🚀 伴随式后台巡航
+              伴随式后台巡航
             </AccordionTrigger>
             <AccordionContent className="pb-4">
               <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -1338,7 +1379,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                       disabled={autopilotRuntime.lifecycle === "running"}
                       className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     >
-                      📁 导入 CSV
+                      导入 CSV
                     </Button>
                     <Button
                       onClick={handleStartAutopilot}
@@ -1390,7 +1431,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                         onClick={handleNavigateLeads}
                         className="mt-2 text-[11px] font-medium text-slate-500 underline underline-offset-2 hover:text-slate-600"
                       >
-                        🔗 前往线索管理查看
+                        前往线索管理查看
                       </button>
                     </div>
                   </div>
@@ -1463,7 +1504,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                 <div className="text-xs text-slate-500">当前结果 {displayedResults.length} 条</div>
               )}
               <div className="text-[11px] text-slate-400">
-                ⚡ 数据源: 实时全网商业搜索
+                数据源：实时全网商业搜索
               </div>
             </div>
           </div>
@@ -1499,14 +1540,14 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
               <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white/80 px-3 py-2">
                 <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                   <div className="size-2 rounded-full bg-blue-600 animate-pulse" />
-                  <span>{streamStageMessage || '🤖 AI 正在处理搜索任务...'}</span>
+                  <span>{streamStageMessage || 'AI 正在处理搜索任务...'}</span>
                 </div>
                 <div className="text-xs text-slate-500">
                   {streamStage === 'scoring' ? `${analyzedCount} / ${streamTotal}` : '处理中'}
                 </div>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-slate-800">🤖 AI 深度分析中... {analyzedCount} / {streamTotal}</div>
+                <div className="text-sm font-medium text-slate-800">AI 深度分析中... {analyzedCount} / {streamTotal}</div>
                 <div className="text-xs text-slate-500">实时更新线索评分与风险判断</div>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
@@ -1531,7 +1572,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           ) : null}
           {isLoading && searchResults.length === 0 ? (
             <div className="p-6">
-              <div className="mb-4 text-sm font-medium text-slate-700">{isStreaming ? `正在并发分析 ${streamTotal || 0} 条线索...` : 'Searching...'}</div>
+              <div className="mb-4 text-sm font-medium text-slate-700">{isStreaming ? `正在并发分析 ${streamTotal || 0} 条线索...` : '搜索中...'}</div>
               <div className="space-y-3">
                 <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
                 <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
@@ -1548,7 +1589,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           ) : trialExpired ? (
             <div className="p-8">
               <div className="mx-auto flex max-w-2xl flex-col items-center rounded-2xl border border-amber-200 bg-white px-6 py-8 text-center shadow-sm">
-                <div className="text-lg font-semibold text-amber-900">⚠️ 当前授权已失效</div>
+                <div className="text-lg font-semibold text-amber-900">当前授权已失效</div>
                 <p className="mt-3 text-sm leading-6 text-slate-600">
                   请前往激活中心完成授权后，继续使用智能获客与高级分析功能。
                 </p>
@@ -1642,7 +1683,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                       {settlementMeta.showPending ? (
                         <div className="mt-1 inline-flex items-center gap-2 text-xs text-blue-500">
                           <div className="size-3 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                          🤖 AI 正在分析该线索...
+                          AI 正在分析该线索...
                         </div>
                       ) : null}
                       {settlementMeta.showFallback ? (
@@ -1699,17 +1740,13 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                         size="sm"
                         variant="outline"
                         className="text-xs"
-                        onClick={() => {
-                          toast({
-                            title: "正在发送至云端",
-                            description: "已提交至云端发送队列",
-                            variant: "default",
-                            className: "bg-blue-50 border-blue-200 text-blue-800",
-                          })
-                        }}
+                        data-testid="btn-send-cloud"
+                        disabled={cloudSendingId === lead.id}
+                        isLoading={cloudSendingId === lead.id}
+                        onClick={() => void handleSendResultToCloud(lead)}
                       >
                         <Lock className="size-3.5" />
-                        发送至云端
+                        {cloudSendingId === lead.id ? "发送中" : "发送至云端"}
                       </Button>
                     </div>
                   </div>
@@ -1839,9 +1876,11 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
 
         {/* 提示文字 */}
         <p className="text-[10px] text-slate-400 text-center -mt-2">
-          提示：组合使用关键词与特定城市，可获得更精准的 Google 搜索B2B商业线索。
+          提示：组合使用关键词与特定城市，可获得更精准的 Google 搜索 B2B 商业线索。
         </p>
       </div>
+
+      <UpgradeModal open={upgradeOpen} intent="premium" onOpenChange={setUpgradeOpen} />
     </div>
   )
 }

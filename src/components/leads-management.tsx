@@ -79,7 +79,7 @@ const formatAnalysisActionError = (error: unknown, fallback: string) => {
   const semantic = error instanceof ElectronApiError ? (error.meta?.analysisSemantic as { code?: string; mockMode?: boolean; settingsActionable?: boolean } | undefined) : undefined
   if (semantic?.mockMode) return '当前为开发模式，本次邮件草稿来自本地模拟分析。'
   if (semantic?.code === 'missing_llm_key' || semantic?.code === 'missing_llm_base_url' || semantic?.code === 'missing_icp_profile' || semantic?.settingsActionable) {
-    return '⚠️ 请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像。'
+    return '请先前往【系统设置】配置您的 AI 模型密钥与 ICP 目标画像。'
   }
   if (semantic?.code === 'provider_timeout') return 'AI 数据流连接异常，请稍后重试。'
   if (semantic?.code === 'provider_unavailable') return '当前智能分析服务响应异常，请稍后重试。'
@@ -286,16 +286,16 @@ const parseGeneratedEmailDraft = (raw: string | undefined, lead: LeadItem): Emai
 interface LeadsManagementProps {
   userRole?: UserRole
   onAcquireNavigate?: () => void
+  onAnalyze?: (lead: LeadItem) => void
 }
 
-export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: LeadsManagementProps) {
+export function LeadsManagement({ userRole = "trial", onAcquireNavigate, onAnalyze }: LeadsManagementProps) {
   const currentRole = userRole || "trial"
   const { leads, hydrateFromConfig, hydrated, updateLead, deleteLead } = useLeadsStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [sourceFilter, setSourceFilter] = useState<string>("all")
   const [matchFilter, setMatchFilter] = useState<string>("all")
-  const [unlockedFilter, setUnlockedFilter] = useState<string>("all")
   const [nextActionFilter, setNextActionFilter] = useState("")
   const [sortField, setSortField] = useState<string>("matchScore")
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -340,7 +340,6 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
             if (typeof lead.matchScore !== "number") return false
             if (lead.matchScore < Number(matchFilter)) return false
           }
-          if (unlockedFilter === "unlocked" && !lead.unlocked) return false
           if (nextActionFilter) {
             const nextAction = getReplyCoachAnalysis(lead)?.nextAction?.trim() || ""
             if (!nextAction.includes(nextActionFilter)) return false
@@ -355,7 +354,7 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
           const scoreB = typeof b.matchScore === "number" ? b.matchScore : -1
           return scoreB - scoreA
         }),
-    [leads, matchFilter, nextActionFilter, searchQuery, sortField, sourceFilter, statusFilter, unlockedFilter]
+    [leads, matchFilter, nextActionFilter, searchQuery, sortField, sourceFilter, statusFilter]
   )
 
   const totalPages = Math.max(1, Math.ceil(filteredLeads.length / LEADS_PAGE_SIZE))
@@ -379,7 +378,7 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sourceFilter, matchFilter, unlockedFilter, nextActionFilter, sortField])
+  }, [searchQuery, statusFilter, sourceFilter, matchFilter, nextActionFilter, sortField])
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -650,7 +649,6 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
             <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="h-9 w-[120px] text-xs"><SelectValue placeholder="状态筛选" /></SelectTrigger><SelectContent><SelectItem value="all">全部状态</SelectItem><SelectItem value="new">待跟进</SelectItem><SelectItem value="contacting">联系中</SelectItem><SelectItem value="replied">已回复</SelectItem><SelectItem value="archived">已归档</SelectItem></SelectContent></Select>
             <Select value={sourceFilter} onValueChange={setSourceFilter}><SelectTrigger className="h-9 w-[130px] text-xs"><SelectValue placeholder="来源筛选" /></SelectTrigger><SelectContent><SelectItem value="all">全部来源</SelectItem><SelectItem value="Google Maps">Google Maps</SelectItem><SelectItem value="LinkedIn">LinkedIn</SelectItem><SelectItem value="Trade Show">Trade Show</SelectItem><SelectItem value="AI Search">AI Search</SelectItem></SelectContent></Select>
             <Select value={matchFilter} onValueChange={setMatchFilter}><SelectTrigger className="h-9 w-[120px] text-xs"><SelectValue placeholder="匹配度" /></SelectTrigger><SelectContent><SelectItem value="all">全部匹配度</SelectItem><SelectItem value="70">≥70%</SelectItem><SelectItem value="80">≥80%</SelectItem><SelectItem value="90">≥90%</SelectItem></SelectContent></Select>
-            <Select value={unlockedFilter} onValueChange={setUnlockedFilter}><SelectTrigger className="h-9 w-[120px] text-xs"><SelectValue placeholder="解锁状态" /></SelectTrigger><SelectContent><SelectItem value="all">全部线索</SelectItem><SelectItem value="unlocked">仅已解锁</SelectItem></SelectContent></Select>
             <Button variant="outline" size="sm" className="text-xs h-9" onClick={() => setSortField(sortField === "matchScore" ? "date" : "matchScore")}><ArrowUpDown className="size-3.5" />{sortField === "matchScore" ? "匹配度排序" : "时间排序"}</Button>
             <Button variant="outline" size="sm" className="text-xs h-9" data-testid="btn-export-csv" onClick={() => void handleExport()} disabled={isExporting} isLoading={isExporting}>{!isExporting ? <Download className="size-3.5" /> : null}{isExporting ? "导出中" : "导出"}</Button>
             <Button size="sm" className="text-xs h-9 bg-blue-600 text-white hover:bg-blue-700" disabled title="当前版本暂未开放手动添加"><Plus className="size-3.5" />手动添加（即将开放）</Button>
@@ -803,7 +801,7 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-44">
-                                <DropdownMenuItem className={`text-xs gap-2 ${currentRole === "trial" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`} disabled={currentRole === "trial"}><Eye className="size-3.5" />AI 深度分析</DropdownMenuItem>
+                                <DropdownMenuItem className={`text-xs gap-2 ${currentRole === "trial" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`} disabled={currentRole === "trial"} data-testid="menu-ai-analysis" onSelect={() => { if (currentRole !== "trial") onAnalyze?.(lead) }}><Eye className="size-3.5" />AI 深度分析</DropdownMenuItem>
                                 <DropdownMenuItem className="text-xs gap-2 opacity-50 cursor-not-allowed" disabled onSelect={() => toast({ title: "即将开放", description: "编辑线索功能即将上线", variant: "default" })}><Edit3 className="size-3.5" />编辑线索（即将开放）</DropdownMenuItem>
                                 <DropdownMenuItem className="text-xs gap-2 opacity-50 cursor-not-allowed" disabled onSelect={() => toast({ title: "即将开放", description: "跟进日志功能即将上线", variant: "default" })}><FileText className="size-3.5" />添加跟进日志（即将开放）</DropdownMenuItem>
                                 <DropdownMenuItem className="text-xs gap-2 opacity-50 cursor-not-allowed" disabled onSelect={() => toast({ title: "即将开放", description: "邮件功能即将上线", variant: "default" })}><Mail className="size-3.5" />发送邮件（即将开放）</DropdownMenuItem>
@@ -900,7 +898,7 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
 
           <div className="grid gap-4 px-6 py-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-              <div className="font-medium text-slate-800">AI Prompt Strategy</div>
+              <div className="font-medium text-slate-800">AI 提示词策略</div>
               <div className="mt-1 whitespace-pre-wrap leading-5 text-slate-500">{emailPromptPreview}</div>
             </div>
 
@@ -974,7 +972,7 @@ export function LeadsManagement({ userRole = "trial", onAcquireNavigate }: Leads
                 重新生成
               </Button>
               <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={handleLaunchMailClient}>
-                ✉️ 唤起本地邮箱发送
+                唤起本地邮箱发送
               </Button>
             </div>
           </DialogFooter>

@@ -20,7 +20,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('❌ [Renderer] Uncaught React error:', error, errorInfo)
+    console.error('[Renderer] Uncaught React error:', error, errorInfo)
   }
 
   handleReload = () => {
