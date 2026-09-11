@@ -217,7 +217,7 @@ Autopilot is a background companion panel, not the hero surface.
 ---
 
 ## 10. Tech and State Rules
-1. Tailwind syntax must remain compatible with Tailwind CSS v3.4.
+1. Tailwind syntax must remain compatible with Tailwind CSS v4 (the project upgraded from v3.4; v4-only class availability and the dead-class pitfall for custom `animate-*` names must be considered).
 2. Cross-component operational state belongs in Zustand.
 3. UI should read from store truth instead of duplicating business state locally when the state spans components or pages.
 4. Any score-derived aggregate shown in UI must filter invalid numeric values first.
