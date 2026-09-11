@@ -19,11 +19,11 @@ import { IPC_CHANNELS } from './ipc/channels'
 import type { AutopilotLifecycle } from '../src/shared/ipc-contracts'
 
 process.on('uncaughtException', (error) => {
-  console.error('❌ [Main] Uncaught exception:', error)
+  console.error('[Main] Uncaught exception:', error)
 })
 
 process.on('unhandledRejection', (reason) => {
-  console.error('❌ [Main] Unhandled rejection:', reason)
+  console.error('[Main] Unhandled rejection:', reason)
 })
 
 if (process.env.KONE_TEST_USER_DATA_DIR?.trim()) {
@@ -178,7 +178,7 @@ const bindWindowCloseToTray = (mainWindow: BrowserWindow) => {
 }
 
 app.on('child-process-gone', (_event, details) => {
-  console.error('❌ [Main] Child process crashed:', details)
+  console.error('[Main] Child process crashed:', details)
 })
 
 app.whenReady().then(async () => {
@@ -202,7 +202,7 @@ app.whenReady().then(async () => {
     return { success: false, error: 'Invalid autopilot lifecycle', code: 400 }
   })
 }).catch((error) => {
-  console.error('❌ [Main] App startup failed:', error)
+  console.error('[Main] App startup failed:', error)
 })
 
 app.on('window-all-closed', () => {

@@ -373,7 +373,7 @@ const extractKeywordAnchors = (keyword: string) => {
 const computeScoutRelevance = (
   candidate: Partial<SearchExecuteResult> & { reason?: string },
   keyword: string,
-  options?: { priorityWebsite?: boolean; b2bRoleOnly?: boolean }
+  options?: { priorityWebsite?: boolean; b2bRoleOnly?: boolean; highRelevanceOnly?: boolean }
 ) => {
   const anchors = extractKeywordAnchors(keyword)
   const text = `${candidate.company || ''} ${candidate.reason || ''} ${candidate.snippet || ''} ${candidate.website || ''}`.toLowerCase()
@@ -382,15 +382,92 @@ const computeScoutRelevance = (
   const negativeHits = SCOUT_NEGATIVE_TERMS.filter((term) => text.includes(term))
   const noWebsitePenalty = Boolean(options?.priorityWebsite && !String(candidate.website || '').trim())
   const missingB2BSignalPenalty = Boolean(options?.b2bRoleOnly && b2bHits.length === 0)
-  const keep = !(negativeHits.length > 0 && anchorHits.length === 0 && b2bHits.length === 0) && !noWebsitePenalty && !missingB2BSignalPenalty
+  const weakRelevancePenalty = Boolean(options?.highRelevanceOnly && anchorHits.length === 0 && b2bHits.length === 0)
+  const keep = !(negativeHits.length > 0 && anchorHits.length === 0 && b2bHits.length === 0) && !noWebsitePenalty && !missingB2BSignalPenalty && !weakRelevancePenalty
 
   return {
     keep,
-    reason: keep ? '' : noWebsitePenalty ? '缺少官网信号' : missingB2BSignalPenalty ? '缺少 B2B 信号' : '行业偏离',
+    reason: keep ? '' : noWebsitePenalty ? '缺少官网信号' : missingB2BSignalPenalty ? '缺少 B2B 信号' : weakRelevancePenalty ? '低相关信号' : '行业偏离',
     anchorHits,
     b2bHits,
     negativeHits,
   }
+}
+
+// 优先本土域名：Scout 阶段按目标国家的 ccTLD 与全球聚合平台信号做本土度分档，
+// 用于基础结果排序（本土官网优先、聚合平台靠后），与前端展示过滤形成双保险。
+const SCOUT_GLOBAL_AGGREGATOR_DOMAINS = new Set([
+  'facebook.com', 'linkedin.com', 'instagram.com', 'twitter.com', 'x.com', 'youtube.com',
+  'tiktok.com', 'yelp.com', 'amazon.com', 'ebay.com', 'alibaba.com', 'aliexpress.com',
+  'made-in-china.com', 'dhgate.com', 'wikipedia.org', 'reddit.com', 'pinterest.com',
+])
+
+const SCOUT_COUNTRY_CCTLD_MAP: Record<string, string[]> = {
+  'united states': ['us'], 'usa': ['us'], '美国': ['us'],
+  'canada': ['ca'], '加拿大': ['ca'],
+  'united kingdom': ['uk'], 'uk': ['uk'], '英国': ['uk'],
+  'germany': ['de'], '德国': ['de'],
+  'france': ['fr'], '法国': ['fr'],
+  'italy': ['it'], '意大利': ['it'],
+  'spain': ['es'], '西班牙': ['es'],
+  'netherlands': ['nl'], '荷兰': ['nl'],
+  'belgium': ['be'], '比利时': ['be'],
+  'poland': ['pl'], '波兰': ['pl'],
+  'portugal': ['pt'], '葡萄牙': ['pt'],
+  'austria': ['at'], '奥地利': ['at'],
+  'switzerland': ['ch'], '瑞士': ['ch'],
+  'sweden': ['se'], '瑞典': ['se'],
+  'norway': ['no'], '挪威': ['no'],
+  'denmark': ['dk'], '丹麦': ['dk'],
+  'finland': ['fi'], '芬兰': ['fi'],
+  'ireland': ['ie'], '爱尔兰': ['ie'],
+  'greece': ['gr'], '希腊': ['gr'],
+  'czech republic': ['cz'], 'czechia': ['cz'], '捷克': ['cz'],
+  'romania': ['ro'], '罗马尼亚': ['ro'],
+  'hungary': ['hu'], '匈牙利': ['hu'],
+  'russia': ['ru'], '俄罗斯': ['ru'],
+  'turkey': ['tr'], '土耳其': ['tr'],
+  'australia': ['au'], '澳大利亚': ['au'], '澳洲': ['au'],
+  'new zealand': ['nz'], '新西兰': ['nz'],
+  'japan': ['jp'], '日本': ['jp'],
+  'south korea': ['kr'], 'korea': ['kr'], '韩国': ['kr'],
+  'india': ['in'], '印度': ['in'],
+  'brazil': ['br'], '巴西': ['br'],
+  'mexico': ['mx'], '墨西哥': ['mx'],
+  'argentina': ['ar'], '阿根廷': ['ar'],
+  'chile': ['cl'], '智利': ['cl'],
+  'colombia': ['co'], '哥伦比亚': ['co'],
+  'south africa': ['za'], '南非': ['za'],
+  'israel': ['il'], '以色列': ['il'],
+  'united arab emirates': ['ae'], 'uae': ['ae'], '阿联酋': ['ae'],
+  'saudi arabia': ['sa'], '沙特': ['sa'], '沙特阿拉伯': ['sa'],
+  'singapore': ['sg'], '新加坡': ['sg'],
+  'malaysia': ['my'], '马来西亚': ['my'],
+  'thailand': ['th'], '泰国': ['th'],
+  'vietnam': ['vn'], '越南': ['vn'],
+  'philippines': ['ph'], '菲律宾': ['ph'],
+  'indonesia': ['id'], '印度尼西亚': ['id'], '印尼': ['id'],
+  'egypt': ['eg'], '埃及': ['eg'],
+  'nigeria': ['ng'], '尼日利亚': ['ng'],
+}
+
+type ScoutLocalDomainSignal = 'local' | 'neutral' | 'global'
+
+const getScoutLocalDomainSignal = (
+  candidate: Partial<SearchExecuteResult>,
+  country?: string
+): ScoutLocalDomainSignal => {
+  const rawWebsite = String(candidate?.website || '').trim()
+  if (!rawWebsite) return 'neutral'
+  const host = extractDomainFromUrl(rawWebsite).replace(/^www\./, '')
+  if (!host || !host.includes('.')) return 'neutral'
+  const labels = host.split('.').filter(Boolean)
+  if (labels.length < 2) return 'neutral'
+  const registrable = labels.slice(-2).join('.')
+  if (SCOUT_GLOBAL_AGGREGATOR_DOMAINS.has(registrable)) return 'global'
+  const allowedTlds = SCOUT_COUNTRY_CCTLD_MAP[String(country || '').trim().toLowerCase()]
+  if (!allowedTlds || allowedTlds.length === 0) return 'neutral'
+  return allowedTlds.includes(`.${labels[labels.length - 1]}`) ? 'local' : 'neutral'
 }
 
 const trimWebsiteTextForLlm = (value: string) =>
@@ -934,7 +1011,7 @@ const fetchSocialFallbackSnippet = async (query: string, googleKey: string, time
 }
 
 const buildSocialFallbackEnrichedText = async (company: string, country: string | undefined, googleKey: string, timeoutMs: number) => {
-  console.log("📊 [Probe-403-Fallback] 使用 LinkedIn/Kompass/Europages 平替 for:", company)
+  console.log("[Probe-403-Fallback] 使用 LinkedIn/Kompass/Europages 平替 for:", company)
   const snippets: string[] = []
   for (const query of buildSocialFallbackQueries(company, country)) {
     const result = await fetchSocialFallbackSnippet(query, googleKey, timeoutMs).catch(() => '')
@@ -1081,10 +1158,10 @@ const enrichLeadWithDeepProbe = async (payload: {
       matchReasons: [
         ...(Array.isArray(blindLead?.matchReasons) && blindLead?.matchReasons.length > 0 ? blindLead.matchReasons : Array.isArray(payload.candidate.matchReasons) ? payload.candidate.matchReasons : []),
         blindScoreFailed && websiteBlockedBy403
-          ? '⚠️ 官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核'
+          ? '官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核'
           : usedSocialFallback
-            ? '⚠️ 官网访问受限，已基于 LinkedIn/Kompass/Europages 简介轻量评估'
-            : '⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）',
+            ? '官网访问受限，已基于 LinkedIn/Kompass/Europages 简介轻量评估'
+            : '官网访问受限，基于简介轻量评估（官网无法访问）',
       ].filter(Boolean).slice(0, 2),
       riskFlags: [
         ...(websiteBlockedBy403 ? ['website_403'] : []),
@@ -1439,7 +1516,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
       let allLocal: any[] = []
       let activeSearchMode: 'maps' | 'maps-keyword-fallback' | 'organic-fallback' = city ? 'maps' : 'maps-keyword-fallback'
 
-      emitStage(_event.sender, 'fetching', '🌐 正在抓取 Google Maps / SerpApi 搜索结果...', 'maps')
+      emitStage(_event.sender, 'fetching', '正在抓取 Google Maps / SerpApi 搜索结果...', 'maps')
 
       if (isSerpApi) {
         const attemptSearch = async (mode: SerpSearchMode, modeQuery: string, modeLocation: string) => {
@@ -1553,19 +1630,30 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             : []
       }
 
-      emitStage(_event.sender, 'normalizing', '🧩 正在整理候选客户并去重...')
+      emitStage(_event.sender, 'normalizing', '正在整理候选客户并去重...')
       const { filteredLocalResults, normalizedCandidates } = normalizeSearchResponseCandidates(allOrganic, allLocal, city, locationString)
       probeLog('[Probe-Filter] Filter applied: Priority Website =', Boolean(filterOptions?.priorityWebsite))
+      const localDomainOnly = Boolean(filterOptions?.localDomainOnly)
       const candidates = normalizedCandidates.filter((candidate) => {
         const relevance = computeScoutRelevance(candidate, keyword, {
           priorityWebsite: Boolean(filterOptions?.priorityWebsite),
           b2bRoleOnly: Boolean(filterOptions?.b2bRoleOnly),
+          highRelevanceOnly: Boolean(filterOptions?.highRelevanceOnly),
         })
         if (!relevance.keep) {
           probeLog(`[Probe-Prefilter] Discarded: ${candidate.company} (Reason: ${relevance.reason})`)
           return false
         }
         return true
+      })
+      if (localDomainOnly) {
+        const localSignalRank: Record<ScoutLocalDomainSignal, number> = { local: 0, neutral: 1, global: 2 }
+        candidates.sort((a, b) => localSignalRank[getScoutLocalDomainSignal(a, country)] - localSignalRank[getScoutLocalDomainSignal(b, country)])
+      }
+      probeLog('[Probe-Prefilter] Quality switch summary:', {
+        localDomainOnly,
+        highRelevanceOnly: Boolean(filterOptions?.highRelevanceOnly),
+        localDomainFirstCount: localDomainOnly ? candidates.filter((candidate) => getScoutLocalDomainSignal(candidate, country) === 'local').length : 0,
       })
       probeLog('[Probe-Normalize] Candidate summary:', {
         organicCount: allOrganic.length,
@@ -1578,7 +1666,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
       })
       if (candidates.length === 0) {
         probeLog('[Probe-IPC] Zero-candidate path reached, emitting complete stage and stream complete')
-        emitStage(_event.sender, 'complete', '✅ 分析完成，未发现符合条件的线索')
+        emitStage(_event.sender, 'complete', '分析完成，未发现符合条件的线索')
         emitStreamComplete(_event.sender)
         return { success: true, data: { results: [] } }
       }
@@ -1601,7 +1689,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           })
         }
         const fallbackSourceLabel = candidates.some((item) => String(item.source || '').includes('Organic')) ? '网页搜索' : 'Google Maps'
-        emitStage(_event.sender, 'complete', `✅ 已返回 ${fallbackSourceLabel} 基础结果（未启用 AI 评分）`)
+        emitStage(_event.sender, 'complete', `已返回 ${fallbackSourceLabel} 基础结果（未启用 AI 评分）`)
         emitStreamComplete(_event.sender)
         return { success: true, data: { results: candidates.map((item) => applySchemaDefaults(item)) } }
       }
@@ -1610,7 +1698,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         candidateCount: candidates.length,
         concurrency: SEARCH_LLM_CONCURRENCY,
       })
-      emitStage(_event.sender, 'scoring', '🤖 正在进行 ICP 智能评估...')
+      emitStage(_event.sender, 'scoring', '正在进行 ICP 智能评估...')
 
       if (!llmKey || !llmEndpoint) {
         probeError('[Probe-Auth] LLM config inconsistent after scoring gate', {
@@ -1694,7 +1782,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
       probeLog('[Probe-IPC] Score stream complete emitted before enrichment phase')
 
       if (cleanedResults.length > 0) {
-        emitStage(_event.sender, 'enriching', '🔎 正在补全官网与商业信号...')
+        emitStage(_event.sender, 'enriching', '正在补全官网与商业信号...')
         const baseResults = cleanedResults.filter(Boolean)
         const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
         await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
@@ -1728,11 +1816,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           }
         })
         const finalResults = enrichedResults.map((item, index) => item || applySchemaDefaults(baseResults[index]))
-        emitStage(_event.sender, 'complete', '✅ 分析完成，线索已更新')
+        emitStage(_event.sender, 'complete', '分析完成，线索已更新')
         return { success: true, data: { results: finalResults || [] } }
       }
 
-      emitStage(_event.sender, 'complete', '✅ 分析完成，线索已更新')
+      emitStage(_event.sender, 'complete', '分析完成，线索已更新')
       return { success: true, data: { results: [] } }
     } catch (error: any) {
       probeLog('[Probe-IPC] Search execute catch triggered, emitting stream:error + stream:complete', {
