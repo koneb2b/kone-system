@@ -365,7 +365,7 @@ test('B: 社交源全部为空时仍优雅降级并完成流闭环', async () =>
   assert.equal(result.success, true)
   assert.ok(Array.isArray(result.data.results))
   assert.ok(
-    (result.data.results[0].matchReasons || []).includes('⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）'),
+    (result.data.results[0].matchReasons || []).includes('官网访问受限，基于简介轻量评估（官网无法访问）'),
   )
 
   const completedEvent = senderEvents.find((event) => event.channel === IPC_CHANNELS.SEARCH.STREAM_COMPLETE)

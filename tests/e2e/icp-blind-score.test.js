@@ -10,7 +10,7 @@ const originalFetch = global.fetch
 const handlers = new Map()
 const senderEvents = []
 
-const BLIND_SCORE_LABEL = '⚠️ 官网访问受限，基于简介轻量评估（官网无法访问）'
+const BLIND_SCORE_LABEL = '官网访问受限，基于简介轻量评估（官网无法访问）'
 
 const electronMock = {
   app: {

@@ -11,7 +11,7 @@ const electronMock = {
     getPath: () => path.join(process.cwd(), '.tmp-test-user-data'),
   },
   safeStorage: {
-    isEncryptionAvailable: () => false,
+    isEncryptionAvailable: () => true,
     encryptString: (value) => Buffer.from(value, 'utf8'),
     decryptString: (buffer) => buffer.toString('utf8'),
   },
