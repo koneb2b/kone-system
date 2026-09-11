@@ -214,13 +214,13 @@ const resolveSearchStageMessage = (payload?: {
   if (payload?.intentMutated) {
     const country = payload.intentMutated.country || 'Global'
     const keywords = Array.isArray(payload.intentMutated.keywords) ? payload.intentMutated.keywords : []
-    return `🤖 AI 智能解构成功！当前目标国家 [${country}]，正在全渠道并发穿透以下高价值 B2B 变种词：${keywords.map((item) => `[${item}]`).join(', ')}`
+    return `AI 智能解构成功！当前目标国家 [${country}]，正在全渠道并发穿透以下高价值 B2B 变种词：${keywords.map((item) => `[${item}]`).join(', ')}`
   }
   if (payload?.stage === 'prefiltering') {
-    return '🔍 正在执行相关度预筛，剔除泛化结果...'
+    return '正在执行相关度预筛，剔除泛化结果...'
   }
   if (payload?.stage === 'blind_scoring' || payload?.searchMode === 'anysearch') {
-    return '🤖 AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...'
+    return 'AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...'
   }
   if (payload?.searchMode === 'maps-keyword-fallback') {
     return '地图定位受限，正在尝试扩大识别范围...'

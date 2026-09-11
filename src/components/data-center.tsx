@@ -862,9 +862,7 @@ export function DataCenter({
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">数据罗盘转化诊断</h3>
-                  <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                    Pro-Level Manager Insights
-                  </div>
+                  <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">管理者级转化洞察</div>
                 </div>
                 <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-600 border-emerald-200">
                   <Activity className="size-3 mr-1" />
@@ -874,7 +872,7 @@ export function DataCenter({
               <div className="p-5 flex flex-col gap-4">
                 <div className="grid gap-3 md:grid-cols-2">
                   <MetricInsightCard
-                    eyebrow="Execution Rate"
+                    eyebrow="执行率"
                     metricLabel="线索消化率"
                     metricValue={executionInsight.value}
                     formula={`计算方式: (联系中 ${stageCounts.contacting} + 已回复 ${stageCounts.replied}) / 总线索 ${leads.length}`}
@@ -884,7 +882,7 @@ export function DataCenter({
                     {executionInsight.body}
                   </MetricInsightCard>
                   <MetricInsightCard
-                    eyebrow="Reply Rate"
+                    eyebrow="回复率"
                     metricLabel="回复转化率"
                     metricValue={replyInsight.value}
                     formula={`计算方式: 已回复 ${stageCounts.replied} / (联系中 ${stageCounts.contacting} + 已回复 ${stageCounts.replied})`}
@@ -896,17 +894,17 @@ export function DataCenter({
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Pipeline Base</div>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">管线基数</div>
                     <div className="mt-2 text-xs text-muted-foreground">总线索基数</div>
                     <div className="mt-1 text-2xl font-semibold text-foreground tabular-nums">{leads.length}</div>
                   </div>
                   <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">In Execution</div>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">执行中</div>
                     <div className="mt-2 text-xs text-muted-foreground">联系中 + 已回复</div>
                     <div className="mt-1 text-2xl font-semibold text-foreground tabular-nums">{executionBase}</div>
                   </div>
                   <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">High Score</div>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">高分线索</div>
                     <div className="mt-2 text-xs text-muted-foreground">高分线索 (&gt; 80)</div>
                     <div className="mt-1 text-2xl font-semibold text-foreground tabular-nums">{highScoreCount}</div>
                   </div>

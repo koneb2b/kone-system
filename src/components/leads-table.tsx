@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Filter, Download, Mail, Phone, Lock, MessageCircle, Send, AlertCircle, ScanSearch } from 'lucide-react'
+import { Filter, Download, Mail, Phone, MessageCircle, Send, AlertCircle, ScanSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { stableHash } from '@/lib/utils'
@@ -173,7 +173,6 @@ export function LeadsTable({
   const [statusMap, setStatusMap] = useState<Record<string, AgentStatus>>({})
   const [filters, setFilters] = useState({
     highMatch: false,
-    unlocked: false,
     hasEmail: false,
     hasDecisionMakers: false,
     hasCustomsData: false,
@@ -226,8 +225,7 @@ export function LeadsTable({
     () =>
       leads
         .filter((lead) => {
-          if (filters.highMatch && (!hasNumericMatchScore(lead) || lead.matchScore < 85)) return false
-          if (filters.unlocked && !lead.unlocked) return false
+          if (filters.highMatch && (!hasNumericMatchScore(lead) || lead.matchScore < 80)) return false
           if (filters.hasEmail && !lead.email) return false
           if (filters.hasDecisionMakers && (!lead.decisionMakers || lead.decisionMakers.length === 0)) return false
           if (filters.hasCustomsData && !lead.customsData) return false
@@ -325,16 +323,6 @@ export function LeadsTable({
                   />
                   <Label htmlFor="highMatch" className="text-slate-700">
                     仅显示高匹配度 (&gt;80%)
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="unlocked"
-                    checked={filters.unlocked}
-                    onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, unlocked: checked as boolean }))}
-                  />
-                  <Label htmlFor="unlocked" className="text-slate-700">
-                    仅显示已解锁
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -475,12 +463,7 @@ export function LeadsTable({
                   className="border-b border-slate-100 last:border-b-0 hover:bg-[hsl(var(--background))] transition-colors h-16"
                 >
                   <td className="px-5 py-4">
-                    <button
-                      onClick={() => {
-                        window.location.hash = `/data-center/${lead.id}`
-                      }}
-                      className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-                    >
+                    <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-[hsl(var(--background))] border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
                         {lead.company.charAt(0)}
                       </div>
@@ -496,7 +479,7 @@ export function LeadsTable({
                           status={(lead.leadKey ? statusMap[lead.leadKey] : undefined) || lead.agentStatus}
                         />
                       </div>
-                    </button>
+                    </div>
                   </td>
                   <td className="px-5 py-4">
                     <MatchBar
@@ -506,26 +489,19 @@ export function LeadsTable({
                     />
                   </td>
                   <td className="px-5 py-4">
-                    {lead.unlocked ? (
-                      <div className="flex flex-col gap-1">
-                        <span className="font-medium text-slate-700">{lead.contact || '暂无数据'}</span>
-                        <div className="flex items-center gap-3 text-xs text-slate-500">
-                          <span className="flex items-center gap-1">
-                            <Mail className="size-3" />
-                            {lead.email || '暂无数据'}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Phone className="size-3" />
-                            {lead.phone || '暂无数据'}
-                          </span>
-                        </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-slate-700">{lead.contact || '暂无数据'}</span>
+                      <div className="flex items-center gap-3 text-xs text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <Mail className="size-3" />
+                          {lead.email || '暂无数据'}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Phone className="size-3" />
+                          {lead.phone || '暂无数据'}
+                        </span>
                       </div>
-                    ) : (
-                      <button className="flex items-center gap-1.5 text-[hsl(var(--deep-blue))] text-sm font-medium hover:underline">
-                        <Lock className="size-3.5" />
-                        点击解锁
-                      </button>
-                    )}
+                    </div>
                   </td>
                   <td className="px-5 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">

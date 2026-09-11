@@ -1235,7 +1235,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
 
           <div className="grid gap-4 px-6 py-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-              <div className="font-medium text-slate-800">AI Prompt Strategy</div>
+              <div className="font-medium text-slate-800">AI 提示词策略</div>
               <div className="mt-1 whitespace-pre-wrap leading-5 text-slate-500">{emailPromptPreview}</div>
             </div>
 

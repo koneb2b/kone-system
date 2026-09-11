@@ -78,7 +78,7 @@ export function IcpSettingsTab({ icpProfile, onUpdateIcp, onSave, isSaving, manu
             />
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <div className="font-medium">填写建议 (Tips for High-Quality Leads)</div>
+            <div className="font-medium">填写建议</div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900/90">
               <li>产品词尽量具体，优先填客户会搜索的标准产品名，切忌大而全。</li>
               <li>买家类型只选最常成交的一类，避免范围过宽导致线索失焦。</li>
