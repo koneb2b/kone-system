@@ -777,7 +777,10 @@ const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item
 
 评分并发常量：
 
-- `SEARCH_LLM_CONCURRENCY = 3`
+- `SEARCH_LLM_CONCURRENCY = 2`
+- `SEARCH_ENRICH_CONCURRENCY = 2`
+
+两者均与性能红线（评分与官网补全并发上限严格固定为 `2`）保持一致。
 
 它被用于：
 
@@ -921,13 +924,13 @@ const unsubscribeScored = onSearchLeadScored((payload) => { ... })
 - `streamStage`
 - `streamStageMessage`
 
-UI 中真实显示：
+UI 中真实显示（依据 UI 宪法，阶段文案不带任何 emoji）：
 
-- “🌐 正在抓取 Google Maps / SerpApi 搜索结果...”
-- “🧩 正在整理候选客户并去重...”
-- “🤖 正在进行 ICP 智能评估...”
-- “🔎 正在补全官网与商业信号...”
-- “✅ 分析完成，线索已更新”
+- “正在抓取 Google Maps / SerpApi 搜索结果...”
+- “正在整理候选客户并去重...”
+- “正在进行 ICP 智能评估...”
+- “正在补全官网与商业信号...”
+- “分析完成，线索已更新”
 
 进度数值来源：
 
@@ -1709,9 +1712,9 @@ export type CampaignStartRequest = {
 
 以下是“代码现状”，不是建议：
 
-- `useFeatureGate()` 中 `basic` feature alias 含有 `cloud_send` 与 `analysis_advanced`
-- 这与规范文档中“高级版云端自动化隔离”的描述不完全一致
-- 如果商业策略要求更严格的高级版隔离，需要后续核对 `license-service`、`feature-gate.ts` 与 License claims 生成逻辑
+- `useFeatureGate()` 中 `basic` feature alias 仅含 `search_basic`、`search_deep`、`analysis_basic`、`analysis_advanced`、`lead_export`、`export_full`，不含 `cloud_send` 与 `team_collaboration`
+- `cloud_send` / `team_collaboration` 仅出现在 `premium` 与 `enterprise` alias 中，与主进程 `license-guard.ts` 的 `BASIC_FEATURES` / `PREMIUM_FEATURES` 边界一致
+- 历史版本中“basic alias 含 cloud_send”的隔离隐患已在 V1.2 修复，保持双侧一致性检查即可
 
 ---
 
