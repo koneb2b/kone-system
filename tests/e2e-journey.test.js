@@ -68,7 +68,7 @@ test('e2e journey: search result save to analysis/email draft path stays availab
       company: 'Blocked Parts Co',
       website: 'https://blocked.example',
       matchScore: undefined,
-      matchReasons: ['⚠️ 官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核'],
+      matchReasons: ['官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核'],
       riskFlags: ['website_403', 'blind_score_failed', '官网访问受限，建议人工复核'],
       snippet: 'Auto-generated fallback record',
     },
@@ -96,7 +96,8 @@ test('e2e journey: search result save to analysis/email draft path stays availab
     painPoints: '需要稳定交付、认证资料与低 MOQ 支持。',
     valueMapping: '可用 OEM 支持与交付稳定性切入。',
     emailSubject: 'Reliable industrial battery supply for your distribution pipeline',
-    emailBody: 'Hi Alpha Energy team, we support industrial battery distributors with stable OEM delivery and faster commercial response.',
+    emailBody:
+      'Hi Alpha Energy team, we support industrial battery distributors with stable OEM delivery and faster commercial response.',
     confidence: 86,
   })
 
