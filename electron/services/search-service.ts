@@ -2769,187 +2769,206 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
             return { nextOrganic, nextLocal }
           }
-          const searchPlans: Array<{ anyResult: any; serpResult: any; providerResults: ProviderResult[] }> =
-            await Promise.all(
-              allSearchKeywords.map(async ({ keyword: mutatedKeyword, language: searchLanguage }) => {
-                if (myJobId !== activeJobIdFor())
-                  return {
-                    anyResult: null,
-                    serpResult: { allOrganic: [], allLocal: [], activeSearchMode: 'organic-fallback' },
-                    providerResults: [],
-                  }
-                const anySearchPromise = anySearchEnabled
-                  ? attemptAnySearch(
-                      mutatedKeyword,
-                      country,
-                      city,
-                      anysearchCfg.apiKey,
-                      anysearchCfg.baseUrl,
-                      timeoutMs,
-                      dataSourceType,
-                    ).catch((error) => {
-                      if (myJobId !== activeJobIdFor()) return null
-                      probeLog('[Probe-AnySearch] Level 0 failed, keeping SerpApi fallback:', {
-                        keyword: mutatedKeyword,
-                        message: error instanceof Error ? error.message : String(error || ''),
-                      })
-                      return null
-                    })
-                  : Promise.resolve(null)
-                const serpPromise = resolveSerpSearchPlan({
-                  keyword: mutatedKeyword,
-                  city,
-                  country,
-                  googleKey,
-                  timeoutMs,
-                  dataSourceType,
-                  attemptSearch: (mode, modeQuery, modeLocation) => attemptSearch(mode, modeQuery, modeLocation),
-                  onStage: (message, searchMode) => {
-                    if (myJobId === activeJobIdFor()) emitStage(_event.sender, 'fetching', message, searchMode)
-                  },
-                  onFallback: (event, detail) => {
-                    if (myJobId !== activeJobIdFor()) return
-                    if (event === 'location-rejected') {
-                      probeLog('[Probe-Fallback] Location rejected, switching to keyword-based query.', detail)
-                    }
-                    if (event === 'zero-local-organic') {
-                      probeLog(
-                        '[Probe-Fallback] Maps keyword returned zero local results, switching to Google Organic.',
-                        detail,
-                      )
-                    }
-                  },
-                })
-                const providerQuery: ProviderQuery = {
-                  keyword: mutatedKeyword,
-                  language: searchLanguage || 'en',
-                  country,
-                  city,
-                  intentProducts: [],
-                  b2bAttributes: [],
-                  myJobId,
-                  googleKey: googleKey || undefined,
-                  anysearchApiKey: anysearchCfg.apiKey || undefined,
-                  anysearchBaseUrl: anysearchCfg.baseUrl || undefined,
-                  timeoutMs,
+          const searchPlans: Array<{
+            serpResult: any
+            lateSources: Promise<{ anyResult: any; providerResults: ProviderResult[] }>
+          }> = await Promise.all(
+            allSearchKeywords.map(async ({ keyword: mutatedKeyword, language: searchLanguage }) => {
+              if (myJobId !== activeJobIdFor())
+                return {
+                  serpResult: { allOrganic: [], allLocal: [], activeSearchMode: 'organic-fallback' },
+                  lateSources: Promise.resolve({ anyResult: null, providerResults: [] }),
                 }
-                const registry = getOrCreateProviderRegistry()
-                // Organic-only selection law (ARCH-STANDARDS §9.4): when the caller
-                // explicitly selects `google_organic`, acquisition must stay Organic-only
-                // and must NOT fan out to Maps/LinkedIn/customs/etc. Constrain the registry
-                // to the organic provider; the default blind-search still dispatches to all.
-                const providerIds: DataSourceType[] | undefined =
-                  dataSourceType === 'google_organic' ? ['google_organic'] : undefined
-                const availableProviders = registry
-                  .getAvailableProviders({
-                    googleKey,
-                    anysearchApiKey: anysearchCfg.apiKey,
-                    anysearchBaseUrl: anysearchCfg.baseUrl,
-                  })
-                  .filter((p) => !providerIds || providerIds.includes(p.id))
-                if (availableProviders.length > 0 && myJobId === activeJobIdFor()) {
-                  probeLog(
-                    '[Probe-Provider] Dispatching to providers:',
-                    availableProviders.map((p) => p.name),
-                  )
-                }
-                const providerPromise = registry
-                  .executeAll(providerQuery, providerIds)
-                  .then((map) => {
-                    const results: ProviderResult[] = []
-                    for (const result of map.values()) {
-                      results.push(...result.results)
-                    }
-                    return results
-                  })
-                  .catch((error) => {
-                    if (myJobId !== activeJobIdFor()) return [] as ProviderResult[]
-                    probeLog('[Probe-Provider] Registry execution failed:', {
+              const anySearchPromise = anySearchEnabled
+                ? attemptAnySearch(
+                    mutatedKeyword,
+                    country,
+                    city,
+                    anysearchCfg.apiKey,
+                    anysearchCfg.baseUrl,
+                    timeoutMs,
+                    dataSourceType,
+                  ).catch((error) => {
+                    if (myJobId !== activeJobIdFor()) return null
+                    probeLog('[Probe-AnySearch] Level 0 failed, keeping SerpApi fallback:', {
                       keyword: mutatedKeyword,
                       message: error instanceof Error ? error.message : String(error || ''),
                     })
-                    return [] as ProviderResult[]
+                    return null
                   })
-                const settled = await Promise.allSettled([anySearchPromise, serpPromise, providerPromise])
-                const anyResult = settled[0].status === 'fulfilled' ? settled[0].value : null
-                const serpResult =
-                  settled[1].status === 'fulfilled'
-                    ? settled[1].value
-                    : { allOrganic: [], allLocal: [], activeSearchMode: 'organic-fallback' }
-                const providerResults: ProviderResult[] = settled[2].status === 'fulfilled' ? settled[2].value : []
-                return { anyResult, serpResult, providerResults }
-              }),
-            )
+                : Promise.resolve(null)
+              const serpPromise = resolveSerpSearchPlan({
+                keyword: mutatedKeyword,
+                city,
+                country,
+                googleKey,
+                timeoutMs,
+                dataSourceType,
+                attemptSearch: (mode, modeQuery, modeLocation) => attemptSearch(mode, modeQuery, modeLocation),
+                onStage: (message, searchMode) => {
+                  if (myJobId === activeJobIdFor()) emitStage(_event.sender, 'fetching', message, searchMode)
+                },
+                onFallback: (event, detail) => {
+                  if (myJobId !== activeJobIdFor()) return
+                  if (event === 'location-rejected') {
+                    probeLog('[Probe-Fallback] Location rejected, switching to keyword-based query.', detail)
+                  }
+                  if (event === 'zero-local-organic') {
+                    probeLog(
+                      '[Probe-Fallback] Maps keyword returned zero local results, switching to Google Organic.',
+                      detail,
+                    )
+                  }
+                },
+              })
+              const providerQuery: ProviderQuery = {
+                keyword: mutatedKeyword,
+                language: searchLanguage || 'en',
+                country,
+                city,
+                intentProducts: [],
+                b2bAttributes: [],
+                myJobId,
+                googleKey: googleKey || undefined,
+                anysearchApiKey: anysearchCfg.apiKey || undefined,
+                anysearchBaseUrl: anysearchCfg.baseUrl || undefined,
+                timeoutMs,
+              }
+              const registry = getOrCreateProviderRegistry()
+              // Organic-only selection law (ARCH-STANDARDS §9.4): when the caller
+              // explicitly selects `google_organic`, acquisition must stay Organic-only
+              // and must NOT fan out to Maps/LinkedIn/customs/etc. Constrain the registry
+              // to the organic provider; the default blind-search still dispatches to all.
+              const providerIds: DataSourceType[] | undefined =
+                dataSourceType === 'google_organic' ? ['google_organic'] : undefined
+              const availableProviders = registry
+                .getAvailableProviders({
+                  googleKey,
+                  anysearchApiKey: anysearchCfg.apiKey,
+                  anysearchBaseUrl: anysearchCfg.baseUrl,
+                })
+                .filter((p) => !providerIds || providerIds.includes(p.id))
+              if (availableProviders.length > 0 && myJobId === activeJobIdFor()) {
+                probeLog(
+                  '[Probe-Provider] Dispatching to providers:',
+                  availableProviders.map((p) => p.name),
+                )
+              }
+              const providerPromise = registry
+                .executeAll(providerQuery, providerIds)
+                .then((map) => {
+                  const results: ProviderResult[] = []
+                  for (const result of map.values()) {
+                    results.push(...result.results)
+                  }
+                  return results
+                })
+                .catch((error) => {
+                  if (myJobId !== activeJobIdFor()) return [] as ProviderResult[]
+                  probeLog('[Probe-Provider] Registry execution failed:', {
+                    keyword: mutatedKeyword,
+                    message: error instanceof Error ? error.message : String(error || ''),
+                  })
+                  return [] as ProviderResult[]
+                })
+              /* 渐进式发射（P0 体验优化）：SerpApi 主源通常 10-30 秒返回，而 AnySearch
+               深度穿透可能需要 2-3 分钟。此处不再等待全源到齐——主源结果立即返回
+               用于第一波展示与评分；AnySearch/Provider 结果交给 lateSources 在
+               评分期间后台聚合，到货后并入第二波。 */
+              const serpResult = await serpPromise
+              const lateSources = Promise.allSettled([anySearchPromise, providerPromise]).then(
+                ([anySettled, providerSettled]) => ({
+                  anyResult: anySettled.status === 'fulfilled' ? anySettled.value : null,
+                  providerResults: providerSettled.status === 'fulfilled' ? providerSettled.value : [],
+                }),
+              )
+              return { serpResult, lateSources }
+            }),
+          )
+          const lateSourcePromises = searchPlans.map((plan) => plan.lateSources)
+          /* 第一波合并：仅 SerpApi 主源结果（AnySearch/Provider 由聚合器延后并入） */
           for (const plan of searchPlans) {
             if (myJobId !== activeJobIdFor()) break
-            if (plan.anyResult?.results?.length) {
-              allOrganic.push(
-                ...plan.anyResult.results.map((item: any) => ({
-                  company: item.company,
-                  website: item.website,
-                  phone: item.phone,
-                  address: item.address,
-                  source: item.source,
-                  reason: item.reason,
-                  snippet: item.snippet,
-                  dataSourceType: item.dataSourceType,
-                  decisionMakers: item.decisionMakers,
-                  customsData: item.customsData,
-                  exhibitionFootprints: item.exhibitionFootprints,
-                  agentStatus: item.agentStatus,
-                })),
-              )
-              anySearchDecisionMakers.push(
-                ...plan.anyResult.results.flatMap((item: any) => item.decisionMakers || []).filter(Boolean),
-              )
-              anySearchCustomsData =
-                anySearchCustomsData || plan.anyResult.results.find((item: any) => item.customsData)?.customsData
-              anySearchExhibitionFootprints.push(
-                ...plan.anyResult.results.flatMap((item: any) => item.exhibitionFootprints || []).filter(Boolean),
-              )
-              anySearchAgentStatus =
-                anySearchAgentStatus || plan.anyResult.results.find((item: any) => item.agentStatus)?.agentStatus
-            }
-            if (plan.providerResults.length) {
-              allOrganic.push(
-                ...plan.providerResults.map((item: ProviderResult) => ({
-                  company: item.company,
-                  website: item.website,
-                  phone: item.phone,
-                  address: item.address,
-                  contact: item.contact,
-                  contactTitle: item.contactTitle,
-                  email: item.email,
-                  source: item.source,
-                  reason: item.reason,
-                  snippet: item.snippet,
-                  dataSourceType: item.source,
-                  dataSourceNote: item.dataSourceNote,
-                  decisionMakers: item.decisionMakers,
-                  customsData: item.customsData,
-                  exhibitionFootprints: item.exhibitionFootprints,
-                  agentStatus: item.agentStatus,
-                })),
-              )
-              anySearchDecisionMakers.push(
-                ...plan.providerResults.flatMap((item: ProviderResult) => item.decisionMakers || []).filter(Boolean),
-              )
-              anySearchCustomsData =
-                anySearchCustomsData ||
-                plan.providerResults.find((item: ProviderResult) => item.customsData)?.customsData
-              anySearchExhibitionFootprints.push(
-                ...plan.providerResults
-                  .flatMap((item: ProviderResult) => item.exhibitionFootprints || [])
-                  .filter(Boolean),
-              )
-              anySearchAgentStatus =
-                anySearchAgentStatus ||
-                plan.providerResults.find((item: ProviderResult) => item.agentStatus)?.agentStatus
-            }
             allOrganic.push(...plan.serpResult.allOrganic)
             allLocal.push(...plan.serpResult.allLocal)
             if (String(plan.serpResult.activeSearchMode) === 'organic-fallback') activeSearchMode = 'organic-fallback'
           }
+          /* 第二波聚合器：AnySearch 深度穿透 + Provider 管道结果（与第一波评分并行执行）。
+           决策人/海关/展会/Agent 状态维持原有全量共享语义聚合。 */
+          const aggregateLateSources = async (): Promise<{ lateOrganic: any[]; lateLocal: any[] }> => {
+            const settled = await Promise.all(lateSourcePromises)
+            const lateOrganic: any[] = []
+            const lateLocal: any[] = []
+            if (myJobId !== activeJobIdFor()) return { lateOrganic, lateLocal }
+            for (const late of settled) {
+              if (late.anyResult?.results?.length) {
+                lateOrganic.push(
+                  ...late.anyResult.results.map((item: any) => ({
+                    company: item.company,
+                    website: item.website,
+                    phone: item.phone,
+                    address: item.address,
+                    source: item.source,
+                    reason: item.reason,
+                    snippet: item.snippet,
+                    dataSourceType: item.dataSourceType,
+                    decisionMakers: item.decisionMakers,
+                    customsData: item.customsData,
+                    exhibitionFootprints: item.exhibitionFootprints,
+                    agentStatus: item.agentStatus,
+                  })),
+                )
+                anySearchDecisionMakers.push(
+                  ...late.anyResult.results.flatMap((item: any) => item.decisionMakers || []).filter(Boolean),
+                )
+                anySearchCustomsData =
+                  anySearchCustomsData || late.anyResult.results.find((item: any) => item.customsData)?.customsData
+                anySearchExhibitionFootprints.push(
+                  ...late.anyResult.results.flatMap((item: any) => item.exhibitionFootprints || []).filter(Boolean),
+                )
+                anySearchAgentStatus =
+                  anySearchAgentStatus || late.anyResult.results.find((item: any) => item.agentStatus)?.agentStatus
+              }
+              if (late.providerResults.length) {
+                lateOrganic.push(
+                  ...late.providerResults.map((item: ProviderResult) => ({
+                    company: item.company,
+                    website: item.website,
+                    phone: item.phone,
+                    address: item.address,
+                    contact: item.contact,
+                    contactTitle: item.contactTitle,
+                    email: item.email,
+                    source: item.source,
+                    reason: item.reason,
+                    snippet: item.snippet,
+                    dataSourceType: item.source,
+                    dataSourceNote: item.dataSourceNote,
+                    decisionMakers: item.decisionMakers,
+                    customsData: item.customsData,
+                    exhibitionFootprints: item.exhibitionFootprints,
+                    agentStatus: item.agentStatus,
+                  })),
+                )
+                anySearchDecisionMakers.push(
+                  ...late.providerResults.flatMap((item: ProviderResult) => item.decisionMakers || []).filter(Boolean),
+                )
+                anySearchCustomsData =
+                  anySearchCustomsData ||
+                  late.providerResults.find((item: ProviderResult) => item.customsData)?.customsData
+                anySearchExhibitionFootprints.push(
+                  ...late.providerResults
+                    .flatMap((item: ProviderResult) => item.exhibitionFootprints || [])
+                    .filter(Boolean),
+                )
+                anySearchAgentStatus =
+                  anySearchAgentStatus ||
+                  late.providerResults.find((item: ProviderResult) => item.agentStatus)?.agentStatus
+              }
+            }
+            return { lateOrganic, lateLocal }
+          }
+          const lateSourcesPromise = aggregateLateSources()
         } else {
           const rawSearches = await Promise.allSettled(
             allSearchKeywords.map(async ({ keyword: mutatedKeyword }) => {
