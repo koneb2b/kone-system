@@ -1,7 +1,16 @@
 import { app, BrowserWindow, screen, session } from './electron-bridge'
 import path from 'path'
+import fs from 'fs'
 
-const getWindowIconPath = () => path.join(app.getAppPath(), 'build', 'icon.ico')
+// 窗口图标：打包版从 resources 根读取（extraResources 拷贝，asar 外）；
+// dev 从源码 build/ 目录读取。electron-builder 默认不把 buildResources 目录打进 asar，
+// 因此打包环境绝不能用 appPath/build 路径。
+const getWindowIconPath = () => {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath || '', 'icon.ico')
+  }
+  return path.join(app.getAppPath(), 'build', 'icon.ico')
+}
 
 export const createMainWindow = async () => {
   const isDev = !app.isPackaged
@@ -28,6 +37,11 @@ export const createMainWindow = async () => {
       preload: preloadPath,
     },
   })
+
+  const windowIconPath = getWindowIconPath()
+  if (!fs.existsSync(windowIconPath)) {
+    console.warn(`[Window] Icon file missing, OS will fall back to default: ${windowIconPath}`)
+  }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()

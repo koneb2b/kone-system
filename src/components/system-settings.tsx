@@ -435,6 +435,11 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
             <div className="flex-1">
               <h1 className="text-2xl font-semibold text-slate-900">Kone 系统设置</h1>
               <p className="text-sm text-slate-500">API 与模型、ICP 策略、Kone 协同引擎</p>
+              {import.meta.env.DEV ? (
+                <p className="mt-1 inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">
+                  开发预览环境：配置独立存放于 %APPDATA%\kone-system，与正式安装版的配置互不相通
+                </p>
+              ) : null}
             </div>
             <Badge variant="secondary" className="text-xs">
               {saveStatus === 'saving' && '正在保存'}

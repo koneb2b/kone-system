@@ -53,6 +53,12 @@
       "!**/*.test.ts"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
