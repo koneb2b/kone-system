@@ -81,6 +81,11 @@ export function N8nSettingsTab({
                   onCheckedChange={(checked) => onUpdateN8n({ autoPush: checked })}
                 />
               </div>
+              {n8nSettings.autoPush && !n8nSettings.webhookUrl.trim() ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  尚未填写云端发送队列地址：开启自动同步后，系统仍不会实际推送线索。请先填写上方地址并保存。
+                </p>
+              ) : null}
               {n8nSettings.autoPush ? (
                 <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
                   <div className="grid gap-2">

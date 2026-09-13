@@ -27,6 +27,25 @@ const secretKeysByProvider: Record<string, string> = {
   anysearch: 'secrets.anysearch.apiKey',
 }
 
+const providerBaseUrlHints: Record<string, { placeholder: string; hint: string }> = {
+  llm: {
+    placeholder: '例如：https://api.openai.com/v1 或中转/私有部署地址（通常以 /v1 结尾）',
+    hint: '模型服务接口地址，通常以 /v1 结尾；使用中转或私有部署请填对应地址。',
+  },
+  'google-leads': {
+    placeholder: '例如：https://serpapi.com',
+    hint: '谷歌获客引擎通过 SerpApi 账号校验，密钥即 SerpApi 的 API Key。',
+  },
+  'google-maps': {
+    placeholder: '例如：https://serpapi.com',
+    hint: '谷歌地图搜索与获客引擎共用 SerpApi 账号体系。',
+  },
+  anysearch: {
+    placeholder: '例如：https://api.anysearch.example.com',
+    hint: '以 AnySearch 服务商控制台提供的接口地址为准。',
+  },
+}
+
 const providerDescriptions: Record<string, string> = {
   anysearch:
     '安全保存 AnySearch 垂直实体级 API 密钥，用于在获客时深度穿透潜客高管个人邮箱、海关提单与全球展会足迹，燃料自理支持本地持久化。',
@@ -243,7 +262,11 @@ export function BaseSettingsTab({
     const secretKey = secretKeysByProvider[api.id]
     const value = drafts[api.id]?.key?.trim() || ''
 
-    if (!secretKey || !value) return
+    if (!secretKey) return
+    if (!value) {
+      toast({ title: '请先输入 API Key', description: '在上方密钥输入框填写后再点击保存。', variant: 'destructive' })
+      return
+    }
 
     try {
       const result = await secretSet({ key: secretKey, value })
@@ -289,6 +312,13 @@ export function BaseSettingsTab({
     if (!secretKey || !key || !baseUrl) {
       setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
       onUpdateConfig(api.id, { status: 'error' })
+      toast({
+        title: '无法开始校验',
+        description: !key
+          ? '请先在上方填写 API Key（或此前已保存过密钥则无需重复填写）。'
+          : '请先填写 Base URL（接口地址通常以 /v1 结尾）。',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -326,8 +356,12 @@ export function BaseSettingsTab({
     } catch (error) {
       setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
       onUpdateConfig(api.id, { status: 'error' })
-      const description = `校验失败：${api.name} 密钥无效或连接海外服务器超时，请检查网络。`
-      toast({ title: '测试连接失败', description, variant: 'destructive' })
+      const detail = error instanceof Error ? error.message : ''
+      toast({
+        title: '测试连接失败',
+        description: detail ? `${api.name}：${detail}` : `校验失败：${api.name} 密钥无效或连接服务器超时，请检查网络。`,
+        variant: 'destructive',
+      })
     } finally {
       setTestingById((prev) => ({ ...prev, [api.id]: false }))
     }
@@ -341,7 +375,19 @@ export function BaseSettingsTab({
     const baseUrl = drafts[api.id]?.baseUrl?.trim() || ''
 
     if (!baseUrl) {
-      toast({ title: '识别模型失败', description: '请先填写 LLM Base URL', variant: 'destructive' })
+      toast({
+        title: '识别模型失败',
+        description: '请先填写 LLM Base URL（接口地址通常以 /v1 结尾）。',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (!apiKey && !secretState[api.id]?.exists) {
+      toast({
+        title: '识别模型失败',
+        description: '请先填写 API Key 并保存，或直接输入密钥后再识别。',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -423,9 +469,13 @@ export function BaseSettingsTab({
                   <Input
                     id={`${api.id}-base`}
                     value={draft.baseUrl}
+                    placeholder={providerBaseUrlHints[api.id]?.placeholder}
                     onChange={(e) => handleBaseUrlChange(api.id, e.target.value)}
                     className="h-10 focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:ring-offset-0"
                   />
+                  {providerBaseUrlHints[api.id] ? (
+                    <p className="text-xs text-slate-500">{providerBaseUrlHints[api.id].hint}</p>
+                  ) : null}
                 </div>
 
                 {api.id === 'llm' ? (
