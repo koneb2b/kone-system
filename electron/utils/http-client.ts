@@ -1,4 +1,8 @@
-const FAILURE_STATUSES = new Set([400, 401, 403, 429])
+// 熔断只针对暂时性失败（额度受限/服务端异常）。
+// 400/401/403 属确定性配置错误（密钥无效等），计入熔断会让用户在反复
+// 输错密钥后整体锁死该服务地址 60 秒，与"4xx 配置错误不熔断"的成本
+// 保护设计冲突；429 保留——连续限流说明该 host 确实不可持续调用。
+const FAILURE_STATUSES = new Set([429])
 const FAILURE_THRESHOLD = 3
 const CIRCUIT_OPEN_MS = 60_000
 
@@ -68,7 +72,9 @@ const recordProtectedFailure = (host: string, url: string, status: number) => {
   circuitState.consecutiveFailures += 1
   if (circuitState.consecutiveFailures > FAILURE_THRESHOLD) {
     circuitState.openUntil = Date.now() + CIRCUIT_OPEN_MS
-    console.warn(`[HTTP] Circuit opened | host=${host} | status=${status} | failures=${circuitState.consecutiveFailures} | url=${redactUrl(url)}`)
+    console.warn(
+      `[HTTP] Circuit opened | host=${host} | status=${status} | failures=${circuitState.consecutiveFailures} | url=${redactUrl(url)}`,
+    )
   }
 }
 
