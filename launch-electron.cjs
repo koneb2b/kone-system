@@ -1,8 +1,11 @@
-// Launches Electron with clean env and explicit main entry
+// Launches Electron with clean env.
+// 必须以目录形式（含 package.json）启动：若以 main.js 文件路径启动，
+// app.getAppPath() 会变成 main.js 所在目录，preload/图标等基于 appPath
+// 的路径全部拼错，preload 加载失败后渲染层会退化为浏览器 devShell 假链路。
 const cp = require('child_process')
 const path = require('path')
 const electronPath = require('electron')
-const mainEntry = path.join(__dirname, 'dist-electron', 'electron', 'main.js')
+const mainEntry = __dirname
 // ELECTRON_RUN_AS_NODE must be DELETED, not set to ''. Electron tests for the
 // variable's PRESENCE, not its value, so an empty string still forces the
 // binary into plain-Node mode: process.type is undefined, require('electron')
