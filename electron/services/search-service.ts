@@ -87,6 +87,10 @@ import {
 import type { OpportunityScore, SearchExecuteResult } from './search/types'
 /* 保留公开导出面：computeIcpMatchScore / normalizeOpportunityScore / buildSearchScoringPrompt / OpportunityScore 原为导出符号 */
 export { buildSearchScoringPrompt, computeIcpMatchScore, normalizeOpportunityScore, type OpportunityScore }
+/* O1 拆分（P6）：日志探针与 LLM 结果抽取/合并已抽出至 ./search/*，行为不变 */
+import { probeError, probeLlmCrash, probeLlmRequest, probeLog } from './search/probe'
+export { verifyLlmProbeFailure } from './search/probe'
+import { extractLlmResults, mergeLlmResultsWithCandidates } from './search/llm-results'
 
 type SearchExecutePayload = {
   keyword: string
@@ -211,35 +215,6 @@ const emitStreamError = (sender: Electron.WebContents, error: string) => {
 }
 
 const getLatestUserConfigSnapshot = (store: ConfigStore) => getPublicUserConfig(store) as any
-
-const isProductionRuntime = () => process.env.NODE_ENV === 'production'
-
-const probeLog = (tag: string, ...args: unknown[]) => {
-  if (isProductionRuntime()) return
-  console.log(tag, ...args)
-}
-
-const probeError = (tag: string, ...args: unknown[]) => {
-  console.error(tag, ...args)
-}
-
-const probeLlmRequest = (llmBaseUrl?: string) => {
-  probeLog('[Probe-LLM] 请求发起, URL:', llmBaseUrl || 'N/A')
-}
-
-const probeLlmCrash = (error: unknown) => {
-  probeError('[Probe-LLM] 请求崩溃:', error)
-}
-
-export const verifyLlmProbeFailure = async (llmBaseUrl?: string) => {
-  probeLlmRequest(llmBaseUrl)
-  try {
-    throw new Error('VERIFY_LLM_PROBE_FAILURE')
-  } catch (error) {
-    probeLlmCrash(error)
-    throw error
-  }
-}
 
 const getAnalysisConfigError = (
   userConfig: any,
@@ -1515,108 +1490,6 @@ const pickRelevantKnowledgeEntries = (
 
   const fallback = prioritized.filter((entry) => !withHits.includes(entry))
   return [...withHits, ...fallback].slice(0, limit)
-}
-
-const extractLlmResults = (llmPayload: any) => {
-  const content = llmPayload?.choices?.[0]?.message?.content || llmPayload?.choices?.[0]?.text || ''
-  if (!content || typeof content !== 'string') return []
-  try {
-    const parsed = JSON.parse(normalizeLlmJsonText(content))
-    const results = Array.isArray(parsed)
-      ? parsed
-      : parsed?.results ||
-        parsed?.data?.results ||
-        parsed?.candidates ||
-        parsed?.data?.candidates ||
-        parsed?.items ||
-        parsed?.data?.items ||
-        (parsed && typeof parsed === 'object' ? [parsed] : [])
-    probeLog('[Probe-LLM-Parse] Extract results shape:', {
-      contentPreview: content.slice(0, 240),
-      parsedType: Array.isArray(parsed) ? 'array' : typeof parsed,
-      resultCount: Array.isArray(results) ? results.length : 0,
-      keys: parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.keys(parsed).slice(0, 12) : [],
-    })
-    if (!Array.isArray(results)) return []
-    return results.map((item: any) => ({
-      ...applySchemaDefaults({
-        ...item,
-        matchScore: item?.totalScore ?? item?.matchScore,
-        matchReasons: [item?.matchReason].filter(Boolean),
-      }),
-      inferredRole: String(item?.inferredRole || '').trim(),
-      salesStrategy: String(item?.salesStrategy || '').trim(),
-      riskFlags: Array.isArray(item?.riskFlags)
-        ? item.riskFlags
-            .map((entry: unknown) => String(entry || '').trim())
-            .filter(Boolean)
-            .slice(0, 1)
-        : [],
-      isB2B: typeof item?.isB2B === 'boolean' ? item.isB2B : undefined,
-      /* P2-3 Stage-2 机会分结构化输出（非法/缺失 → undefined，不臆造） */
-      opportunityScore: normalizeOpportunityScore(item?.opportunityScore),
-    }))
-  } catch (error) {
-    probeError('[Probe-LLM-Parse-Error] Failed to parse scoring response:', {
-      message: error instanceof Error ? error.message : String(error || ''),
-      stack: error instanceof Error ? error.stack : '',
-      contentPreview: content.slice(0, 500),
-    })
-    return []
-  }
-}
-
-const mergeLlmResultsWithCandidates = (
-  candidates: ReturnType<typeof normalizeSearchCandidates>,
-  llmResults: SearchExecuteResult[],
-) => {
-  const resultPool = Array.isArray(llmResults) ? llmResults : []
-  const usedResultIndexes = new Set<number>()
-
-  return candidates.map((candidate) => {
-    const normalizedCandidateCompany = candidate.company.trim().toLowerCase()
-    const normalizedCandidateWebsite = extractDomainFromUrl(candidate.website)
-
-    const matchedIndex = resultPool.findIndex((result, index) => {
-      if (usedResultIndexes.has(index)) return false
-      const normalizedResultCompany = String(result.company || '')
-        .trim()
-        .toLowerCase()
-      const normalizedResultWebsite = extractDomainFromUrl(result.website)
-
-      if (
-        normalizedCandidateWebsite &&
-        normalizedResultWebsite &&
-        normalizedCandidateWebsite === normalizedResultWebsite
-      ) {
-        return true
-      }
-
-      return normalizedCandidateCompany.length > 0 && normalizedCandidateCompany === normalizedResultCompany
-    })
-
-    const matched = matchedIndex >= 0 ? resultPool[matchedIndex] : null
-    if (matchedIndex >= 0) {
-      usedResultIndexes.add(matchedIndex)
-    }
-
-    return {
-      ...applySchemaDefaults({
-        ...candidate,
-        ...matched,
-        company: matched?.company || candidate.company,
-        website: matched?.website || candidate.website,
-        address: matched?.address || candidate.address,
-        matchReasons:
-          matched?.matchReasons ||
-          [candidate.reason || candidate.snippet || '基础信息与搜索词存在一定相关性'].filter(Boolean).slice(0, 2),
-        riskFlags: matched?.riskFlags || ['需人工复核其 B2B 采购意图'],
-        snippet: matched?.snippet || candidate.snippet,
-      }),
-      inferredRole: matched?.inferredRole || '',
-      salesStrategy: matched?.salesStrategy || '',
-    }
-  })
 }
 
 const getAnySearchConfig = (store: ConfigStore) => {

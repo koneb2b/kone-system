@@ -289,6 +289,18 @@ lastVerifiedAt: 2026-09-22
 
 > **新发现 O14（架构债）**：`SearchExecuteResult` 存在**两份定义**（`src/shared/ipc-contracts.ts` 与 search-service 本地镜像），字段不一致（`id` 可选性、`reason` 有无）。P1-3 注释要求二者对齐，但仍是两处维护——应统一为单一 SSOT（ipc-contracts），属后续独立重构项。本轮仅无损外提，未改变类型语义。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P6：日志探针 + LLM 结果抽取/合并外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P6 探针外提** | 新建 `electron/services/search/probe.ts`（35 行）：`isProductionRuntime` / `probeLog` / `probeError` / `probeLlmRequest` / `probeLlmCrash` / `verifyLlmProbeFailure`（生产静默，开发期结构化探针） | `npm run typecheck` 0 error |
+| **P6 LLM 结果外提** | 新建 `electron/services/search/llm-results.ts`（114 行）：`extractLlmResults`（LLM 响应解析 + 白名单序列化 + 机会分归一）+ `mergeLlmResultsWithCandidates`（候选/评分按域名→公司名合并） | 同上 |
+| 类型收敛 | `mergeLlmResultsWithCandidates` 原参类型 `ReturnType<typeof normalizeSearchCandidates>` 改为等价结构类型 `NormalizedCandidate`（`Partial<SearchExecuteResult> & { company; website }`）——避免子模块反向依赖 search-service（`normalizeSearchCandidates` 依赖宪法常量 `MAX_SEARCH_CANDIDATES`，仍留 search-service） | 编译 0 error |
+| 公开导出面保留 | `export { verifyLlmProbeFailure } from './search/probe'` | `test:unit` 266/266 |
+| 结果 | `search-service.ts` 3107 → **2980 行**（累计 P1–P6：3873 → 2980，**−893 行**；首次跌破 3000） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（250 warning，与 P5 持平）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
