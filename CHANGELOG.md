@@ -214,6 +214,18 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run typecheck` → 0 error；`npm run test:unit` → **265 tests / 265 pass / 0 fail**（新增 3 条）；`npm run lint` → 0 error（251 warning 为既存）；`npm run format` → 全量 prettier 通过；`npx vite build` 成功。
 
+### L2 诚实化修复 · 导航徽标准入对齐真实授权（P2-5）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **侧边栏过严 premium 门禁 → 对齐 dashboard 真实准入** | `app-sidebar.tsx` 的 `premiumNavItems` 原把 `accounts`/`agents`/`automation`/`team-dashboard` **统一**标 `premium:true`+「高级」徽标。但 `dashboard-page.tsx:192-196` 的真实门禁为：`accounts` 经 `canAccessAccountsWorkspace`（含 basic/trial）开放；`agents`（AI 销售团队）按 `README.md:61` 授权矩阵对 trial/basic/premium/enterprise 全开放（仅日限额不同，由 agents-panel 强制）；仅 `automation`/`team-dashboard` 为 premium-only。原侧边栏的 accounts/agents premium 门禁是相对真实门禁的**过严残留**，造成「徽标说高级、实际 basic 可进」的口径不一致（审计 U6）。已将 accounts/agents 的 `premium`/`badge` 移除，保留 automation/team-dashboard 的 premium 门禁 | `npm run typecheck` 0 error；`npm run test:unit` 266/266 |
+| 守护真实 premium-only 两项 | automation / team-dashboard 的 premium 门禁与「高级」徽标保持不变，防止回归放宽授权 | 同上 |
+| 可观测回归防护 | `tests/ui-ux-alignment-contract.test.js` 新增 P2-5 断言：accounts/agents 不再含 `premium:true` 与「高级」徽标；automation/team-dashboard 仍为 `premium:true`（防回归） | P2-5 子测试 1/1 |
+
+> **说明（授权红线）**：本改动**不削弱任何授权**——真实执行门禁在 `dashboard-page.tsx`（`shouldBlockPremiumPage`/`shouldBlockAccountsPage`）与 `agents-panel` 日限额；侧边栏 premium 标志仅是导航控件开关。移除 accounts/agents 的过严标志后，其可访问性与 dashboard 已落地的真实准入一致，恰是消除「过严不一致」，而非放宽许可证。
+>
+> **批量验证**：`npm run typecheck` → 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**（新增 1 条 P2-5 断言）；`npm run lint` → 0 error（251 warning 为既存）；`npm run format` → 全量 prettier 通过；`npx vite build` 成功。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
@@ -222,4 +234,4 @@ lastVerifiedAt: 2026-09-22
 - 流式评分增量更新已落地**数据层 + 组件层**：`updateScoredLead` 单点更新 + `searchResultsByKey` 索引，且 `SearchResultCard` 现已按 `leadKey` 订阅自身切片（`React.memo` + 父级 `useCallback` 稳定化），流式评分增量更新时仅被更新的卡片重渲染
 - **L0 发布阻断项进度**：L0-4（F1 合并键）**已闭环**；L0-3（smtpPass 加密）经核实前期已完成（`SECRET_KEYS.EMAIL_SMTP_PASS` + secret-manager，user_config 仅作旧安装明文回退）；L0-2（Agent 浏览器打包 B2）核心实现已存在，**本轮补齐 9 条回归防护**（未做的剩余项：packaged-smoke 的"Agent 浏览器可启动"断言需打包环境，见下条）；L0-1（全量验证门禁）**仅剩打包冒烟一项未跑通**（见下条）。
 - **打包冒烟（`npm run test:smoke`）仍被环境阻塞，非代码问题**：`release/win-unpacked/resources/app.asar` 被系统级进程独占。经核实：① 无任何 Electron/Kone 进程运行（tasklist 仅环境 node）；② 同目录可自由新建/删除其他文件，仅该文件不可改名或删除；③ `npm run build:electron`（tsc + 混淆 60 文件）**成功**。electron-builder 报错 `remove ... app.asar: The process cannot access the file because it is being used by another process`（`EnsureEmptyDir` 阶段）。需在该文件锁释放后的环境执行。
-- **本轮已闭环（自"未完成"移除）**：① 搜索扇出并发已在 P1-2 以 `SEARCH_FANOUT_CONCURRENCY = 3` 作为独立并发域收敛，不再"无上限"；② lint / format 脚本引号 bug 已修复，全量 prettier 已归一，`format` 门禁由"假绿"转为真正校验通过；③ L0-4/F1 流式评分合并键改为条件优先级（弱匹配不再遮蔽 leadKey 强匹配），并补 3 条回归用例；④ 修复 `search-result-card.tsx` 漏值导入 `useLeadsStore` 导致的搜索结果渲染 `ReferenceError`；⑤ 新增 `npm run typecheck` 并接入 CI，补上"src 从不类型检查"这一门禁盲区；⑥ L2 `automation-workflow.tsx` 移除 `setInterval` + `Math.random()` 虚构进度条，改为真实待校验数量 + 不确定态（spinner），杜绝向用户展示假进度；⑦ P2-4 `leads-table.tsx` CSV 导出原先输出 `undefined%`（待评估线索），改为抽纯函数 `formatMatchScoreForExport` 与 UI 同口径输出「待评估」，并补 3 条单测
+- **本轮已闭环（自"未完成"移除）**：① 搜索扇出并发已在 P1-2 以 `SEARCH_FANOUT_CONCURRENCY = 3` 作为独立并发域收敛，不再"无上限"；② lint / format 脚本引号 bug 已修复，全量 prettier 已归一，`format` 门禁由"假绿"转为真正校验通过；③ L0-4/F1 流式评分合并键改为条件优先级（弱匹配不再遮蔽 leadKey 强匹配），并补 3 条回归用例；④ 修复 `search-result-card.tsx` 漏值导入 `useLeadsStore` 导致的搜索结果渲染 `ReferenceError`；⑤ 新增 `npm run typecheck` 并接入 CI，补上"src 从不类型检查"这一门禁盲区；⑥ L2 `automation-workflow.tsx` 移除 `setInterval` + `Math.random()` 虚构进度条，改为真实待校验数量 + 不确定态（spinner），杜绝向用户展示假进度；⑦ P2-4 `leads-table.tsx` CSV 导出原先输出 `undefined%`（待评估线索），改为抽纯函数 `formatMatchScoreForExport` 与 UI 同口径输出「待评估」，并补 3 条单测；⑧ P2-5 导航徽标准入对齐真实授权——`app-sidebar.tsx` 移除 accounts/agents 过严的 premium 门禁与「高级」徽标（对齐 `dashboard-page.tsx` 真实准入 + `README.md:61` 授权矩阵），保留 automation/team-dashboard 的 premium 门禁，并补回归断言

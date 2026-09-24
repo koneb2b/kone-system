@@ -14,6 +14,21 @@ test('premium workspace access treats Enterprise as unlocked in sidebar', () => 
   assert.doesNotMatch(sidebar, /badge: ["']Pro["']/)
 })
 
+test('P2-5: nav badges align with real dashboard admission (no over-strict premium gate)', () => {
+  const sidebar = read('src', 'components', 'app-sidebar.tsx')
+
+  // accounts / agents 对 basic/trial 开放（dashboard canAccessAccountsWorkspace 含 basic/trial；
+  // README 授权矩阵 agents 对 trial/basic 全开放），不得再标 premium + 「高级」徽标。
+  assert.doesNotMatch(sidebar, /id: 'accounts', label: '账号管理', icon: ShieldCheck, premium: true/)
+  assert.doesNotMatch(sidebar, /id: 'agents', label: 'AI 销售团队', icon: Bot, premium: true/)
+  assert.doesNotMatch(sidebar, /id: 'accounts', label: '账号管理', icon: ShieldCheck, badge: '高级'/)
+  assert.doesNotMatch(sidebar, /id: 'agents', label: 'AI 销售团队', icon: Bot, badge: '高级'/)
+
+  // 真实 premium-only 两项（automation / team-dashboard）门禁必须保持，防止回归放宽授权。
+  assert.match(sidebar, /id: 'automation', label: '自动化序列', icon: Workflow, premium: true/)
+  assert.match(sidebar, /id: 'team-dashboard', label: '团队协作', icon: UsersRound, premium: true/)
+})
+
 test('search quality controls use localized Simplified Chinese for filter labels', () => {
   const searchEngine = read('src', 'components', 'search-engine.tsx')
 

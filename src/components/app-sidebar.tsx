@@ -42,8 +42,14 @@ const navItems: NavItem[] = [
 ]
 
 const premiumNavItems: NavItem[] = [
-  { id: 'accounts', label: '账号管理', icon: ShieldCheck, premium: true, badge: '高级' },
-  { id: 'agents', label: 'AI 销售团队', icon: Bot, premium: true, badge: '高级' },
+  /* P2-5：导航徽标准入对齐 dashboard 真实准入（见 dashboard-page.tsx:192-196）。
+   * accounts 经 canAccessAccountsWorkspace 对 basic/trial 开放；agents(AI 销售团队) 按
+   * README 授权矩阵对 trial/basic/premium/enterprise 全开放（仅日限额不同，由 agents-panel 强制）。
+   * 故二者不得标 premium/「高级」徽标——原先的 premium 门禁是相对 dashboard 真实门禁的
+   * 过严残留，会造成「徽标说高级、实际 basic 可进」的口径不一致。真实 premium-only 仍为
+   * automation 与 team-dashboard，门禁保持不变。 */
+  { id: 'accounts', label: '账号管理', icon: ShieldCheck },
+  { id: 'agents', label: 'AI 销售团队', icon: Bot },
   { id: 'automation', label: '自动化序列', icon: Workflow, premium: true, badge: '高级' },
   { id: 'team-dashboard', label: '团队协作', icon: UsersRound, premium: true, badge: '高级' },
 ]
