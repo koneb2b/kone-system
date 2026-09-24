@@ -41,7 +41,20 @@ import {
   normalizeWebsiteUrl,
   sanitizePlainText,
 } from './search/text-utils'
-/* O1 拆分（P2/P3/P4）：词表/模式/并发/意图已抽出至 ./search/*，行为不变 */
+/* O1 拆分（P2/P3/P4/P7b）：词表/常量/并发/意图已抽出至 ./search/*，行为不变 */
+import {
+  MAX_SEARCH_CANDIDATES,
+  MAX_WEBSITE_TEXT_FOR_LLM,
+  SEARCH_CHANNEL_FETCH_LIMIT,
+  SEARCH_ENRICH_CONCURRENCY,
+  SEARCH_FANOUT_CONCURRENCY,
+  SEARCH_LLM_CONCURRENCY,
+  SEARCH_LLM_SCORE_LIMIT,
+  SEARCH_LLM_TIMEOUT_MS,
+  SEARCH_TARGETED_LEAD_LIMIT,
+  SERPAPI_RETRYABLE_STATUS,
+  WEBSITE_PROBE_TIMEOUT_MS,
+} from './search/constants'
 import { mapLimitedConcurrency, runLimitedConcurrency } from './search/concurrency'
 /* O1 拆分（P3）：Scout 预筛/准入逻辑已抽出至 ./search/scout，行为不变 */
 import {
@@ -113,25 +126,6 @@ type SearchExecutePayload = {
   }
 }
 
-const MAX_SEARCH_CANDIDATES = 200
-const SEARCH_CHANNEL_FETCH_LIMIT = 100
-const SEARCH_TARGETED_LEAD_LIMIT = 50
-/* P1-1：与 SEARCH_TARGETED_LEAD_LIMIT 对齐——全部 50 条目标线索都进入 LLM 评分
-   与官网富化，消除"20 真富化 / 50 展示"的非对称（假高分/精度盲区）。
-   并发上限仍为 SEARCH_LLM_CONCURRENCY=2（宪法红线，调用总数不改变并发）。 */
-const SEARCH_LLM_SCORE_LIMIT = 50
-const SEARCH_LLM_CONCURRENCY = 2
-const SEARCH_ENRICH_CONCURRENCY = 2
-const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
-const SEARCH_LLM_TIMEOUT_MS = 20_000
-const WEBSITE_PROBE_TIMEOUT_MS = 15_000
-const MAX_WEBSITE_TEXT_FOR_LLM = 3000
-/* P1-2：搜索扇出（关键词变体）并发上限。
-   注意并发域划分：`SEARCH_LLM_CONCURRENCY` / `SEARCH_ENRICH_CONCURRENCY` 的 `2`
-   是 **LLM 评分与官网富化** 的宪法红线（不得突破）；搜索扇出是**另一个独立并发域**，
-   原先完全无界——关键词数 = 英文变体 ≤4 + 各本地语言 ≤4/语言，多语言扩面时可一次性
-   打出十几个并发 HTTP 请求，触发上游限流或本机 socket 耗尽。此处显式设闸。 */
-const SEARCH_FANOUT_CONCURRENCY = 3
 let currentActiveJobId: string | null = null
 export const getCurrentActiveJobId = () => currentActiveJobId
 /* P3-2 多窗口时空隔离升级：ownerKey（sender WebContents id）→ 最新 jobId。

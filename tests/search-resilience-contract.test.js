@@ -4,9 +4,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'services', 'search-service.ts'), 'utf8')
+// O1 拆分（P7b）：`SERPAPI_RETRYABLE_STATUS` 已迁至 search/constants.ts（读取目标随之迁移，断言强度不变）。
+const constantsSource = fs.readFileSync(
+  path.join(__dirname, '..', 'electron', 'services', 'search', 'constants.ts'),
+  'utf8',
+)
 
 test('SerpApi 429 is fail-fast and not retried by search service', () => {
-  const retryableSet = source.match(/const SERPAPI_RETRYABLE_STATUS = new Set\(\[([^\]]+)\]\)/)
+  const retryableSet = constantsSource.match(/const SERPAPI_RETRYABLE_STATUS = new Set\(\[([^\]]+)\]\)/)
   assert.ok(retryableSet, 'SERPAPI_RETRYABLE_STATUS should remain explicit')
   assert.doesNotMatch(retryableSet[1], /\b429\b/)
 })

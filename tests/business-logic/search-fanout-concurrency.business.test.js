@@ -18,6 +18,8 @@ const concurrencySource = fs.readFileSync(
   path.join(repoRoot, 'electron', 'services', 'search', 'concurrency.ts'),
   'utf8',
 )
+// O1 拆分（P7b）：`SEARCH_FANOUT_CONCURRENCY` 定义已迁至 search/constants.ts（调用点仍在 search-service.ts）。
+const constantsSource = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'search', 'constants.ts'), 'utf8')
 const prdSource = fs.readFileSync(path.join(repoRoot, 'kone-PRD.md'), 'utf8')
 
 test('P1-2: 关键词变体层不再使用无界 Promise.all', () => {
@@ -34,7 +36,8 @@ test('P1-2: 关键词变体层不再使用无界 Promise.all', () => {
 })
 
 test('P1-2: SEARCH_FANOUT_CONCURRENCY 已定义且为有限正值', () => {
-  const m = searchSource.match(/const\s+SEARCH_FANOUT_CONCURRENCY\s*=\s*(\d+)/)
+  // O1 拆分（P7b）后定义位于 search/constants.ts（断言强度不变）。
+  const m = constantsSource.match(/const\s+SEARCH_FANOUT_CONCURRENCY\s*=\s*(\d+)/)
   assert.ok(m, '必须定义 SEARCH_FANOUT_CONCURRENCY 常量')
   const value = Number(m[1])
   assert.ok(Number.isFinite(value) && value > 0, `扇出并发必须为有限正值，实际 ${value}`)

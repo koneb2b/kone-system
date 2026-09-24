@@ -67,7 +67,8 @@ electron/services/
 | 阶段 | 迁移内容 | 源文本断言影响 | 风险 |
 |---|---|---|---|
 | **P1（本轮执行）** | 纯内部工具 → `search/text-utils.ts`：`getHostFromUrl`、`normalizeLlmJsonText`、`sanitizePlainText`、`normalizeWebsiteUrl`、`normalizeGeoText`、`extractLocationTerms`、`extractDomainFromUrl`、`extractEmailsFromText`、`extractPhonesFromText`、`mergePromptParts`、`mergeUniqueValues`、`clampInt`、`extractJsonObjectFromText` | **无**（均为内部非导出纯函数，无源码断言） | 极低 |
-| **P2（已完成）** | 词表/模式 → `search/constants.ts`；并发调度 → `search/concurrency.ts`。**修订**：8 个宪法常量**保留在 `search-service.ts`**（`verify-doc-consistency.cjs` 以该文件为代码侧读取源，保持单一代码事实源） | **有**：fanout 测试 `mapLimitedConcurrency` 定义断言改读 `search/concurrency.ts`（调用点/常量定义仍读 `search-service.ts`） | 低 |
+| **P2（已完成）** | 词表/模式 → `search/constants.ts`；并发调度 → `search/concurrency.ts`。**P2 时修订**：8 个宪法常量暂留 `search-service.ts`。 | **有**：fanout 测试 `mapLimitedConcurrency` 定义断言改读 `search/concurrency.ts` | 低 |
+| **P7b（已完成）** | **宪法常量与时限常量 → `search/constants.ts`**（8 宪法 + 3 时限）；同步改 `verify-doc-consistency.cjs` 读取源为 `search/constants.ts`。动因：`trimWebsiteTextForLlm`/`WEBSITE_PROBE_TIMEOUT_MS` 被富化模块与 search-service 共同消费 | **有**：fanout（`SEARCH_FANOUT_CONCURRENCY` 定义）与 resilience（`SERPAPI_RETRYABLE_STATUS`）改读 `search/constants.ts`，断言强度不变 | 中（触及治理脚本） |
 | **P3** | Scout/准入 → `search/scout.ts`（`computeScoutRelevance`/`computeEligibilityVeto`/`matchesProductTerm`/`isTrashLead`） | 无源码断言；`eligibility-gate` 走编译产物（门面 re-export 兼容） | 中 |
 | **P4** | 评分/提示词 → `search/scoring.ts`；意图 → `search/intent.ts` | 无源码断言 | 中 |
 | **P5** | 富化/分析 → `search/enrichment.ts` + `search/analysis.ts` | 无源码断言；注意 `Module._load` mock 目标（secret-manager/license-service）须仍在门面路径可达 | 中 |

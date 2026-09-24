@@ -9,7 +9,7 @@
  * 校验项：
  *   1. 强制读链完整性（AGENTS.md 声明的文档必须真实存在）
  *   2. 过时函数名（权威文档中不得出现代码里不存在的符号，勘误行除外）
- *   3. 宪法常量与代码常量一致（kone-PRD §0.3 ↔ search-service.ts）
+ *   3. 宪法常量与代码常量一致（kone-PRD §0.3 ↔ search/constants.ts）
  *   4. 架构红线在 ARCH-STANDARDS 中可查（并发 2 / 3000 字符）
  *   5. 归档墓碑桩不得复活（已被 kone-PRD 声明清除）
  *
@@ -107,7 +107,7 @@ function checkStaleSymbols() {
 
 // ── 3. 宪法常量 ↔ 代码常量 ──────────────────────────────────
 const CONSTANT_PAIRS = [
-  // [kone-PRD 中必须出现的字面量, search-service.ts 中的常量名, 期望值]
+  // [kone-PRD 中必须出现的字面量, search/constants.ts 中的常量名, 期望值]
   ['SEARCH_LLM_SCORE_LIMIT', 'SEARCH_LLM_SCORE_LIMIT', 50],
   ['SEARCH_TARGETED_LEAD_LIMIT', 'SEARCH_TARGETED_LEAD_LIMIT', 50],
   ['MAX_SEARCH_CANDIDATES', 'MAX_SEARCH_CANDIDATES', 200],
@@ -120,7 +120,8 @@ const CONSTANT_PAIRS = [
 
 function checkConstitutionalConstants() {
   const prd = read('kone-PRD.md')
-  const searchSource = read('electron/services/search-service.ts')
+  // O1 拆分（P7b）：宪法常量已从 search-service.ts 迁至 search/constants.ts，读取源随之迁移。
+  const searchSource = read('electron/services/search/constants.ts')
   // 取 §0.3 到下一个水平分隔线之间的内容（注意：表格分隔行含 "---"，
   // 不能用 split('---')，否则常量表会被截断成空块）。
   const constantsBlock = prd.match(/### 0\.3[\s\S]*?(?=\r?\n---\r?\n)/)?.[0] || ''
@@ -132,12 +133,14 @@ function checkConstitutionalConstants() {
   for (const [docName, codeName, expected] of CONSTANT_PAIRS) {
     const codeMatch = searchSource.match(new RegExp(`${codeName}\\s*=\\s*([0-9_]+)`))
     if (!codeMatch) {
-      failures.push(`[常量] search-service.ts 缺少常量 ${codeName}`)
+      failures.push(`[常量] search/constants.ts 缺少常量 ${codeName}`)
       continue
     }
     const codeValue = Number(codeMatch[1].replace(/_/g, ''))
     if (codeValue !== expected) {
-      failures.push(`[常量] ${codeName} 代码值为 ${codeValue}，门禁期望 ${expected}（若为有意变更，请同步常量表与门禁）`)
+      failures.push(
+        `[常量] ${codeName} 代码值为 ${codeValue}，门禁期望 ${expected}（若为有意变更，请同步常量表与门禁）`,
+      )
     }
     if (!constantsBlock.includes(docName)) {
       failures.push(`[常量] kone-PRD §0.3 常量表缺少 ${docName}（权威源不得缺失硬约束定义）`)

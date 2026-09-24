@@ -315,6 +315,18 @@ lastVerifiedAt: 2026-09-22
 >
 > **过程记录**：P7a 首次提交前复跑全量门禁时**捕获 1 个测试失败**（`search-semantic-contract` 的源码断言因分析语义迁出 search-service 而失效）——已按蓝图约定同步测试读取目标后恢复 266/266。这印证了"每阶段复跑全量门禁 + 源码断言同步"的必要性。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P7b：宪法常量外提 + 门禁同步）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **常量外提** | 8 个**宪法常量**（`MAX_SEARCH_CANDIDATES`/`SEARCH_CHANNEL_FETCH_LIMIT`/`SEARCH_TARGETED_LEAD_LIMIT`/`SEARCH_LLM_SCORE_LIMIT`/`SEARCH_LLM_CONCURRENCY`/`SEARCH_ENRICH_CONCURRENCY`/`SEARCH_FANOUT_CONCURRENCY`/`MAX_WEBSITE_TEXT_FOR_LLM`）+ 3 个时限常量（`SERPAPI_RETRYABLE_STATUS`/`SEARCH_LLM_TIMEOUT_MS`/`WEBSITE_PROBE_TIMEOUT_MS`）从 `search-service.ts` 迁至 `search/constants.ts` | `npm run typecheck` 0 error |
+| **门禁脚本同步** | `scripts/verify-doc-consistency.cjs` 的宪法常量比对读取源从 `search-service.ts` 改为 `search/constants.ts`（含注释与失败信息文案） | `npm run verify:consistency` 双绿（宪法常量比对 8 项通过） |
+| **源码断言测试同步** | `search-fanout-concurrency`（`SEARCH_FANOUT_CONCURRENCY` 定义）与 `search-resilience-contract`（`SERPAPI_RETRYABLE_STATUS`）改读 `search/constants.ts`——**断言强度不变**，仅迁移读取目标 | fanout 4/4、resilience 2/2 |
+| 动因 | `trimWebsiteTextForLlm`（用 `MAX_WEBSITE_TEXT_FOR_LLM`）与 `WEBSITE_PROBE_TIMEOUT_MS` 被**富化模块（待迁）与 search-service 共同消费**，必须外提为共享常量（为 P7c 富化外提扫清障碍） | — |
+| 结果 | `search-service.ts` 2647 → **2641 行**（常量净外提；累计 P1–P7b：3873 → 2641，**−1232 行**） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（250 warning 持平）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
