@@ -26,7 +26,14 @@ export const computeIcpMatchScore = (candidate: Partial<SearchExecuteResult>, co
   const b2bHits = b2bSignals.filter((signal) => text.includes(signal))
   if (b2bHits.length >= 3) score += 20
   else if (b2bHits.length >= 1) score += 10
-  const hasContact = Boolean(candidate.contact || candidate.email || candidate.phone)
+  /* §0.5 宪法算法（kone-PRD §L203）：联系人资产 = `contact || email || phone ||
+     decisionMakers[].email || decisionMakers[].phone || decisionMakers[].linkedinUrl` 任一非空。
+     此前实现漏了 decisionMakers 三项——仅有决策人邮箱/电话/领英的线索会少 10 分，
+     可能被 `>= 60` 的 Gold Filter 挡在 Agent 管道之外（错失可触达线索）。 */
+  const hasDecisionMakerContact = (candidate.decisionMakers || []).some((dm) =>
+    Boolean(dm?.email || dm?.phone || dm?.linkedinUrl),
+  )
+  const hasContact = Boolean(candidate.contact || candidate.email || candidate.phone || hasDecisionMakerContact)
   score += hasContact ? 10 : 0
   return Math.min(100, Math.max(0, score))
 }

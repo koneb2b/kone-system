@@ -476,6 +476,20 @@ lastVerifiedAt: 2026-09-22
 
 > **核查方法论**：本轮 3 次"疑似缺陷"中，**2 次经取证后确认为合规并收回**（§L110 字段名误读、`sortByScoreThenOriginalOrder` 的 `|| 0` 无害）——**结论必须逐条验证，不能凭 grep 片段下判断**。
 
+### 精准获客修复 · §0.5 宪法算法「联系人资产」维度漏项（§L203，P0）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | `kone-PRD` §0.5 宪法算法表（L203）明定「联系人资产」10 分的判据为 `contact \|\| email \|\| phone \|\| **decisionMakers[].email \|\| decisionMakers[].phone \|\| decisionMakers[].linkedinUrl**` 任一非空。**但实现** `computeIcpMatchScore` 只检查前三项，**漏了 decisionMakers 三项**。 |
+| **用户影响（精准获客）** | 仅有决策人邮箱/电话/领英的线索（典型来自 LinkedIn / AnySearch 等 Provider）在联系人维度得 **0 而非 10 分** → 总分低 10 → **可能被 `>= 60` 的 Gold Filter 挡在 Agent 管道之外，错失本可触达的线索**。 |
+| **修复** | `computeIcpMatchScore` 补齐 `decisionMakers[].email / .phone / .linkedinUrl` 判定（**权重结构与其余三维不变**，未触碰宪法常量）。 |
+| **回归防护** | 新增 `tests/business-logic/icp-match-score.business.test.js`（10 条）：四维满配 100 / 无官网降级 10 / B2B 三级阶梯 / 产品词未命中 / **决策人 email・phone・linkedinUrl 各自单独计 10 分** / 决策人字段全空不计 / 无联系人 0 分 / 上限钳制 |
+| **验证** | `test:unit` → **304 / 304**（+10）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过 |
+
+> **核查补充（第五轮全合规项）**：§L155 Autopilot 开机运行告知义务 ✅（`agents-panel.tsx:323` + `help-dialog.tsx:46` 明确告知"开机/联网/不休眠"，且未伪装"云端脱机机器人"）；§L109 宣传口径约束 ✅（`data-center.tsx:771` 明示"基于公开网页的近似检索，非官方直连"）。
+>
+> **方法论自纠**：本轮测试初版 4 条期望值写错（误以为 `'distributor'` 命中信号词 `'distribute'`——实为 `'distribut'+'o'` vs `'e'`，**不命中**）。**先调试实测、再校正测试**，未误改实现。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
