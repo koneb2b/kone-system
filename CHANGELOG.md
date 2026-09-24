@@ -428,6 +428,19 @@ lastVerifiedAt: 2026-09-22
 
 > **说明**：本修复**不改变评分算法本身**（40/30/20/10 权重为宪法常量，未动），仅让确定性分**按 PRD 要求真正发挥"初始排序"作用**。
 
+### 精准获客修复 · `matchScore` 三态法典被违反（L147 不变红线，P0）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | `kone-PRD` §L147「**`matchScore` 三态语义法典（V1.2 不变红线）**」：`undefined`=未评分 / 有效数字=已评分 / `null`=上游判定无效值；**"任何映射层不得将 `undefined`/`null` 静默转换为 `0`"**（0 分是"评估过且极差"，与"尚未评估"商业语义完全不同）。**但实现**：`applySchemaDefaults` 用 `Number.isFinite(Number(item.matchScore))` 判定——**实测 `null → 0`、`'' → 0`**。 |
+| **审计范围** | 逐一核查**全部映射层**：`scoring.ts`(❌ null→0) ／ `llm-results.ts`(经前者) ／ `lead-mappers.ts`(✅ typeof 守卫) ／ `leads-store.ts`(✅) ／ `use-search-engine.ts`(✅)。**仅 `applySchemaDefaults` 违规**。 |
+| **同时验证合规项** | §L111「Gold Filter」要求进入 Agent Pipeline 须 `matchScore >= 60` **且**有 `email`/`phone`/`linkedinUrl`——`agent-pipeline.ts:66-71` **实现正确**，无需改动。 |
+| **修复** | 新增可测纯函数 `normalizeMatchScore`（`search/scoring.ts`）：`null` 保留 `null`；空串归一 `undefined`；**仍保留对数字字符串（LLM 偶发 `"85"`）的防御性转换**；超界钳制 0–100。`applySchemaDefaults` 改用它。 |
+| **回归防护** | 新增 `tests/business-logic/match-score-canon.business.test.js`（8 条）：null 保留 / undefined 保留 / 空串不折算 0 / 0 与未评分区分 / 数字字符串转换 / 非数字归一 / 钳制 / 序列化层三态不被破坏 |
+| **验证** | `test:unit` → **287 / 287**（+8）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过 |
+
+> **说明**：契约 `matchScore?: number | null` 本就允许 `null`，且下游消费者（`leads-table` 排序、`rankByMatchScore`、`hasNumericMatchScore`）**全部用 `typeof === 'number'` 守卫**，故保留 `null` 类型安全、行为更正确（未评分项仍按 `-1` 兜底排序）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

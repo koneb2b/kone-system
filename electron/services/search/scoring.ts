@@ -62,6 +62,23 @@ export const rankByMatchScore = <T extends { matchScore?: number | null }>(items
     return scoreB - scoreA
   })
 
+/**
+ * `matchScore` 三态语义法典（kone-PRD §L147，V1.2 不变红线）：
+ *   `undefined` = 未评分（Scout 骨架态）｜有效数字 = 已评分｜`null` = 上游判定无效值。
+ * **任何映射层不得将 `undefined`/`null` 静默转换为 `0`**——0 分是"评估过且极差"，
+ * 与"尚未评估"是完全不同的商业语义，混淆即破坏高潜推荐漏斗的可信度。
+ *
+ * 仍保留对**数字字符串**（如 LLM 偶发返回 `"85"`）的防御性转换；
+ * 但空串（`''`）不得折算为 0（此前 `Number('')===0` 会误判为"0 分"）。
+ */
+export const normalizeMatchScore = (raw: unknown): number | null | undefined => {
+  if (raw === null) return null
+  if (typeof raw === 'string' && raw.trim() === '') return undefined
+  const num = Number(raw)
+  if (!Number.isFinite(num)) return undefined
+  return Math.max(0, Math.min(100, num))
+}
+
 export const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchExecuteResult => ({
   id: String(item.id || crypto.randomUUID()),
   company: String(item.company || '').trim(),
@@ -86,9 +103,8 @@ export const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchE
         .filter(Boolean)
         .slice(0, 1)
     : [],
-  matchScore: Number.isFinite(Number(item.matchScore))
-    ? Math.max(0, Math.min(100, Number(item.matchScore)))
-    : undefined,
+  /* L147 三态法典：null 保留为 null（不再静默转 0）；见 normalizeMatchScore */
+  matchScore: normalizeMatchScore(item.matchScore),
   snippet: item.snippet ? String(item.snippet).trim() : undefined,
   fallbackStatus: item.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
   /* P1-3：以下五个字段此前在序列化时被丢弃，导致前端"跟进建议/推断角色"永久空白
