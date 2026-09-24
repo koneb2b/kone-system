@@ -490,7 +490,7 @@ export function useSearchEngine(): UseSearchEngineReturn {
       )
       void setSearchResults(sortedResults)
       /* L1-3 口径诚实化：完成提示必须报告【真实评分数】而非线索总数——
-         主进程仅对 Top20 执行 LLM 评分（SEARCH_LLM_SCORE_LIMIT），
+         主进程仅对前 SEARCH_LLM_SCORE_LIMIT（=50，见 kone-PRD.md 常量表；早期审计快照中的 20 为过时值）条执行 LLM 评分，
          把总数说成"已完成评分"是对用户的误导。 */
       const scoredCount = finalResults.filter((item) => typeof item.matchScore === 'number').length
       const totalCount = total || finalResults.length
