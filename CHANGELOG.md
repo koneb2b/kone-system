@@ -373,6 +373,17 @@ lastVerifiedAt: 2026-09-22
 >
 > **说明**：`release/`、`release-build/`、`release-verify/` 三个输出目录均被同一"app.asar 文件锁"现象影响（打包版启动后由 OS/安全软件持有），故每次验证使用**全新输出目录**绕过；`.gitignore` 已收录三者。
 
+### 商用加固 · 结构化日志与滚动落盘（审计 G1「可观测性」）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **结构化 logger** | 新增 `electron/utils/logger.ts`：`createLogger(module)`（级别 + 模块标签 + ISO 时间戳 + 元数据，级别阈值由 `KONE_LOG_LEVEL` 控制，生产默认 info / 开发 debug） | 单测 5/5 |
+| **console 文件镜像（低侵入高覆盖）** | `initFileLogging(logDir)` 包装既有 `console.{log,info,warn,error}` → **散落在 12 个服务的 console 调用无需逐个改写**即自动落盘；滚动文件 `$userData/logs/kone-YYYYMMDD.log`，保留 7 天（超期自动清理） | 见下 |
+| **接入启动流程** | `main.ts` 在 userData 覆盖之后调用 `initFileLogging(app.getPath('userData'))` | 编译通过 |
+| **回归防护** | 新增 `tests/business-logic/logger.business.test.js`（5 条）：阈值解析 / 级别过滤 / 滚动命名 / 结构化行格式 / 循环引用元数据不抛错 | 5/5 通过 |
+
+> **验证**：`npm run test:unit` → **274 tests / 274 pass / 0 fail**（+5）；`verify:consistency` 双绿；`lint` 0 error；`format` 通过；打包冒烟确认 `$userData/logs/kone-*.log` 实际落盘。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

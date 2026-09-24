@@ -27,6 +27,7 @@ import type { AutopilotLifecycle } from '../src/shared/ipc-contracts'
 import { initCrashReporter } from './services/crash-reporter'
 import { initBackupService } from './services/backup-service'
 import { initAutoUpdater } from './services/auto-updater'
+import { initFileLogging } from './utils/logger'
 
 // Initialize crash reporter before any other code
 initCrashReporter()
@@ -41,6 +42,10 @@ if (process.env.KONE_TEST_USER_DATA_DIR?.trim()) {
 if (process.env.KONE_TEST_DOWNLOADS_DIR?.trim()) {
   app.setPath('downloads', process.env.KONE_TEST_DOWNLOADS_DIR.trim())
 }
+
+// 初始化结构化文件日志（商用加固 · 审计 G1）：镜像既有 console.* 到滚动日志文件
+// （$userData/logs/kone-YYYYMMDD.log，保留 7 天），供线上问题定位。置于 userData 覆盖之后。
+initFileLogging(app.getPath('userData'))
 
 if (process.env.KONE_SMOKE_TEST === '1' || process.env.KONE_REGRESSION_TEST === '1') {
   app.commandLine.appendSwitch('remote-debugging-port', process.env.KONE_REMOTE_DEBUGGING_PORT?.trim() || '9222')
