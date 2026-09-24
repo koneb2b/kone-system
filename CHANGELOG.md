@@ -441,6 +441,16 @@ lastVerifiedAt: 2026-09-22
 
 > **说明**：契约 `matchScore?: number | null` 本就允许 `null`，且下游消费者（`leads-table` 排序、`rankByMatchScore`、`hasNumericMatchScore`）**全部用 `typeof === 'number'` 守卫**，故保留 `null` 类型安全、行为更正确（未评分项仍按 `-1` 兜底排序）。
 
+### 精准获客修复 · §L142 决策人合并语义（错标 + 数据丢失，P0）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** |  §L142 要求：决策人碰撞（email 或 name+title）时"使用**高  者**的属性覆盖旧属性"。**但实现**为"入参属性**恒覆盖** + 取最大置信度" → ① 低置信来源后到时报出"**低置信属性 + 高置信标签**"的**错标**；② 入参空字段（）会**抹掉已有高价值资产**（如 email / phone）。 |
+| **修复** |  改为**高置信者属性优先**（ 判定），**空值不覆盖**（保护已有资产），置信度仍取两者最大值。 |
+| **回归防护** |  新增分歧场景用例（existing 90 > incoming 60）：断言标题取自高置信来源、phone  未被空值抹掉、置信度为 90。 |
+| **同时核查合规项** | §L143 展会脚印并集去重 ✅、§L144-145 排序法典（→ 降序  兜底）✅、归一法典（）✅、 的  **无害**（已有  守卫）。 |
+| **验证** |  → **288 / 288**（+1）； 0 error； 双绿； 0 error； 通过 |
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

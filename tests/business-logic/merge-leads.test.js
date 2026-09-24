@@ -305,3 +305,70 @@ test('mergeLeads sorts by addedDate descending then matchScore descending', () =
   assert.equal(merged[1].company, 'B')
   assert.equal(merged[2].company, 'A')
 })
+
+test('mergeLeads: 决策人碰撞时以 confidenceScore 较高者的属性为准（§L142）', () => {
+  const base = {
+    contact: '',
+    contactTitle: '',
+    email: '',
+    phone: '',
+    country: 'US',
+    countryCode: 'US',
+    industry: 'Energy',
+    status: 'new',
+    followUp: 'new',
+    starred: false,
+    tags: [],
+    unlocked: false,
+    estimatedValue: '-',
+  }
+  const existing = [
+    {
+      ...base,
+      id: 1,
+      company: 'Test Corp',
+      website: 'https://test.example',
+      source: 'web',
+      lastActivity: '2026-01-01',
+      addedDate: '2026-01-01',
+      decisionMakers: [
+        {
+          name: 'Alice',
+          title: 'Procurement Director',
+          email: 'alice@test.example',
+          phone: '+1-555',
+          source: 'web',
+          confidenceScore: 90,
+        },
+      ],
+    },
+  ]
+  const incoming = [
+    {
+      ...base,
+      id: 2,
+      company: 'Test Corp',
+      website: 'https://test.example',
+      source: 'AnySearch',
+      lastActivity: '2026-05-20',
+      addedDate: '2026-05-20',
+      decisionMakers: [
+        // 低置信来源后到：其属性不得覆盖高置信属性；空 phone 不得抹掉已有的 +1-555
+        {
+          name: 'Alice',
+          title: 'Procurement',
+          email: 'alice@test.example',
+          phone: '',
+          source: 'anysearch',
+          confidenceScore: 60,
+        },
+      ],
+    },
+  ]
+  const merged = storeModule.mergeLeads(existing, incoming)
+  const alice = merged[0].decisionMakers.find((d) => d.email === 'alice@test.example')
+  assert.ok(alice)
+  assert.equal(alice.confidenceScore, 90, '置信度取两者最大值')
+  assert.equal(alice.title, 'Procurement Director', '高置信来源的属性胜出')
+  assert.equal(alice.phone, '+1-555', '低置信来源的空字段不得抹掉已有资产')
+})

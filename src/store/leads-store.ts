@@ -216,16 +216,27 @@ const mergeDecisionMakers = (
     })
 
     if (matchIdx >= 0) {
-      const existingScore = result[matchIdx].confidenceScore
+      const existingDm = result[matchIdx]
+      const existingScore = existingDm.confidenceScore
       const incomingScore = dm.confidenceScore
-      result[matchIdx] = {
-        ...result[matchIdx],
-        ...dm,
-        confidenceScore:
-          existingScore !== undefined && incomingScore !== undefined
-            ? Math.max(existingScore, incomingScore)
-            : (existingScore ?? incomingScore),
-      }
+      /* §L142（V1.3 决策人深度合并）：碰撞时以 **confidenceScore 较高者的属性**为准。
+         此前实现是"入参属性恒覆盖 + 取最大置信度"——会在低置信来源后到时报出
+         "低置信属性 + 高置信标签"的错标，且入参空字段（''）会抹掉已有的高价值资产
+         （如 email / phone）。故：高置信者属性优先，空值不覆盖，置信度取两者最大值。 */
+      const incomingWins = incomingScore >= existingScore
+      const primary = incomingWins ? dm : existingDm
+      const secondary = incomingWins ? existingDm : dm
+      const mergedDm: DecisionMaker = { ...secondary }
+      if (primary.name) mergedDm.name = primary.name
+      if (primary.title) mergedDm.title = primary.title
+      if (primary.email) mergedDm.email = primary.email
+      if (primary.phone) mergedDm.phone = primary.phone
+      if (primary.linkedinUrl) mergedDm.linkedinUrl = primary.linkedinUrl
+      if (primary.source) mergedDm.source = primary.source
+      if (primary.emailGrade) mergedDm.emailGrade = primary.emailGrade
+      if (primary.phoneValid !== undefined) mergedDm.phoneValid = primary.phoneValid
+      mergedDm.confidenceScore = Math.max(existingScore, incomingScore)
+      result[matchIdx] = mergedDm
     } else {
       result.push(dm)
     }
