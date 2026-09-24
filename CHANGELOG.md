@@ -226,6 +226,17 @@ lastVerifiedAt: 2026-09-22
 >
 > **批量验证**：`npm run typecheck` → 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**（新增 1 条 P2-5 断言）；`npm run lint` → 0 error（251 warning 为既存）；`npm run format` → 全量 prettier 通过；`npx vite build` 成功。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P1：纯文本/URL 工具外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| 蓝图 | 新增 `KONE-V1.3-search-service拆分蓝图-2026-09-24.md`（门面策略 + 7 阶段计划 + 源码断言/循环依赖约束清单） | 文档快照，豁免一致性校验 |
+| **P1 纯工具外提** | 新建 `electron/services/search/text-utils.ts`，从 `search-service.ts` 抽出 **14 个无副作用纯函数**（`getHostFromUrl`/`normalizeLlmJsonText`/`extractJsonObjectFromText`/`sanitizePlainText`/`normalizeWebsiteUrl`/`normalizeGeoText`/`extractLocationTerms`/`extractDomainFromUrl`/`extractEmailsFromText`/`extractPhonesFromText`/`mergePromptParts`/`mergeUniqueValues`/`clampInt` + 内部 `LOCATION_TERM_ALIASES`）；`search-service.ts` 改为 import。**行为逐字不变**，`search-service.ts` 3873 → **3773 行** | `npm run typecheck` 0 error；`test:unit` 266/266 |
+| 约束核对 | 迁移前核实 14 个符号**零外部引用**、**无源码文本断言**（4 个源码断言测试的对象均不在此集合） | 迁移前 grep 取证 |
+| 后续阶段 | P2 常量/并发 → P3 Scout → P4 评分/意图 → P5 富化/分析 → P6 作业注册表（解循环依赖）→ P7 编排/门面收敛；详见蓝图 | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**（纯搬运，零回归）；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning 既存）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

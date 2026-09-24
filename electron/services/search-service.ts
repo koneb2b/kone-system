@@ -35,6 +35,22 @@ import { getOrCreateProviderRegistry } from './provider-service'
 import type { ProviderQuery, ProviderResult } from './provider-registry'
 import { getSerpApiCached, setSerpApiCached } from './serpapi-cache'
 import { buildLlmScoreCacheKey, getLlmScoreCached, setLlmScoreCached } from './llm-score-cache'
+/* O1 拆分（P1）：纯文本/URL 工具已抽出至 ./search/text-utils，行为不变 */
+import {
+  clampInt,
+  extractDomainFromUrl,
+  extractEmailsFromText,
+  extractJsonObjectFromText,
+  extractLocationTerms,
+  extractPhonesFromText,
+  getHostFromUrl,
+  mergePromptParts,
+  mergeUniqueValues,
+  normalizeGeoText,
+  normalizeLlmJsonText,
+  normalizeWebsiteUrl,
+  sanitizePlainText,
+} from './search/text-utils'
 
 type SearchExecutePayload = {
   keyword: string
@@ -666,35 +682,6 @@ const getFriendlySerpApiError = (status: number, rawText: string) => {
   return `SerpApi HTTP ${status}: ${rawText.substring(0, 100)}`
 }
 
-const getHostFromUrl = (url: string) => {
-  try {
-    return new URL(url).host.toLowerCase()
-  } catch {
-    return ''
-  }
-}
-
-const normalizeLlmJsonText = (raw: string) => {
-  let text = raw.replace(/\uFEFF/g, '').trim()
-  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch?.[1]) {
-    text = fencedMatch[1].trim()
-  }
-  text = text
-    .replace(/```(?:json)?/gi, '')
-    .replace(/```/g, '')
-    .trim()
-  text = text.replace(/^json\s*/i, '').trim()
-  const first = text.search(/[[{]/)
-  const lastObj = text.lastIndexOf('}')
-  const lastArr = text.lastIndexOf(']')
-  const last = Math.max(lastObj, lastArr)
-  if (first >= 0 && last > first) {
-    return text.slice(first, last + 1).trim()
-  }
-  return text
-}
-
 export const normalizeOrganicCandidate = (item: any) => ({
   company: String(item?.company || item?.name || item?.title || '').trim(),
   website: String(item?.website || item?.url || item?.link || '').trim(),
@@ -1313,45 +1300,6 @@ const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchExecuteR
       : { whatsappSent: false, linkedinContacted: false, emailSequenceStage: 0 as const },
 })
 
-const sanitizePlainText = (value: string, maxLen = 2800) =>
-  value
-    .replace(/\s+/g, ' ')
-    // eslint-disable-next-line no-control-regex -- 剥离 C0 控制字符是本函数的唯一职责
-    .replace(/[\u0000-\u001F\u007F]/g, '')
-    .trim()
-    .slice(0, maxLen)
-
-const normalizeWebsiteUrl = (value?: string) => {
-  const website = String(value || '').trim()
-  if (!website) return ''
-  return /^https?:\/\//i.test(website) ? website : `https://${website}`
-}
-
-const normalizeGeoText = (value?: string) =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const LOCATION_TERM_ALIASES: Record<string, string[]> = {
-  usa: ['usa', 'us', 'u.s.', 'u.s.a.', 'united states', 'united states of america'],
-  us: ['usa', 'us', 'u.s.', 'u.s.a.', 'united states', 'united states of america'],
-  uk: ['uk', 'u.k.', 'united kingdom', 'great britain', 'britain'],
-  uae: ['uae', 'u.a.e.', 'united arab emirates'],
-}
-
-const extractLocationTerms = (locationString?: string) =>
-  Array.from(
-    new Set(
-      normalizeGeoText(locationString)
-        .split(/[;,/|]/)
-        .flatMap((part) => part.split(/\s+/g))
-        .map((part) => part.trim())
-        .filter((part) => part.length >= 2)
-        .flatMap((part) => LOCATION_TERM_ALIASES[part] || [part]),
-    ),
-  )
-
 const filterLocalResultsByLocation = (localResults: any[], locationString?: string) => {
   const terms = extractLocationTerms(locationString)
   if (terms.length === 0) {
@@ -1378,30 +1326,6 @@ const filterLocalResultsByLocation = (localResults: any[], locationString?: stri
 
   return filtered
 }
-
-const extractDomainFromUrl = (value?: string) => {
-  try {
-    const normalized = normalizeWebsiteUrl(value)
-    if (!normalized) return ''
-    return new URL(normalized).hostname.replace(/^www\./i, '').toLowerCase()
-  } catch {
-    return ''
-  }
-}
-
-const extractEmailsFromText = (input: string) =>
-  Array.from(new Set((input.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map((item) => item.trim())))
-
-const extractPhonesFromText = (input: string) =>
-  Array.from(
-    new Set(
-      (input.match(/(?:\+?\d[\d\s().-]{7,}\d)/g) || [])
-        .map((item) => item.replace(/\s+/g, ' ').trim())
-        .filter((item) => item.replace(/\D/g, '').length >= 8),
-    ),
-  )
-
-const mergePromptParts = (...parts: string[]) => parts.join('')
 
 const withTimeoutGuard = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
   let timer: NodeJS.Timeout | null = null
@@ -1444,16 +1368,6 @@ const createEmptyWebsiteContentProbe = (
   directPhones: [],
   failureCode,
 })
-
-const mergeUniqueValues = (...collections: string[][]) =>
-  Array.from(
-    new Set(
-      collections
-        .flat()
-        .map((item) => String(item || '').trim())
-        .filter(Boolean),
-    ),
-  )
 
 const buildContactPageUrls = (website: string) => {
   try {
@@ -1827,15 +1741,6 @@ const buildSocialFallbackEnrichedText = async (
     snippets.push(result)
   }
   return trimWebsiteTextForLlm(snippets.filter(Boolean).join(' '))
-}
-
-const extractJsonObjectFromText = (raw: string) => {
-  try {
-    const parsed = JSON.parse(normalizeLlmJsonText(raw))
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
-  } catch {
-    return null
-  }
 }
 
 const enrichLeadWithDeepProbe = async (payload: {
@@ -2263,11 +2168,6 @@ export type OpportunityScore = {
   evidence: number
   riskPenalty: number
   finalScore: number
-}
-
-const clampInt = (value: unknown, min: number, max: number): number => {
-  const n = Math.round(Number(value))
-  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : min
 }
 
 export const normalizeOpportunityScore = (raw: unknown): OpportunityScore | undefined => {
