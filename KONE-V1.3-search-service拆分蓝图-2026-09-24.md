@@ -67,7 +67,7 @@ electron/services/
 | 阶段 | 迁移内容 | 源文本断言影响 | 风险 |
 |---|---|---|---|
 | **P1（本轮执行）** | 纯内部工具 → `search/text-utils.ts`：`getHostFromUrl`、`normalizeLlmJsonText`、`sanitizePlainText`、`normalizeWebsiteUrl`、`normalizeGeoText`、`extractLocationTerms`、`extractDomainFromUrl`、`extractEmailsFromText`、`extractPhonesFromText`、`mergePromptParts`、`mergeUniqueValues`、`clampInt`、`extractJsonObjectFromText` | **无**（均为内部非导出纯函数，无源码断言） | 极低 |
-| **P2** | 常量与词表 → `search/constants.ts`；并发调度 → `search/concurrency.ts` | **有**：fanout 测试断言 `SEARCH_FANOUT_CONCURRENCY`/`mapLimitedConcurrency` → 同步改测试读新文件 | 低 |
+| **P2（已完成）** | 词表/模式 → `search/constants.ts`；并发调度 → `search/concurrency.ts`。**修订**：8 个宪法常量**保留在 `search-service.ts`**（`verify-doc-consistency.cjs` 以该文件为代码侧读取源，保持单一代码事实源） | **有**：fanout 测试 `mapLimitedConcurrency` 定义断言改读 `search/concurrency.ts`（调用点/常量定义仍读 `search-service.ts`） | 低 |
 | **P3** | Scout/准入 → `search/scout.ts`（`computeScoutRelevance`/`computeEligibilityVeto`/`matchesProductTerm`/`isTrashLead`） | 无源码断言；`eligibility-gate` 走编译产物（门面 re-export 兼容） | 中 |
 | **P4** | 评分/提示词 → `search/scoring.ts`；意图 → `search/intent.ts` | 无源码断言 | 中 |
 | **P5** | 富化/分析 → `search/enrichment.ts` + `search/analysis.ts` | 无源码断言；注意 `Module._load` mock 目标（secret-manager/license-service）须仍在门面路径可达 | 中 |
@@ -75,6 +75,12 @@ electron/services/
 | **P7** | 四级协议编排 → `search/provider-orchestration.ts`；IPC 注册 → `search/handlers.ts`；`search-service.ts` 收敛为薄门面 | **有**：resilience/semantic/ui-ux 三个测试需改读新文件 | 高（需最谨慎） |
 
 ---
+
+## 4.5 附带发现：架构债 O13（并发调度三处重复）
+
+`runLimitedConcurrency` 在 `search-service.ts` / `agent-service.ts:520` / `sandbox-service.ts:40` **各有一份独立实现**（未共享）。
+建议后续阶段上提为 `electron/utils/concurrency.ts` 共享模块（签名统一为 `(item, index) => Promise<...>`，向后兼容忽略 index 的调用方），
+一次消除三处重复。本蓝图 P2 先做 search 域收敛，O13 单列后续阶段。
 
 ## 5. 风险与回滚
 

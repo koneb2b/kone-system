@@ -13,6 +13,11 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const searchSource = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'search-service.ts'), 'utf8')
+// O1 拆分（P2）：`mapLimitedConcurrency` 定义已迁至 search/concurrency.ts（调用点仍在 search-service.ts）。
+const concurrencySource = fs.readFileSync(
+  path.join(repoRoot, 'electron', 'services', 'search', 'concurrency.ts'),
+  'utf8',
+)
 const prdSource = fs.readFileSync(path.join(repoRoot, 'kone-PRD.md'), 'utf8')
 
 test('P1-2: 关键词变体层不再使用无界 Promise.all', () => {
@@ -37,7 +42,8 @@ test('P1-2: SEARCH_FANOUT_CONCURRENCY 已定义且为有限正值', () => {
 })
 
 test('P1-2: 结果版并发助手按索引回填，顺序不漂移', () => {
-  const m = searchSource.match(/const mapLimitedConcurrency[\s\S]*?\n}/)
+  // O1 拆分（P2）后定义位于 search/concurrency.ts（断言强度不变）。
+  const m = concurrencySource.match(/const mapLimitedConcurrency[\s\S]*?\n}/)
   assert.ok(m, '必须定义 mapLimitedConcurrency')
   const body = m[0]
   assert.match(body, /results\[index\]\s*=\s*await/, '必须按索引回填以保证结果顺序与入参一致')

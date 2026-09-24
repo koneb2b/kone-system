@@ -237,6 +237,19 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**（纯搬运，零回归）；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning 既存）。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P2：词表/模式 + 并发助手外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P2 词表/模式外提** | 新建 `electron/services/search/constants.ts`：`SCOUT_NEGATIVE_TERMS` / `SCOUT_B2B_TERMS` / `KEYWORD_STOP_TERMS` / `OMNI_CONTROL_TERMS` / `TRASH_LEAD_PATTERNS` | `npm run typecheck` 0 error |
+| **P2 并发助手外提** | 新建 `electron/services/search/concurrency.ts`：`runLimitedConcurrency` / `mapLimitedConcurrency`（P1-2 结果版，按索引回填） | 同上 |
+| **蓝图收敛性修订** | **8 个宪法常量刻意保留在 `search-service.ts`**——`verify-doc-consistency.cjs` 以该文件为代码侧读取源做宪法常量比对，保持单一代码事实源，避免为纯搬迁改动治理脚本。已写入 `constants.ts` 顶部注释 | `npm run verify:consistency` 双绿 |
+| 测试同步（不削弱断言） | `search-fanout-concurrency.business.test.js` 新增 `concurrencySource`，`mapLimitedConcurrency` **定义**断言改读 `search/concurrency.ts`；**调用点**与 `SEARCH_FANOUT_CONCURRENCY` 定义断言仍读 `search-service.ts` | fanout 4/4 通过 |
+| **新发现 O13（架构债）** | `runLimitedConcurrency` 在 `search-service.ts` / `agent-service.ts` / `sandbox-service.ts` **三处重复实现**（未共享）。后续应上提为 `electron/utils/concurrency.ts` 共享模块消除重复——已记入优化清单，本阶段先做 search 域收敛 | 迁移前 grep 取证 |
+| 结果 | `search-service.ts` 3773 → **3676 行**（累计 P1+P2：3873 → 3676，−197 行） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**（纯搬运 + 测试读取目标同步，零回归）；`node --test tests/business-logic/search-fanout-concurrency.business.test.js` → 4/4；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning 既存）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

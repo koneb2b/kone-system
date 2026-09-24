@@ -51,6 +51,15 @@ import {
   normalizeWebsiteUrl,
   sanitizePlainText,
 } from './search/text-utils'
+/* O1 拆分（P2）：词表/模式与有界并发助手已抽出至 ./search/*，行为不变 */
+import {
+  KEYWORD_STOP_TERMS,
+  OMNI_CONTROL_TERMS,
+  SCOUT_B2B_TERMS,
+  SCOUT_NEGATIVE_TERMS,
+  TRASH_LEAD_PATTERNS,
+} from './search/constants'
+import { mapLimitedConcurrency, runLimitedConcurrency } from './search/concurrency'
 
 type SearchExecutePayload = {
   keyword: string
@@ -212,31 +221,6 @@ const MAX_WEBSITE_TEXT_FOR_LLM = 3000
    原先完全无界——关键词数 = 英文变体 ≤4 + 各本地语言 ≤4/语言，多语言扩面时可一次性
    打出十几个并发 HTTP 请求，触发上游限流或本机 socket 耗尽。此处显式设闸。 */
 const SEARCH_FANOUT_CONCURRENCY = 3
-const SCOUT_NEGATIVE_TERMS = [
-  'auto repair',
-  'body shop',
-  'mechanic',
-  'tire',
-  'car wash',
-  'oil change',
-  'collision',
-  'tow',
-  'detailing',
-  'smog',
-]
-const SCOUT_B2B_TERMS = [
-  'dealer',
-  'wholesale',
-  'supplier',
-  'distributor',
-  'manufacturer',
-  'factory',
-  'industrial',
-  'commercial',
-  'b2b',
-]
-const KEYWORD_STOP_TERMS = new Set(['the', 'and', 'for', 'with', 'from', 'usa', 'us', 'global', 'company', 'companies'])
-
 let currentActiveJobId: string | null = null
 export const getCurrentActiveJobId = () => currentActiveJobId
 /* P3-2 多窗口时空隔离升级：ownerKey（sender WebContents id）→ 最新 jobId。
@@ -252,42 +236,6 @@ export const isKnownActiveJobId = (jobId: string | undefined): boolean => {
   }
   return false
 }
-const OMNI_CONTROL_TERMS = [
-  /请搜索/g,
-  /帮我找/g,
-  /帮我寻找/g,
-  /搜索/g,
-  /查找/g,
-  /寻找/g,
-  /必须包含/g,
-  /包含/g,
-  /客户的/g,
-  /核心信息/g,
-  /条/g,
-  /家/g,
-  /please\s*(search|find)/gi,
-  /must\s*include/gi,
-  /with\s*(email|phone|website)/gi,
-  /\b\d+\s*(results|leads|items)?\b/gi,
-]
-const TRASH_LEAD_PATTERNS = [
-  /reddit\.com/i,
-  /wikipedia\.org/i,
-  /\.edu(?:\/|$)/i,
-  /\.gov(?:\/|$)/i,
-  /imf\.org/i,
-  /worldbank\.org/i,
-  /招生简章/i,
-  /人才简章/i,
-  /招聘/i,
-  /白皮书/i,
-  /行业白皮书/i,
-  /论坛/i,
-  /报告/i,
-  /reddit/i,
-  /forum/i,
-]
-
 /* P0-2 Eligibility Gate（kone-PRD §0.5.1 Stage 0.5 对齐）：
    结构化 0/1 一票否决。computeScoutRelevance 是"软"过滤（一个锚点词命中即可保留
    含负向信号的候选），本门在其后执行：命中即剔除，杜绝维修店/B2C/二手/平台卖家
@@ -613,51 +561,6 @@ const buildDevMockAnalysisData = (payload: {
     source: 'dev_mock',
   }
 }
-const runLimitedConcurrency = async <T>(
-  items: T[],
-  limit: number,
-  worker: (item: T, index: number) => Promise<void>,
-) => {
-  let currentIndex = 0
-  const normalizedLimit = Math.max(1, Math.min(limit, items.length || 1))
-
-  const runner = async () => {
-    while (true) {
-      const index = currentIndex
-      if (index >= items.length) return
-      currentIndex += 1
-      await worker(items[index], index)
-    }
-  }
-
-  await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
-}
-
-/* P1-2：结果版有界并发——与 runLimitedConcurrency 相同的调度语义，
-   但回传结果数组且**严格按入参顺序对齐**（按索引回填）。
-   用于搜索扇出（关键词变体），使并发受控而结果排序不漂移。 */
-const mapLimitedConcurrency = async <T, R>(
-  items: T[],
-  limit: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> => {
-  const results = new Array<R>(items.length)
-  let currentIndex = 0
-  const normalizedLimit = Math.max(1, Math.min(limit, items.length || 1))
-
-  const runner = async () => {
-    while (true) {
-      const index = currentIndex
-      if (index >= items.length) return
-      currentIndex += 1
-      results[index] = await worker(items[index], index)
-    }
-  }
-
-  await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
-  return results
-}
-
 export const fetchSerpApiWithRetry = (url: string, timeoutMs: number) =>
   fetchWithRetry(url, { method: 'GET' }, getDefaultSerpApiTimeoutMs(timeoutMs), {
     retries: 2,
