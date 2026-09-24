@@ -195,6 +195,16 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run typecheck` → **0 error**（修复前 3 处：2 处漏导入 + 1 处死代码）；`npm run test:unit` → **253 tests / 253 pass / 0 fail**（新增 3 条合并键用例）；`npm run test:ipc` 1/1；`npm run test:e2e` 1/1；`npm run test:e2e-smoke`（permission-lock）7/7；`npm run test:security-audit` gateway 3/3 + env 3/3 + bypass 6/6；`npm run verify:consistency` 双绿；`npm run lint` **0 error**（251 warning 为既存）；`npm run format` 通过；`npx vite build` 成功。
 
+### L2 诚实化修复 · automation 伪进度步进（`automation-workflow.tsx`）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **移除虚构进度条** | `src/components/automation-workflow.tsx` 的 `handleVerifyEmails` 原用 `setInterval` + `Math.random() * 15` 模拟 0→90% 进度，而 `verifyEmails` 是**一次性批量 IPC**、主进程不推送任何逐条进度事件——该百分比向用户展示**虚构信息**，违反宪法"严禁假成功"。已移除定时器与 `Math.random()`，**不再维护虚构百分比** | `npm run typecheck` 0 error；`npm run test:unit` 262/262 |
+| 状态语义诚实化 | 原 `verifyProgress`（百分比）状态改名并复位为 `verifyingCount`（真实待校验数量）：进入时 `setVerifyingCount(emails.length)`，`finally` 中 `setVerifyingCount(0)`；`handleVerifyEmails` 不再有任何进度伪造分支 | 同上 |
+| 渲染块改为不确定态 | 进度条 UI 由"虚构百分比 + 进度条"改为**不确定态**：spinner + 文案 `正在校验 N 个邮箱…（批量请求，暂无可观测的逐条进度）`，明确告知用户当前无法展示真实逐条进度，而非用假数字填充 | `npx vite build` 成功；`npm run format` 全绿 |
+
+> **批量验证**：`npm run typecheck` → 0 error；`npm run test:unit` → **262 tests / 262 pass / 0 fail**；`npm run lint` → 0 error（251 warning 为既存）；`npm run format` → 全量 prettier 通过；`npx vite build` 成功。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
@@ -203,4 +213,4 @@ lastVerifiedAt: 2026-09-22
 - 流式评分增量更新已落地**数据层 + 组件层**：`updateScoredLead` 单点更新 + `searchResultsByKey` 索引，且 `SearchResultCard` 现已按 `leadKey` 订阅自身切片（`React.memo` + 父级 `useCallback` 稳定化），流式评分增量更新时仅被更新的卡片重渲染
 - **L0 发布阻断项进度**：L0-4（F1 合并键）**已闭环**；L0-3（smtpPass 加密）经核实前期已完成（`SECRET_KEYS.EMAIL_SMTP_PASS` + secret-manager，user_config 仅作旧安装明文回退）；L0-2（Agent 浏览器打包 B2）核心实现已存在，**本轮补齐 9 条回归防护**（未做的剩余项：packaged-smoke 的"Agent 浏览器可启动"断言需打包环境，见下条）；L0-1（全量验证门禁）**仅剩打包冒烟一项未跑通**（见下条）。
 - **打包冒烟（`npm run test:smoke`）仍被环境阻塞，非代码问题**：`release/win-unpacked/resources/app.asar` 被系统级进程独占。经核实：① 无任何 Electron/Kone 进程运行（tasklist 仅环境 node）；② 同目录可自由新建/删除其他文件，仅该文件不可改名或删除；③ `npm run build:electron`（tsc + 混淆 60 文件）**成功**。electron-builder 报错 `remove ... app.asar: The process cannot access the file because it is being used by another process`（`EnsureEmptyDir` 阶段）。需在该文件锁释放后的环境执行。
-- **本轮已闭环（自"未完成"移除）**：① 搜索扇出并发已在 P1-2 以 `SEARCH_FANOUT_CONCURRENCY = 3` 作为独立并发域收敛，不再"无上限"；② lint / format 脚本引号 bug 已修复，全量 prettier 已归一，`format` 门禁由"假绿"转为真正校验通过；③ L0-4/F1 流式评分合并键改为条件优先级（弱匹配不再遮蔽 leadKey 强匹配），并补 3 条回归用例；④ 修复 `search-result-card.tsx` 漏值导入 `useLeadsStore` 导致的搜索结果渲染 `ReferenceError`；⑤ 新增 `npm run typecheck` 并接入 CI，补上"src 从不类型检查"这一门禁盲区
+- **本轮已闭环（自"未完成"移除）**：① 搜索扇出并发已在 P1-2 以 `SEARCH_FANOUT_CONCURRENCY = 3` 作为独立并发域收敛，不再"无上限"；② lint / format 脚本引号 bug 已修复，全量 prettier 已归一，`format` 门禁由"假绿"转为真正校验通过；③ L0-4/F1 流式评分合并键改为条件优先级（弱匹配不再遮蔽 leadKey 强匹配），并补 3 条回归用例；④ 修复 `search-result-card.tsx` 漏值导入 `useLeadsStore` 导致的搜索结果渲染 `ReferenceError`；⑤ 新增 `npm run typecheck` 并接入 CI，补上"src 从不类型检查"这一门禁盲区；⑥ L2 `automation-workflow.tsx` 移除 `setInterval` + `Math.random()` 虚构进度条，改为真实待校验数量 + 不确定态（spinner），杜绝向用户展示假进度

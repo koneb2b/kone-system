@@ -78,7 +78,8 @@ export function AutomationWorkflow() {
   const [rawEmails, setRawEmails] = useState('')
   const [verifyResults, setVerifyResults] = useState<EmailVerifyResult[]>([])
   const [verifying, setVerifying] = useState(false)
-  const [verifyProgress, setVerifyProgress] = useState(0)
+  /* 待校验邮箱数量（诚实化后不再维护虚构的进度百分比，见 handleVerifyEmails 注释） */
+  const [verifyingCount, setVerifyingCount] = useState(0)
   const [selectedTemplate, setSelectedTemplate] = useState(TEMPLATES[0].id)
   const [sending, setSending] = useState(false)
   const [campaignResult, setCampaignResult] = useState<{ triggered: boolean; message: string } | null>(null)
@@ -115,17 +116,15 @@ export function AutomationWorkflow() {
       .map((e) => e.trim())
       .filter(Boolean)
     if (!emails.length) return
+    /* 诚实化：verifyEmails 是一次性的批量 IPC，主进程不推送逐条进度事件，
+       因此无法展示真实百分比。改用真实待校验数量 + 不确定态（spinner），
+       杜绝虚构进度（违反宪法"严禁假成功"）。 */
     setVerifying(true)
-    setVerifyProgress(0)
-
-    const timer = setInterval(() => {
-      setVerifyProgress((p) => Math.min(p + Math.random() * 15, 90))
-    }, 400)
+    setVerifyingCount(emails.length)
 
     try {
       const data = await verifyEmails(emails)
       setVerifyResults(data.results)
-      setVerifyProgress(100)
       toast({
         title: '邮箱清洗完成',
         description: `已完成 ${data.results.length} 个邮箱校验。`,
@@ -139,8 +138,8 @@ export function AutomationWorkflow() {
         variant: 'destructive',
       })
     } finally {
-      clearInterval(timer)
       setVerifying(false)
+      setVerifyingCount(0)
     }
   }, [rawEmails, toast])
 
@@ -477,15 +476,9 @@ export function AutomationWorkflow() {
 
               {verifying && (
                 <div className="mt-3">
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                    <span>邮箱连通性校验中...</span>
-                    <span>{Math.round(verifyProgress)}%</span>
-                  </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-blue-600 transition-all duration-300"
-                      style={{ width: `${verifyProgress}%` }}
-                    />
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    <span>正在校验 {verifyingCount} 个邮箱…（批量请求，暂无可观测的逐条进度）</span>
                   </div>
                 </div>
               )}
