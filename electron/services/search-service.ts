@@ -51,8 +51,7 @@ import {
   normalizeWebsiteUrl,
   sanitizePlainText,
 } from './search/text-utils'
-/* O1 拆分（P2/P3）：词表/模式与有界并发助手已抽出至 ./search/*，行为不变 */
-import { OMNI_CONTROL_TERMS } from './search/constants'
+/* O1 拆分（P2/P3/P4）：词表/模式/并发/意图已抽出至 ./search/*，行为不变 */
 import { mapLimitedConcurrency, runLimitedConcurrency } from './search/concurrency'
 /* O1 拆分（P3）：Scout 预筛/准入逻辑已抽出至 ./search/scout，行为不变 */
 import {
@@ -64,6 +63,20 @@ import {
 } from './search/scout'
 /* 保留公开导出面：测试经编译产物访问 searchService.computeEligibilityVeto / .matchesProductTerm */
 export { computeEligibilityVeto, matchesProductTerm }
+/* O1 拆分（P4）：意图/语言解析已抽出至 ./search/intent，行为不变 */
+import {
+  buildIntentMutationPrompt,
+  COUNTRY_LANGUAGE_MAP,
+  crossProductB2BKeywords,
+  fallbackMutateB2BKeywords,
+  LANGUAGE_LABELS,
+  normalizeIntentCountry,
+  parseIntentMutation,
+  resolveEmailLanguage,
+  type SearchIntentMutation,
+} from './search/intent'
+/* 保留公开导出面：LANGUAGE_LABELS 原为导出符号 */
+export { LANGUAGE_LABELS }
 
 type SearchExecutePayload = {
   keyword: string
@@ -111,99 +124,6 @@ type SearchExecuteResult = {
   customsData?: CustomsData
   decisionMakers?: DecisionMaker[]
   agentStatus?: AgentStatus
-}
-
-type SearchIntentMutation = {
-  country: string
-  city: string
-  pureEnglishProducts: string[]
-  keywords: string[]
-  countryOfficialLanguages?: string[]
-  localizedProducts?: Record<string, string[]>
-  localizedKeywords?: Record<string, string[]>
-}
-
-/* 邮件生成目标语言的显示标签（ISO 639-1 → 语言名），供 prompt 与前端使用 */
-export const LANGUAGE_LABELS: Record<string, string> = {
-  en: 'English',
-  zh: 'Chinese',
-  de: 'German',
-  fr: 'French',
-  es: 'Spanish',
-  it: 'Italian',
-  ja: 'Japanese',
-  ko: 'Korean',
-  pt: 'Portuguese',
-  ru: 'Russian',
-  nl: 'Dutch',
-  pl: 'Polish',
-  tr: 'Turkish',
-  vi: 'Vietnamese',
-  th: 'Thai',
-  id: 'Indonesian',
-  ms: 'Malay',
-  ar: 'Arabic',
-  sv: 'Swedish',
-  da: 'Danish',
-  no: 'Norwegian',
-  fi: 'Finnish',
-  cs: 'Czech',
-  el: 'Greek',
-  hu: 'Hungarian',
-  ro: 'Romanian',
-  uk: 'Ukrainian',
-  he: 'Hebrew',
-  hi: 'Hindi',
-}
-
-/* 按国家解析邮件目标语言：优先显式 language，缺省取国家官方语言（非英文
-   返回首个非 en 语言，英文国家回 en）；无法推导回退 en。 */
-const resolveEmailLanguage = (country?: string, explicitLanguage?: string): string => {
-  const explicit = String(explicitLanguage || '')
-    .trim()
-    .toLowerCase()
-  if (explicit && LANGUAGE_LABELS[explicit]) return explicit
-  if (explicit) return explicit // 合法 ISO 但未在标签表，仍透传
-  const langs =
-    COUNTRY_LANGUAGE_MAP[
-      String(country || '')
-        .trim()
-        .toLowerCase()
-    ] || []
-  const nonEnglish = langs.find((l) => l !== 'en')
-  return nonEnglish || 'en'
-}
-
-const COUNTRY_LANGUAGE_MAP: Record<string, string[]> = {
-  germany: ['de', 'en'],
-  france: ['fr', 'en'],
-  italy: ['it', 'en'],
-  spain: ['es', 'en'],
-  netherlands: ['nl', 'en'],
-  belgium: ['nl', 'fr', 'en'],
-  poland: ['pl', 'en'],
-  portugal: ['pt', 'en'],
-  austria: ['de', 'en'],
-  switzerland: ['de', 'fr', 'it', 'en'],
-  uk: ['en'],
-  'united kingdom': ['en'],
-  usa: ['en'],
-  'united states': ['en'],
-  canada: ['en', 'fr'],
-  australia: ['en'],
-  japan: ['ja', 'en'],
-  china: ['zh', 'en'],
-  'south korea': ['ko', 'en'],
-  brazil: ['pt', 'en'],
-  mexico: ['es', 'en'],
-  india: ['hi', 'en'],
-  russia: ['ru', 'en'],
-  turkey: ['tr', 'en'],
-  vietnam: ['vi', 'en'],
-  thailand: ['th', 'en'],
-  indonesia: ['id', 'en'],
-  malaysia: ['ms', 'en'],
-  singapore: ['en', 'zh', 'ms', 'ta'],
 }
 
 const MAX_SEARCH_CANDIDATES = 200
@@ -544,109 +464,6 @@ const normalizeSearchCandidates = (raw: any) => {
   )
 
   return uniqueCandidates.slice(0, MAX_SEARCH_CANDIDATES)
-}
-
-const normalizeIntentCountry = (value?: string) => {
-  const normalized = String(value || '').trim()
-  if (!normalized) return ''
-  const lower = normalized.toLowerCase()
-  if (/美国|usa|u\.s\.|united states|america/.test(lower)) return 'USA'
-  if (/英国|uk|u\.k\.|united kingdom/.test(lower)) return 'UK'
-  if (/德国|germany|deutschland/.test(lower)) return 'Germany'
-  if (/法国|france/.test(lower)) return 'France'
-  if (/意大利|italy/.test(lower)) return 'Italy'
-  if (/西班牙|spain/.test(lower)) return 'Spain'
-  if (/加拿大|canada/.test(lower)) return 'Canada'
-  if (/澳大利亚|australia/.test(lower)) return 'Australia'
-  return normalized
-}
-
-const stripOmniControlTerms = (keyword: string) => {
-  let cleaned = String(keyword || '').trim()
-  for (const pattern of OMNI_CONTROL_TERMS) {
-    cleaned = cleaned.replace(pattern, ' ')
-  }
-  return cleaned
-    .replace(/[，。；：、]/g, ' ')
-    .replace(/\b(email|phone|website|contact|information|info)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-const fallbackMutateB2BKeywords = (keyword: string): { pureEnglishProducts: string[]; keywords: string[] } => {
-  const cleaned = stripOmniControlTerms(keyword)
-  const lower = cleaned.toLowerCase()
-  const rawProduct = /高尔夫|golf\s*cart/.test(lower)
-    ? 'Golf cart'
-    : cleaned
-        .replace(
-          /在?美国|usa|united states|品牌|经销商|批发商|独立站|批发|dealer|distributor|wholesaler|supplier|manufacturer|importer/gi,
-          ' ',
-        )
-        .replace(/\s+/g, ' ')
-        .trim()
-        .replace(/\b\w/g, (char) => char.toUpperCase()) ||
-      cleaned ||
-      keyword
-
-  const raw = rawProduct.replace(/\s+/g, ' ').trim()
-  const products = raw
-    .split(/[,，、/]/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-  const pureEnglishProducts = products.length > 0 ? products : [raw]
-  return {
-    pureEnglishProducts,
-    keywords: Array.from(new Set(pureEnglishProducts.flatMap((p) => B2B_ROLE_TERMS.map((role) => `${p} ${role}`))))
-      .filter(Boolean)
-      .slice(0, 4),
-  }
-}
-
-const B2B_ROLE_TERMS = ['dealer', 'distributor', 'importer', 'wholesaler', 'supplier', 'manufacturer']
-
-const crossProductB2BKeywords = (products: string[], country: string): string[] =>
-  Array.from(
-    new Set(
-      products.flatMap((product) =>
-        B2B_ROLE_TERMS.slice(0, 4).map((role) => (country ? `${product} ${role} ${country}` : `${product} ${role}`)),
-      ),
-    ),
-  )
-    .filter(Boolean)
-    .slice(0, 4)
-
-const buildIntentMutationPrompt = (payload: { keyword: string; country: string; city: string }) => ({
-  system: mergePromptParts(
-    'You are an intent parser for a B2B lead search engine. ',
-    'Never pass the raw user sentence downstream. ',
-    'Remove control words such as search, find, 50 leads, must include email, phone, website. ',
-    'Extract ALL discrete CORE PRODUCT terms and TARGET LOCATION from the user input. ',
-    'Split compound or multi-product input into separate product entries. ',
-    'Return pureEnglishProducts as an ARRAY of individual product terms, never concatenated. ',
-    'Then cross-multiply each core product with exactly 3 B2B role suffixes from: dealer, distributor, importer, wholesaler, supplier, manufacturer. ',
-    'Optionally append location as a qualifier for natural keyword phrasing. ',
-    'If a country is specified, detect its official language(s). For each official language (other than English), translate pureEnglishProducts into that language and generate localized B2B keywords. Use distributor/dealer/importer/wholesaler equivalents in the local language. ',
-    'Return ONLY valid JSON with the following structure: {"country":"USA","city":"","pureEnglishProducts":["Golf cart","car monitor"],"b2bAttributes":["wholesaler","distributor","importer","dealer"],"keywords":["Golf cart dealer","Golf cart distributor","car monitor wholesaler","car monitor importer"],"countryOfficialLanguages":["en"],"localizedProducts":{"es":["carro de golf","monitor de coche"]},"localizedKeywords":{"es":["carro de golf distribuidor","carro de golf importador","monitor de coche mayorista"]}}. ',
-    'countryOfficialLanguages must be an array of ISO language codes (en, fr, de, es, it, ja, zh, etc). ',
-    'localizedProducts maps each non-English language code to translated product term arrays. ',
-    'localizedKeywords maps each non-English language code to translated B2B keyword arrays. ',
-    'If country is empty or English-only, set countryOfficialLanguages to ["en"] and omit localizedProducts/localizedKeywords. ',
-    'Never use raw user control words like "50条", "必须包含邮箱", "search", "find", "帮我找" in keywords. ',
-    'pureEnglishProducts must always be an array, never a single string. ',
-    'localizedProducts and localizedKeywords must also be arrays, never single strings.',
-  ),
-  user: JSON.stringify(payload),
-})
-
-const parseIntentMutation = (raw: string): Partial<SearchIntentMutation> | null => {
-  try {
-    const parsed = JSON.parse(normalizeLlmJsonText(raw))
-    if (!parsed || typeof parsed !== 'object') return null
-    return parsed
-  } catch {
-    return null
-  }
 }
 
 const mutateSearchIntent = async (payload: {

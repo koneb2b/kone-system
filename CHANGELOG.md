@@ -262,6 +262,18 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`node --test tests/business-logic/eligibility-gate.business.test.js` → 8/8；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning 既存）。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P4：意图/语言解析外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P4 意图/语言外提** | 新建 `electron/services/search/intent.ts`（206 行）：`SearchIntentMutation` 类型 + `LANGUAGE_LABELS` + `COUNTRY_LANGUAGE_MAP` + `resolveEmailLanguage` + `normalizeIntentCountry` + `stripOmniControlTerms` + `B2B_ROLE_TERMS` + `fallbackMutateB2BKeywords` + `crossProductB2BKeywords` + `buildIntentMutationPrompt` + `parseIntentMutation` | `npm run typecheck` 0 error |
+| 保留原位 | `mutateSearchIntent`（异步 LLM 调用，属编排层）**刻意留待 P7** 编排阶段，本轮不动 | — |
+| 公开导出面保留 | `search-service.ts` 以 `export { LANGUAGE_LABELS }` 保留原导出符号 | 编译通过 |
+| 常量导入收敛 | `OMNI_CONTROL_TERMS` 唯一使用者 `stripOmniControlTerms` 已迁出 → 移除 search-service 中该导入（避免未使用导入告警） | `npm run lint` 0 error（251 warning，与基线持平） |
+| 结果 | `search-service.ts` 3493 → **3311 行**（累计 P1–P4：3873 → 3311，**−562 行**） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning，与 P3 基线持平——迁移引入的 `OMNI_CONTROL_TERMS` 未使用告警已同步清除）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
