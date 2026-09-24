@@ -53,7 +53,11 @@ export const createMainWindow = async () => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false,
+      /* 安全加固（审计 L1）：开启渲染进程沙箱。前置条件已满足——
+         preload 仅依赖 `electron`（contextBridge/ipcRenderer），不触碰任何 Node API；
+         且 `npm run bundle:preload` 将 preload 打包为**自足单文件**（内联 IPC_CHANNELS），
+         消除沙箱化 preload 禁止的本地 `require`。见 tests/preload-sandbox-contract.test.js。 */
+      sandbox: true,
       preload: preloadPath,
     },
   })

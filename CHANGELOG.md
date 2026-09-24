@@ -359,6 +359,20 @@ lastVerifiedAt: 2026-09-22
 >
 > **说明**：B-2 的 `dist:signed` 在**证书到位前无法本地验证**（无证书 electron-builder 会因找不到 `certificateFile` 报错），属"预备就绪、待证书"。
 
+### 商用加固 · 渲染进程沙箱开启（审计 L1）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **可行性评估** | `window-service.ts` 原 `sandbox: false`。评估结论：`sandbox: true` 要求 preload **不得 require 本地模块**；实测 preload **零 Node API 依赖**（仅 `contextBridge`/`ipcRenderer`），但编译产物 `require("../electron/ipc/channels")`（本地）→ 需先自足化 | 取证 |
+| **preload 自足化** | 新增 `npm run bundle:preload`（esbuild 打包 preload 为单文件、`--external:electron`、内联 `IPC_CHANNELS`），并入 `build:electron:dev` / `build:electron` | 产物仅 `require("electron")`，无本地 require |
+| **开启沙箱** | `webPreferences.sandbox: false → true`（`contextIsolation: true` / `nodeIntegration: false` 保持不变） | 见下 |
+| **回归防护** | 新增 `tests/preload-sandbox-contract.test.js`（3 条）：① window-service 沙箱开启且隔离不退化；② preload 源码零 Node API；③ 编译产物无本地 require | 3/3 通过 |
+| **真实运行时验证** | 全新打包（`release-verify`，00:38 新鲜构建）后跑**打包冒烟**：`booted / activationScreenVisible / preloadBridgeVisible` 均 **true** —— 证明**沙箱下 preload 桥接仍可用** | 冒烟通过（exit 0） |
+
+> **验证**：`npm run test:unit` → **269 tests / 269 pass / 0 fail**（+3）；`verify:consistency` 双绿；`lint` 0 error（250 warning）；`format` 通过；打包冒烟 `preloadBridgeVisible: true`。
+>
+> **说明**：`release/`、`release-build/`、`release-verify/` 三个输出目录均被同一"app.asar 文件锁"现象影响（打包版启动后由 OS/安全软件持有），故每次验证使用**全新输出目录**绕过；`.gitignore` 已收录三者。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

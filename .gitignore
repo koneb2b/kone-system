@@ -2,6 +2,7 @@ node_modules/
 dist/
 release/
 release-build/
+release-verify/
 dist-electron/
 .vite/
 .tmp-*/
