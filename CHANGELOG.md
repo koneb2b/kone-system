@@ -250,6 +250,18 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**（纯搬运 + 测试读取目标同步，零回归）；`node --test tests/business-logic/search-fanout-concurrency.business.test.js` → 4/4；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning 既存）。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P3：Scout 预筛/准入外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P3 Scout 外提** | 新建 `electron/services/search/scout.ts`（198 行）：`ELIGIBILITY_HARD_VETO_RULES`（P0-2 Stage 0.5 一票否决规则表）+ `matchesProductTerm`（词边界产品词匹配）+ `computeEligibilityVeto` + `isTrashLead` + `extractKeywordAnchors` + `computeScoutRelevance` | `npm run typecheck` 0 error |
+| 公开导出面保留 | `search-service.ts` 以 `export { computeEligibilityVeto, matchesProductTerm }` 保留原公开 API（`eligibility-gate` 测试经编译产物访问 `searchService.*` 不受影响） | eligibility-gate **8/8** 通过 |
+| 常量导入收敛 | `KEYWORD_STOP_TERMS`/`SCOUT_B2B_TERMS`/`SCOUT_NEGATIVE_TERMS`/`TRASH_LEAD_PATTERNS` 已随 Scout 迁移，`search-service.ts` 仅保留仍在用的 `OMNI_CONTROL_TERMS` 导入 | `npm run lint` 0 error（无未使用导入） |
+| **保留原位** | `COUNTRY_TLD_MAP` 被 `ui-ux-alignment-contract` 源码断言 → 刻意保留在 `search-service.ts` | `verify:consistency` 双绿 |
+| 结果 | `search-service.ts` 3676 → **3493 行**（累计 P1+P2+P3：3873 → 3493，−380 行） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`node --test tests/business-logic/eligibility-gate.business.test.js` → 8/8；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning 既存）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
