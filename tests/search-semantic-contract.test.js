@@ -8,7 +8,9 @@ const read = (...segments) => fs.readFileSync(path.join(repoRoot, ...segments), 
 
 test('search stage payload exposes structured degraded semantic metadata (AnalysisSemanticCode)', () => {
   const contracts = read('src', 'shared', 'ipc-contracts.ts')
-  const service = read('electron', 'services', 'search-service.ts')
+  // O1 拆分（P7a）：分析语义（getAnalysisConfigError / buildDevMockAnalysisData）已迁至
+  // electron/services/search/analysis.ts —— 断言读取目标随之迁移，断言强度不变。
+  const analysisService = read('electron', 'services', 'search', 'analysis.ts')
   const searchEngine = read('src', 'components', 'search-engine.tsx')
 
   assert.match(contracts, /export type AnalysisSemanticCode =/)
@@ -18,10 +20,10 @@ test('search stage payload exposes structured degraded semantic metadata (Analys
   assert.match(contracts, /'provider_unavailable'/)
   assert.match(contracts, /semantic\?: AnalysisSemanticMeta/)
 
-  assert.match(service, /semantic: AnalysisSemanticMeta/)
-  assert.match(service, /code: 'missing_llm_key'/)
-  assert.match(service, /degraded: true/)
-  assert.match(service, /settingsActionable: true/)
+  assert.match(analysisService, /semantic: AnalysisSemanticMeta/)
+  assert.match(analysisService, /code: 'missing_llm_key'/)
+  assert.match(analysisService, /degraded: true/)
+  assert.match(analysisService, /settingsActionable: true/)
 
   // AI-skip degraded-state detection now lives in the extracted search hook.
   const searchHook = read('src', 'hooks', 'use-search-engine.ts')

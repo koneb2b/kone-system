@@ -301,6 +301,20 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（250 warning，与 P5 持平）。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P7a：深度分析/回复教练/知识库外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P7a 分析域外提** | 新建 `electron/services/search/analysis.ts`（352 行）：`getAnalysisConfigError` / `buildAnalysisErrorResponse` / `shouldUseDevMockAnalysis` / `getAnalysisFailureSemantic` / `buildDevMockAnalysisData` / `buildAnalysisSystemPrompt` / `buildReplyCoachSystemPrompt` / `buildAnalysisPrompt` / `buildReplyCoachPrompt` / `parseStructuredAnalysisResponse` / `parseReplyCoachResponse` / `pickRelevantKnowledgeEntries` | `npm run typecheck` 0 error |
+| 公开导出面保留 | `export { parseStructuredAnalysisResponse }` | — |
+| 导入收敛 | 清理 4 处变为未使用的导入（`app` / `AnalysisSemanticMeta` / `AnalysisSemanticCode` / `normalizeLlmJsonText`） | `npm run lint` 0 error（250 warning 持平） |
+| **源码断言测试同步** | `tests/search-semantic-contract.test.js` 的分析语义断言（`semantic: AnalysisSemanticMeta` / `code: 'missing_llm_key'` / `degraded: true` / `settingsActionable: true`）改读 `search/analysis.ts`——**断言强度不变**，仅迁移读取目标（与既有"随抽离迁移读取目标"惯例一致） | `test:unit` 266/266 |
+| 结果 | `search-service.ts` 2980 → **2647 行**（累计 P1–P7a：3873 → 2647，**−1226 行**） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（250 warning 持平）。
+>
+> **过程记录**：P7a 首次提交前复跑全量门禁时**捕获 1 个测试失败**（`search-semantic-contract` 的源码断言因分析语义迁出 search-service 而失效）——已按蓝图约定同步测试读取目标后恢复 266/266。这印证了"每阶段复跑全量门禁 + 源码断言同步"的必要性。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
