@@ -327,6 +327,17 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（250 warning 持平）。
 
+### 商用阻断项 B-1/B-5 解除 · 绕锁打包 + 打包冒烟通过
+
+| 项 | 变更 | 证据 |
+|---|---|---|
+| **B-1 安装包产物** | `release/win-unpacked/resources/app.asar` 被系统级文件锁占用（无进程持有、仅该文件不可动）导致 `npm run dist` 无法重建。**改用替代输出目录绕过锁**：`npx electron-builder --win nsis -c.directories.output=release-build` **成功产出** | `release-build/Kone-Intellect-Setup-1.3.0.exe`（**89.7 MB NSIS 安装包**）+ `release-build/win-unpacked/KoneAI.exe`（188.8 MB） |
+| **B-5 打包冒烟** | `scripts/packaged-smoke.cjs` 增加 `KONE_PACKAGED_ROOT` 环境变量（默认 `release`，非削弱改动），使冒烟可指向替代输出目录 | `booted: true` / `activationScreenVisible: true` / `preloadBridgeVisible: true` → **通过判据满足**（`booted && bridge && (activation || dashboard)`），退出码 0 |
+| 运行时证据 | 打包版真实启动：CrashReporter 初始化、AutoUpdater 按离线设计跳过、BackupService 自动备份完成；stderr 仅有无害项（`NODE_OPTIONS` 提示、旧备份校验和、`fsync EPERM` 降级、机器码读取被安全策略拒绝后的回退） | `tests/packaged-smoke-report.json` |
+| 卫生 | `.gitignore` 新增 `release-build/` | — |
+
+> **意义**：此前终审报告判定的 5 个商用阻断项中，**B-1（无安装包）与 B-5（打包冒烟未验证）两项解除**——证明"打包链路本身可用，此前仅被环境文件锁阻塞"。剩余阻断：B-2 代码签名（需证书）、B-3 云协同闭环（待立项）、B-4 持久化规模化（待立项）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

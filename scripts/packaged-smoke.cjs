@@ -4,7 +4,9 @@ const { spawn, execSync } = require('child_process')
 const puppeteer = require('puppeteer-core')
 
 const rootDir = path.resolve(__dirname, '..')
-const unpackedRoot = path.join(rootDir, 'release', 'win-unpacked')
+/* 默认读取 electron-builder 的 `release/` 输出目录；当 `release/` 被系统级文件锁占用
+   （无法重建产物）时，可用 KONE_PACKAGED_ROOT 指向替代输出目录（如 release-build）做冒烟。 */
+const unpackedRoot = path.join(rootDir, process.env.KONE_PACKAGED_ROOT || 'release', 'win-unpacked')
 const executablePath = path.join(unpackedRoot, 'KoneAI.exe')
 const screenshotPath = path.join(rootDir, 'tests', 'packaged-smoke.png')
 const reportPath = path.join(rootDir, 'tests', 'packaged-smoke-report.json')

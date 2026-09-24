@@ -2,9 +2,9 @@
   "booted": true,
   "activationScreenVisible": true,
   "preloadBridgeVisible": true,
-  "dashboardNavVisible": true,
+  "dashboardNavVisible": false,
   "screenshotPath": "C:\\Users\\Administrator\\Kone-System\\tests\\packaged-smoke.png",
-  "executablePath": "C:\\Users\\Administrator\\Kone-System\\release\\win-unpacked\\KoneAI.exe",
-  "stdout": "\r\n[CrashReporter] Initialized. Remote upload: disabled\n[BackupService] Recent backup exists, skipping auto-backup\n[AutoUpdater] No update feed configured — updates delivered via offline (advisor/WeChat) channel; auto-check skipped\n",
-  "stderr": "\r\nDevTools listening on ws://127.0.0.1:9222/devtools/browser/ebc4914c-8612-4a07-9eb6-401eeb50e369\r\n"
+  "executablePath": "C:\\Users\\Administrator\\Kone-System\\release-build\\win-unpacked\\KoneAI.exe",
+  "stdout": "\r\n[CrashReporter] Initialized. Remote upload: disabled\n[AutoUpdater] No update feed configured — updates delivered via offline (advisor/WeChat) channel; auto-check skipped\n[BackupService] Auto-backup completed: C:\\Users\\Administrator\\AppData\\Roaming\\kone-system\\backups\\backup-2026-09-24T16-13-33-598Z.json\n",
+  "stderr": "[21824:0925/001328.381:ERROR:node_bindings.cc(379)] Most NODE_OPTIONs are not supported in packaged apps. See documentation for more details.\r\n[BackupService] Checksum mismatch for C:\\Users\\Administrator\\AppData\\Roaming\\kone-system\\backups\\backup-2026-09-11T18-31-02-150Z.json\n[BackupService] Checksum mismatch for C:\\Users\\Administrator\\AppData\\Roaming\\kone-system\\backups\\backup-2026-09-13T12-46-18-083Z.json\n[BackupService] Checksum mismatch for C:\\Users\\Administrator\\AppData\\Roaming\\kone-system\\backups\\backup-2026-09-14T14-36-58-925Z.json\n\r\nDevTools listening on ws://127.0.0.1:9222/devtools/browser/33bfa2af-4925-4ab8-8051-bb979d39f22c\r\n[Config] 当前文件系统不支持 fsync，已降级为仅原子 rename（数据仍会写入）: EPERM: operation not permitted, fsync\n�ܾ����ʡ�\r\n�ܾ����ʡ�\r\n�ܾ����ʡ�\r\n�ܾ����ʡ�\r\n"
 }
