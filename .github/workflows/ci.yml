@@ -108,6 +108,25 @@ jobs:
         timeout-minutes: 8
 
   # ═══════════════════════════════════════════════
+  # COVERAGE: 源码覆盖率门禁（审计 G2）
+  # 使用 Node 内置 --experimental-test-coverage（无需 c8；本仓库 npm 镜像不支持 audit 端点）。
+  # 阈值基于 2026-09-25 基线（行 67.77% / 分支 62.44% / 函数 66.64%）留 2-3 点余量。
+  # ═══════════════════════════════════════════════
+  coverage:
+    name: 'Coverage — Source Coverage Gate'
+    runs-on: windows-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:coverage
+        timeout-minutes: 10
+
+  # ═══════════════════════════════════════════════
   # BUILD: Electron tsc compilation check
   # ═══════════════════════════════════════════════
   build:
@@ -169,13 +188,13 @@ jobs:
   gate:
     name: 'Gate — All Clear'
     runs-on: windows-latest
-    needs: [consistency, unit, ipc, auth, build, quality, packaged, security]
+    needs: [consistency, unit, ipc, auth, build, quality, coverage, packaged, security]
     if: always()
     steps:
       - name: Evaluate release gate
         shell: pwsh
         run: |
-          $expected = @('consistency', 'unit', 'ipc', 'auth', 'build', 'quality')
+          $expected = @('consistency', 'unit', 'ipc', 'auth', 'build', 'quality', 'coverage')
           if ('${{ github.event_name }}' -ne 'pull_request') {
             $expected += @('packaged', 'security')
           }

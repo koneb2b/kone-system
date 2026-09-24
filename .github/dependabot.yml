@@ -1,0 +1,31 @@
+# Dependabot 依赖与安全更新
+#
+# 动因（商用加固 · 审计 G3）：本仓库 npm registry 指向镜像源（registry.npmmirror.com），
+# 该镜像不实现 /-/npm/v1/security/* 审计端点，导致 `npm audit` 无法在本环境运行。
+# 故依赖漏洞与更新改由 GitHub Dependabot 原生扫描（GitHub 侧执行，不受本地镜像限制）。
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+    # 分组：减少 PR 噪音，dev/prod 分开审阅
+    groups:
+      production-dependencies:
+        dependency-type: 'production'
+      development-dependencies:
+        dependency-type: 'development'
+    # 生产依赖（运行时）优先级更高：安全更新始终单列
+    allow:
+      - dependency-type: 'direct'
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 3
+    labels:
+      - 'ci'

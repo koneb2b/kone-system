@@ -347,6 +347,18 @@ lastVerifiedAt: 2026-09-22
 
 > **验证**：`node ./scripts/packaged-smoke.cjs release-build` → 退出码 0（`booted/activationScreenVisible/preloadBridgeVisible` 均 true）。
 
+### 商用加固 · 覆盖率门禁（G2）+ 依赖安全扫描（G3）+ 签名预备（B-2）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **G2 覆盖率门禁** | 新增 `npm run test:coverage`：用 **Node 22 内置** `--experimental-test-coverage`（**无需 c8**，规避镜像限制），排除 `tests/**`/`node_modules/**`，并设**阈值门禁** `--test-coverage-lines=65 / branches=60 / functions=64`。接入 CI 新 job `coverage` 并纳入汇总 Gate | 实测 **266/266**，源码覆盖率 **行 67.72% / 分支 62.40% / 函数 66.64%**，阈值通过 |
+| **G3 依赖安全扫描** | 新增 `.github/dependabot.yml`（npm + github-actions，weekly，分组）。**动因**：本仓库 npm 镜像（registry.npmmirror.com）**不实现 `/-/npm/v1/security/*` 审计端点**，`npm audit` 无法运行 → 改由 GitHub 侧原生扫描 | YAML 校验通过 |
+| **B-2 签名预备（非破坏式）** | 新增 `electron-builder.sign.cjs`（在基础配置上叠加 Authenticode 签名，**不破坏未签名构建**）+ `scripts/verify-signature.cjs`（工具不可用时优雅 WARN；`--strict` 供证书到位后 CI 硬门禁）+ npm 脚本 `dist:signed` / `verify:signature` | 实测：非 strict → WARN + exit 0；strict → exit 1 |
+
+> **验证**：`npm run test:coverage` → 266/266、覆盖率达标；`node scripts/verify-signature.cjs release-build` → WARN+exit 0；`--strict` → exit 1；CI YAML 解析通过（jobs 含 `coverage`，gate.needs 已含）。
+>
+> **说明**：B-2 的 `dist:signed` 在**证书到位前无法本地验证**（无证书 electron-builder 会因找不到 `certificateFile` 报错），属"预备就绪、待证书"。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
