@@ -54,7 +54,7 @@ export class FacebookSearchProvider implements SearchProvider {
     const { keyword, googleKey, timeoutMs, myJobId } = query
     if (!googleKey) return { results: [], error: 'SerpApi key not configured' }
 
-    const { isKnownActiveJobId } = await import('../search-service')
+    const { isKnownActiveJobId } = await import('../search/job-registry')
     if (!isKnownActiveJobId(myJobId)) {
       return { results: [], error: `Stale job ${myJobId} — discarded by temporal isolation` }
     }

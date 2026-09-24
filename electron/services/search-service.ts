@@ -112,6 +112,10 @@ import {
 } from './search/analysis'
 /* 保留公开导出面：parseStructuredAnalysisResponse 原为导出符号 */
 export { parseStructuredAnalysisResponse }
+/* O1 拆分（P8）：活跃作业注册表已抽出至 ./search/job-registry（解 Provider 循环依赖），行为不变 */
+import { getActiveJobIdFor, registerActiveJob } from './search/job-registry'
+/* 保留公开导出面：getCurrentActiveJobId / isKnownActiveJobId 原为导出符号 */
+export { getCurrentActiveJobId, isKnownActiveJobId } from './search/job-registry'
 
 type SearchExecutePayload = {
   keyword: string
@@ -126,21 +130,6 @@ type SearchExecutePayload = {
   }
 }
 
-let currentActiveJobId: string | null = null
-export const getCurrentActiveJobId = () => currentActiveJobId
-/* P3-2 多窗口时空隔离升级：ownerKey（sender WebContents id）→ 最新 jobId。
-   单窗口语义与原模块级单例完全兼容（currentActiveJobId 始终指向最新 job，
-   供 Provider 与旧路径回退）；多窗口并发时各窗口的异步回调按 owner 解析，
-   不再被其他窗口的新搜索误杀。 */
-const activeJobIds = new Map<number, string>()
-export const isKnownActiveJobId = (jobId: string | undefined): boolean => {
-  if (!jobId) return false
-  if (jobId === currentActiveJobId) return true
-  for (const value of activeJobIds.values()) {
-    if (value === jobId) return true
-  }
-  return false
-}
 const COUNTRY_TLD_MAP: Record<string, string[]> = {
   germany: ['.de'],
   france: ['.fr'],
@@ -1309,11 +1298,10 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         if (!keyword) return { success: false, error: 'Missing keyword' }
 
         const myJobId = crypto.randomUUID()
-        /* P3-2：登记 owner 作用域的活跃 job；currentActiveJobId 保留为全局最新（兼容） */
+        /* P3-2：登记 owner 作用域的活跃 job；全局最新由 job-registry 内部维护（兼容） */
         const jobOwnerKey = _event?.sender?.id ?? 0
-        activeJobIds.set(jobOwnerKey, myJobId)
-        currentActiveJobId = myJobId
-        const activeJobIdFor = (): string | null => activeJobIds.get(jobOwnerKey) ?? currentActiveJobId
+        registerActiveJob(jobOwnerKey, myJobId)
+        const activeJobIdFor = (): string | null => getActiveJobIdFor(jobOwnerKey)
 
         emitStreamStart(_event.sender, 0)
 

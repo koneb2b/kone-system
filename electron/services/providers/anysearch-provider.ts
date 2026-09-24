@@ -124,7 +124,7 @@ export class AnySearchProvider implements SearchProvider {
     const { keyword, country, city, anysearchApiKey, anysearchBaseUrl, timeoutMs, myJobId } = query
     if (!anysearchApiKey || !anysearchBaseUrl) return { results: [], error: 'AnySearch not configured' }
 
-    const { isKnownActiveJobId } = await import('../search-service')
+    const { isKnownActiveJobId } = await import('../search/job-registry')
     if (!isKnownActiveJobId(myJobId)) {
       return { results: [], error: `Stale job ${myJobId} — discarded by temporal isolation` }
     }

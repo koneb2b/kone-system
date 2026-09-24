@@ -72,7 +72,7 @@ electron/services/
 | **P3** | Scout/准入 → `search/scout.ts`（`computeScoutRelevance`/`computeEligibilityVeto`/`matchesProductTerm`/`isTrashLead`） | 无源码断言；`eligibility-gate` 走编译产物（门面 re-export 兼容） | 中 |
 | **P4** | 评分/提示词 → `search/scoring.ts`；意图 → `search/intent.ts` | 无源码断言 | 中 |
 | **P5** | 富化/分析 → `search/enrichment.ts` + `search/analysis.ts` | 无源码断言；注意 `Module._load` mock 目标（secret-manager/license-service）须仍在门面路径可达 | 中 |
-| **P6** | 作业注册表 → `search/job-registry.ts`；**更新 7 个 Provider** 改为 `await import('../search/job-registry')` | 无源码断言；**消除循环依赖** | 中 |
+| **已完成（实际记为 P8）** | 作业注册表 → `search/job-registry.ts`；**7 个 Provider** 改为 `await import('../search/job-registry')`。**成果：循环依赖彻底消除**（Provider 对 search-service 的代码引用 7 → 0）；13 个调用点经本地闭包委托零改动；2 个测试 mock 键同步 | 无源码断言；`provider-isolation` 4/4、`serpapi-cost` 8/8 | 中 |
 | **P7** | 四级协议编排 → `search/provider-orchestration.ts`；IPC 注册 → `search/handlers.ts`；`search-service.ts` 收敛为薄门面 | **有**：resilience/semantic/ui-ux 三个测试需改读新文件 | 高（需最谨慎） |
 
 ---

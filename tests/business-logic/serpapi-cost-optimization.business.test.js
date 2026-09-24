@@ -79,7 +79,7 @@ const loadProvider = (providerPath, fetchMock, activeJobId = ACTIVE_JOB_ID, runn
         fetchWithRetry: fetchMock,
         getDefaultSerpApiTimeoutMs: (ms) => ms || 30000,
       },
-      '../search-service': { isKnownActiveJobId: (id) => id === activeJobId },
+      '../search/job-registry': { isKnownActiveJobId: (id) => id === activeJobId },
       // 隔离缓存：测试内自定义实现以验证缓存命中行为
       '../serpapi-cache': require('../../dist-electron/electron/services/serpapi-cache.js'),
       'proxy-service': null,

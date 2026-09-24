@@ -50,8 +50,8 @@ const loadProvider = (providerPath, fetchMock, activeJobId = ACTIVE_JOB_ID, runn
         fetchWithRetry: fetchMock,
         getDefaultSerpApiTimeoutMs: (ms) => ms || 30000,
       },
-      // Provider 通过 `await import('../search-service')` 做时间隔离判断
-      '../search-service': { isKnownActiveJobId: (id) => id === activeJobId },
+      // Provider 通过 `await import('../search/job-registry')` 做时间隔离判断（P8 后由该中立模块提供）
+      '../search/job-registry': { isKnownActiveJobId: (id) => id === activeJobId },
       // 成本优化（P0）：serpapi-cache 是真实共享单例，测试必须隔离为空缓存，
       // 否则前序测试写入的 URL 缓存会污染后序"非 200 隔离"等断言。
       '../serpapi-cache': {

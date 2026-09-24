@@ -384,6 +384,19 @@ lastVerifiedAt: 2026-09-22
 
 > **验证**：`npm run test:unit` → **274 tests / 274 pass / 0 fail**（+5）；`verify:consistency` 双绿；`lint` 0 error；`format` 通过；打包冒烟确认 `$userData/logs/kone-*.log` 实际落盘。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P8：作业注册表外提，**解循环依赖**）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P8 作业注册表外提** | 新建 `electron/services/search/job-registry.ts`：`currentActiveJobId` / `activeJobIds` 状态 + `getCurrentActiveJobId` / `isKnownActiveJobId` / `registerActiveJob` / `getActiveJobIdFor` | `npm run typecheck` 0 error |
+| **解循环依赖（核心价值）** | 此前 7 个 Provider 用 `await import('../search-service')` **反向回引** search-service（因 search-service 依赖 provider-service，构成循环，靠动态 import 打破）。现 Provider 与 search-service 均**静态依赖中立模块 job-registry** → **Provider 对 search-service 的代码引用 7 → 0** | grep 复核：providers 目录仅剩 1 处**注释** |
+| 调用点零改动 | search-service 保留本地闭包 `activeJobIdFor`（改为委托 `getActiveJobIdFor(ownerKey)`），**13 个调用点无需改动** | `test:unit` 274/274 |
+| 公开导出面保留 | `export { getCurrentActiveJobId, isKnownActiveJobId } from './search/job-registry'` | — |
+| 测试同步 | `provider-isolation` / `serpapi-cost-optimization` 的 `Module._load` mock 键 `'../search-service'` → `'../search/job-registry'`（断言强度不变） | 4/4、8/8 通过 |
+| 结果 | `search-service.ts` 2641 → **2624 行**（累计 P1–P8：3873 → 2624，**−1249 行**） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **274 tests / 274 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（250 warning）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
