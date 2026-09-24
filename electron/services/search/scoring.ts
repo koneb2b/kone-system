@@ -48,6 +48,20 @@ export const normalizeOpportunityScore = (raw: unknown): OpportunityScore | unde
   return { icpFit, intent, evidence, riskPenalty, finalScore }
 }
 
+/**
+ * 排序法典（kone-PRD §0.5.1 / §L145）：`matchScore` 降序，未评分项统一按 `-1` 兜底。
+ *
+ * 用途：确定性预评分（40/30/20/10）须"为**初始排序与预筛漏斗**服务"（L207）——
+ * 在 LLM 评分前按此排序，保证 `slice(0, N)` 取到的是**最相关的前 N 条**，
+ * 而非"按数据源合并顺序的前 N 条"。纯函数，导出供测试。
+ */
+export const rankByMatchScore = <T extends { matchScore?: number | null }>(items: readonly T[]): T[] =>
+  [...items].sort((a, b) => {
+    const scoreA = typeof a.matchScore === 'number' ? a.matchScore : -1
+    const scoreB = typeof b.matchScore === 'number' ? b.matchScore : -1
+    return scoreB - scoreA
+  })
+
 export const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchExecuteResult => ({
   id: String(item.id || crypto.randomUUID()),
   company: String(item.company || '').trim(),

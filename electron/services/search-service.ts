@@ -88,6 +88,7 @@ import {
   computeIcpMatchScore,
   mapHttpError,
   normalizeOpportunityScore,
+  rankByMatchScore,
 } from './search/scoring'
 /* O1 拆分（P5）：本地 SearchExecuteResult / OpportunityScore 类型已抽出至 ./search/types */
 import type { OpportunityScore, SearchExecuteResult } from './search/types'
@@ -1934,12 +1935,22 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           matchScore: computeIcpMatchScore(lead as Partial<SearchExecuteResult>, coreProductTerms),
         }))
 
+        /* 宪法排序（kone-PRD §0.5.1 / L176 / L207 / L211）：确定性预评分（40/30/20/10）
+           "在 LLM 评分执行前必运行，为**初始排序与预筛漏斗**服务"，且多源增强字段
+           "不得绕过此确定性预评分直接进入高潜推荐"。
+           故必须**先按 matchScore 降序排序**（未评分按 -1 兜底，同 PRD 排序法典），
+           再做高相关过滤与 `slice(0, SEARCH_TARGETED_LEAD_LIMIT)`。
+           否则切片退化为"按数据源合并顺序取前 50"——合并顺序为 [...local, ...organic]，
+           本地(Maps)结果会挤掉有机(Organic)结果，**高相关线索可能根本不进入 AI 评分**，
+           与"精准获客"直接冲突。 */
+        const rankedMergedLeads = rankByMatchScore(scoredMergedLeads)
+
         /* L1-2/N1：高相关过滤（只看高相关） —— 严格对齐前端“只看高相关”的语义：
          matchScore >= 60，未评分项视为不通过（0 < 60）。在 ICP 评分完成后、
          入选 targetedLeads 切片前执行，与前端语义严格对齐。 */
         const relevanceFilteredLeads = filterOptions?.highRelevanceOnly
-          ? scoredMergedLeads.filter((lead) => typeof lead.matchScore === 'number' && (lead.matchScore as number) >= 60)
-          : scoredMergedLeads
+          ? rankedMergedLeads.filter((lead) => typeof lead.matchScore === 'number' && (lead.matchScore as number) >= 60)
+          : rankedMergedLeads
 
         if (filterOptions?.highRelevanceOnly) {
           probeLog('[Probe-Filter] HighRelevanceOnly discarded:', {

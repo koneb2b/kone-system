@@ -416,6 +416,18 @@ lastVerifiedAt: 2026-09-22
 
 > **唯一必做项**：交付前在一台**干净机器**上人工跑一遍完整流程（安装 → 激活 → 搜索）。
 
+### 精准获客修复 · 预筛漏斗缺失"初始排序"（宪法违规，P0）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | `kone-PRD` 明文要求：`computeIcpMatchScore`（40/30/20/10）"在无 LLM 场景下提供**初始排序**"（L176）、"在 LLM 评分执行前**必运行**，为**初始排序与预筛漏斗**服务"（L207）、多源字段"不得**绕过此确定性预评分直接进入高潜推荐**"（L211）。**但实现**：确定性分算出后**从未用于排序**，`slice(0, SEARCH_TARGETED_LEAD_LIMIT)` 直接按**数据源合并顺序**取前 50——而合并顺序为 `[...localCandidates, ...organicCandidates]`。 |
+| **用户影响（精准获客）** | 送去 AI 评分与展示的 50 条**不是最相关的 50 条**：本地（Maps）结果挤掉有机（Organic）结果，**高相关线索可能根本不进入 AI 评分**。这是"精准获客"立身之本的直接损伤。 |
+| **修复** | 新增纯函数 `rankByMatchScore`（`search/scoring.ts`，即 PRD 排序法典：`matchScore` 降序、未评分按 `-1` 兜底），在**高相关过滤与 top-50 切片之前**应用；`search-service.ts` 改用该函数（消除内联实现）。 |
+| **回归防护** | 新增 `tests/business-logic/scoring-rank.business.test.js`（5 条）：降序 / 未评分兜底 -1 / 纯函数不改入参 / 同分稳定 / 空数组安全 | 
+| **验证** | `test:unit` → **279 / 279**（+5）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过；修复已确认进入编译产物 |
+
+> **说明**：本修复**不改变评分算法本身**（40/30/20/10 权重为宪法常量，未动），仅让确定性分**按 PRD 要求真正发挥"初始排序"作用**。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
