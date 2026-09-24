@@ -256,3 +256,8 @@ export const getLeadSettlementMeta = (
     fallbackReason: hasUsableFallbackData ? primaryReason || riskFlags.find(Boolean) || '待人工复核' : '待人工复核',
   }
 }
+
+/** CSV 导出口径（P2-4）：与线索表 UI 一致，未评分（待评估）输出「待评估」
+ * 而非 `undefined%`，避免向用户导出虚构/错误的评分列。纯函数，便于单测。 */
+export const formatMatchScoreForExport = (score: number | null | undefined): string =>
+  typeof score === 'number' ? `${score}%` : '待评估'

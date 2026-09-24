@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { getLeadUniqueKey, LeadItem, useLeadsStore } from '@/store/leads-store'
 import { getDataSourceMeta } from '@/lib/data-source-meta'
+import { formatMatchScoreForExport } from '@/lib/lead-mappers'
 import { saveExportFile, agentGetStatus, onAgentLeadStatusUpdated } from '@/lib/electron-api'
 import type { AgentStatus } from '@/shared/ipc-contracts'
 
@@ -374,7 +375,7 @@ export function LeadsTable({
                   ...displayLeads.map((lead) => [
                     lead.company,
                     lead.industry,
-                    `${lead.matchScore}%`,
+                    formatMatchScoreForExport(lead.matchScore),
                     lead.contact,
                     lead.contactTitle,
                     lead.email,
