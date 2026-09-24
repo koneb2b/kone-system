@@ -14,6 +14,8 @@
     "build:electron": "tsc -p tsconfig.electron.json && node --max-old-space-size=16384 scripts/obfuscate.cjs",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win nsis",
+    "dist:alt": "vite build && npm run build:electron && electron-builder --win nsis -c.directories.output=release-build",
+    "test:smoke:alt": "npm run dist:alt && node ./scripts/packaged-smoke.cjs release-build",
     "preview": "vite preview",
     "license:offline": "node ./scripts/generate-offline-license.cjs",
     "test": "npm run verify:consistency && npm run test:unit && npm run test:ipc && npm run test:e2e-smoke",

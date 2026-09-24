@@ -5,8 +5,10 @@ const puppeteer = require('puppeteer-core')
 
 const rootDir = path.resolve(__dirname, '..')
 /* 默认读取 electron-builder 的 `release/` 输出目录；当 `release/` 被系统级文件锁占用
-   （无法重建产物）时，可用 KONE_PACKAGED_ROOT 指向替代输出目录（如 release-build）做冒烟。 */
-const unpackedRoot = path.join(rootDir, process.env.KONE_PACKAGED_ROOT || 'release', 'win-unpacked')
+   （无法重建产物）时，可用**位置参数**（`node scripts/packaged-smoke.cjs release-build`）
+   或 KONE_PACKAGED_ROOT 环境变量指向替代输出目录做冒烟。二者优先级：参数 > 环境变量 > 默认。 */
+const outputDirOverride = (process.argv[2] || process.env.KONE_PACKAGED_ROOT || 'release').trim()
+const unpackedRoot = path.join(rootDir, outputDirOverride, 'win-unpacked')
 const executablePath = path.join(unpackedRoot, 'KoneAI.exe')
 const screenshotPath = path.join(rootDir, 'tests', 'packaged-smoke.png')
 const reportPath = path.join(rootDir, 'tests', 'packaged-smoke-report.json')

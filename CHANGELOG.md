@@ -338,6 +338,15 @@ lastVerifiedAt: 2026-09-22
 
 > **意义**：此前终审报告判定的 5 个商用阻断项中，**B-1（无安装包）与 B-5（打包冒烟未验证）两项解除**——证明"打包链路本身可用，此前仅被环境文件锁阻塞"。剩余阻断：B-2 代码签名（需证书）、B-3 云协同闭环（待立项）、B-4 持久化规模化（待立项）。
 
+### 商用收尾 · 绕锁打包固化 + B-2/B-4 技术方案
+
+| 项 | 变更 |
+|---|---|
+| 绕锁打包固化 | `scripts/packaged-smoke.cjs` 支持**位置参数**指定输出目录（`node scripts/packaged-smoke.cjs release-build`；优先级：参数 > `KONE_PACKAGED_ROOT` > `release`）；新增 npm 脚本 `dist:alt`（绕锁打包到 `release-build/`）与 `test:smoke:alt`（打包 + 冒烟一步到位）。实测 `node scripts/packaged-smoke.cjs release-build` → 退出码 0、判据满足 |
+| B-2/B-4 方案 | 新增 `KONE-V1.3-B2签名与B4持久化技术方案-2026-09-25.md`：B-2 代码签名接入（证书选型 OV/EV + electron-builder 配置 + CI secret + `signtool verify` 验证，外部依赖仅证书）；B-4 持久化规模化（单 JSON → better-sqlite3 + 版本化迁移，M1 双写 → M2 读切换 → M3 首启迁移 → M4 收敛，约 10 人天） |
+
+> **验证**：`node ./scripts/packaged-smoke.cjs release-build` → 退出码 0（`booted/activationScreenVisible/preloadBridgeVisible` 均 true）。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
