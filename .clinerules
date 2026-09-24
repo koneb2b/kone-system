@@ -1,132 +1,75 @@
-# KONE Core Constitution and Verify SOP
+# KONE — Agent Working Rules（流程纪律与指针，非规范源）
 
-## 1. Intent Gate and Anti-Blind-Edit Loop
-1. Any architectural, IPC, billing, search, Autopilot, scoring, or cloud-handoff change must start with a short change declaration before editing.
-2. The declaration must include:
-   - target files and target functions
-   - whether the change belongs to Basic local workflow or Premium cloud workflow
-   - risk to API quota, trial gating, stream lifecycle, and user data retention
-3. Unless the task is structurally complex, execution plans must stay within 3 steps.
-4. No claim of success is valid until there is observable evidence from code paths, probes, or build/test output.
+> ## ⚠️ 本文不是规范事实源
+>
+> 本文件只定义「AI Agent 如何工作」的**流程纪律**。
+> 所有商业边界、架构红线、数值常量、状态机、字段结构、Provider 能力、云端投递与发布门禁，
+> 一律以各自 SSOT 为准。**本文不复制任何数值、状态或字段定义。**
+> 若本文与任一 SSOT 冲突，以 SSOT 为准，并应提交本文勘误。
 
-## 2. Non-Negotiable Commercial Law
-1. Kone uses a strict commercial ladder: `7-day Trial -> Paid Basic -> Paid Premium / Enterprise`.
-2. Trial is time-boxed local entitlement only. Trial duration must be treated as 7 days everywhere.
-3. Basic is the full local productivity tier. It includes:
-   - `search_basic`
-   - `search_deep`
-   - ICP scoring and streaming updates
-   - `analysis_advanced`
-   - local lead management and export
-   - companion-style background Autopilot
-4. Premium and Enterprise exclusively own cloud collaboration and cloud automation. Premium-only domains include:
-   - `cloud_send`
-   - `team_collaboration`
-   - n8n cloud mail automation
-   - team collision detection and dashboard views
-5. Any paid-feature uncertainty must resolve to deny, never allow. This is Fail-Closed by default.
+## 1. 强制读链（10 份，顺序不可跳过）
 
-## 3. Renderer / Main / Preload Boundary
-1. `src/` is renderer-only. It may orchestrate UI state and call `window.electronAPI`, but it must not perform privileged IO, secret access, direct network calls to paid backends, or authorization bypasses.
-2. `electron/` owns privileged operations:
-   - API calls
-   - license enforcement
-   - cloud webhook delivery
-   - search normalization
-   - ICP scoring
-   - website enrichment
-3. `preload/` is a minimal bridge only. It must not absorb business logic.
+`kone-PRD.md` 是全局唯一权威需求主源头。任何分析、规划或执行前必须按序读取：
 
-## 4. ICP Streaming and Store Law
-1. Scout and Brain are progressive, not blocking:
-   - skeleton/basic lead information arrives first
-   - LLM score and reasons arrive later by stream
-   - UI must never wait for full scoring before showing the candidate list
-2. `src/store/leads-store.ts` is the single source of truth for search results and saved leads.
-3. `matchScore` semantics are strict:
-   - `undefined` means not yet evaluated or no valid numeric score returned
-   - numeric values mean scored
-   - unscored leads must never be silently coerced to `0` during persistence
-4. Any UI math derived from scores must filter out non-number values first. Never allow `undefined`, `null`, or invalid values to produce `0NaN%`, broken averages, or fake low-score states.
-5. When stream updates merge into existing search results, only valid numeric `matchScore` values may overwrite prior state.
-6. Between Scout and Brain, Kone must execute a mandatory weighted relevance pre-filter before Brain scoring.
-7. The pre-filter must use positive roots, negative roots, keyword context, and commercial role signals to discard obviously泛化 or off-target候选 before they consume ICP resources.
-8. Typical noise such as auto repair shops, body shop, mechanic, tire, car wash, and similar automotive-service candidates must be silently removed at Scout stage.
-9. Pre-filter output must remain observable through probes that preserve kept count, discarded count, and main reason categories.
-10. If官网抓取失败 but snippet/title remains available, Snippet 盲评 is an approved fallback. It may still output a numeric `matchScore`, but the reason must explicitly state that the score is based on lightweight snippet judgment.
+1. `kone-PRD.md` — 需求权威（含 §零.3 宪法常量单一源）
+2. `PROJECT-PRD.md` — 模块实现索引与前后端时序
+3. `ARCH-STANDARDS.md` — 架构 / 安全 / 性能 SSOT
+4. `.opencode/agents/ui-agent.md` — UI/UX 与本地化约束
+5. `.opencode/agents/ipc-agent.md` — 主进程代理、流式契约与错误桥接
+6. `.opencode/agents/system-blueprint.md` — 数据流、Gold Filter 与 Autopilot
+7. `.opencode/agents/build-agent.md` — 打包、安全与构建卫生
+8. `V1.2-商业版交付与运维手册.md` — 交付 / 发卡 / 运维 SOP
+9. `PROVIDER-CAPABILITY.md` — Provider 真实能力与宣传口径 SSOT
+10. `CLOUD-COLLABORATION-DELIVERY.md` — 云端协同 / 投递 / 抑制 / Webhook SSOT
 
-## 5. Error Bridge and User Asset Protection
-1. Silent failure is forbidden.
-2. Any main-process async failure must return structured error payloads and, for stream flows, must emit error and completion signals so the renderer can unlock loading state.
-3. Search resilience is governed by the mandatory `四级弹性搜索协议`:
-   - level 0 (V1.3): AnySearch B2B entity API resolves natural-language input, queries multi-source databases, extracts company + decision maker network graphs
-   - level 1: Google Maps with independent `location` parameter
-   - level 2: on location-related `400`, retry immediately with empty `location` and geography folded into `q`
-   - level 3: if level 2 yields `localCount === 0`, switch silently to Google Organic and normalize results for Scout
-4. V1.3 AnySearch source selection is allowed only as an acquisition-layer extension. It must not skip stream closure, Scout normalization, pre-filtering, or the validated downgrade guarantees.
-5. `customs_shipment`、`trade_show`、`yellow_pages`、`linkedin_search`、`facebook_search` source names are routed through AnySearch and must be backed by real providers; UI and docs must not market unimplemented sources as completed integrations.
-6. Every search stream must end with an explicit `complete` or `error + complete` closure. Silent termination that leaves UI loading state unresolved is forbidden.
-7. Missing AI key is a recoverable degraded state and must be returned through dedicated IPC semantics or fields so renderer can show a non-blocking notice.
-8. On `429`, quota exhaustion, timeout, or network interruption:
-    - preserve current `searchResults`
-    - preserve current saved leads
-    - surface toast/banner guidance
-    - never clear user-visible results just because AI enhancement failed
-9. Trial expiration must block execution cleanly without wiping prior user work.
+涉及 Provider 能力或云端投递的变更，必须先读第 9、10 项。
 
-## 6. Autopilot Constitution
-1. Autopilot is a local companion workflow, not a cloud daemon.
-2. It belongs to Basic and above, and runs on local machine resources only.
-3. It must be documented and implemented as:
-   - batch job queue input: country + keyword + target count
-   - quiet background execution
-   - low-concurrency scheduling
-   - threshold-based Gold Filter before saving
-4. Physical execution boundary is mandatory:
-   - computer must stay powered on
-   - app must stay running
-   - system must not sleep
-   - network must remain available
-5. Autopilot is never allowed to impersonate Premium cloud automation in copy, architecture, or UX.
+## 2. Intent Gate（改前声明，禁止盲改）
 
-## 7. Cloud Handoff and Gold Filter
-1. Kone decides locally; n8n executes remotely.
-2. Only selected, filtered, compact payloads may be sent to cloud systems.
-3. Never bulk-sync raw, unfiltered local leads to cloud storage.
-4. Team-collaboration state and collision state are cloud-side SSOT; renderer holds projections only.
+1. 任何涉及架构、IPC、计费、搜索、Autopilot、评分或云端交接的改动，编辑前必须先给出简短变更声明。
+2. 声明必须包含：目标文件与目标函数；该改动属于本地工作流还是云端工作流；对 API 配额、试用门禁、流式生命周期与用户数据留存的风险。
+3. 除非任务结构复杂，执行计划不得超过 3 步。
+4. 没有来自代码路径、探针或构建/测试输出的**可观察证据**之前，不得声称成功。
 
-## 8. Probe and Verification Discipline
-1. For backend or IPC changes, use structured probes such as:
-   - `[Probe-API]`
-   - `[Probe-Payload]`
-   - `[Probe-Store]`
-2. Do not announce a fix before observing actual data movement or a successful build/test path.
-3. When a task says search is broken, diagnose service-side request building, response parsing, and IPC flow before touching UI.
+## 3. 证据与探针纪律
 
-## 9. Performance Guard
-1. Kone must remain stable on common office hardware with `4G-8G RAM`, low-power CPU, and integrated graphics.
-2. Any change that causes obvious long-duration CPU saturation, memory spikes, or queue amplification on this baseline environment is invalid by default.
-3. Search, scoring, enrichment, and Autopilot changes must prefer practical throttling over aggressive throughput.
-4. Search scoring and website enrichment concurrency must remain fixed at a maximum of `2`; any higher ceiling is invalid by default.
-5. HTML and website text sent into LLM must be aggressively slimmed, stripped of HTML/script/style noise, and strictly truncated to no more than `3000` characters before prompt assembly.
-6. Any implementation that exceeds the `2` concurrency ceiling or the `3000`-character website-text ceiling is an architecture violation.
-7. If a feature is only smooth on high-end hardware, it does not meet the Kone production standard.
+1. 禁止静默失败。
+2. 后端或 IPC 改动应使用结构化探针：`[Probe-API]`、`[Probe-Payload]`、`[Probe-Store]`、`[Probe-Timeout]`。
+3. 报告"搜索坏了"时，先诊断服务端请求构造、响应解析与 IPC 流转，再考虑 UI。
+4. 修复必须先复现，再验证；`npm run verify:consistency` 与相关测试必须通过。
 
-## 10. Packaging and Production Hygiene
-1. Never ship private keys, `.opencode` cache, or `tests/` artifacts.
-2. Clean `release/` and `dist-electron/` before packaging.
-3. Production logging must remain minimal; only irrecoverable `console.error` is acceptable.
+## 4. 规则索引（需要具体规则时读这些文件，不要凭记忆推断）
 
-## 11. Mandatory AI Routing & Document Chain
-Before analyzing, planning, or executing ANY task, the AI Agent MUST proactively read and strictly obey the following 8-document chain in this exact order. `kone-PRD.md` is the global authoritative requirements source (全局唯一权威需求主源头). Skipping any of these files is a critical violation of the Kone architecture:
+| 需要什么 | 去哪读 |
+|---|---|
+| 全部数值常量（并发、截断、阈值、超时、配额） | `kone-PRD.md §零.3`（唯一常量表，**禁止本文或任何文档复述**） |
+| 商业阶梯与套餐能力边界 | `kone-PRD.md §一` |
+| 四级弹性搜索协议与降级语义 | `kone-PRD.md §二.2` |
+| 评分双层架构（Stage 1 / Stage 2） | `kone-PRD.md §0.5.1` |
+| 架构边界、Fail-Closed、发布门禁 | `ARCH-STANDARDS.md` |
+| 状态机与层级映射 | `STATE-MACHINES.md` |
+| 字段结构（以代码为准） | `FIELD-DICTIONARY.md` → `src/shared/ipc-contracts.ts` |
+| 术语含义 | `GLOSSARY.md` |
+| Provider 真实能力与宣传口径 | `PROVIDER-CAPABILITY.md` |
+| 云端审批 / 门禁 / 抑制 / 投递 / Webhook | `CLOUD-COLLABORATION-DELIVERY.md` |
+| 打包与生产日志卫生 | `.opencode/agents/build-agent.md` |
+| 版本变更与"实现→规范回写"记录 | `CHANGELOG.md` |
 
-1. `kone-PRD.md` (V1.3 全局唯一权威需求主源头 — Global Authoritative Requirements Source)
-2. `PROJECT-PRD.md` (Root Business Logic, 7-Day Trial, ICP Scoring, and Autopilot boundaries)
-3. `ARCH-STANDARDS.md` (Root Architecture, Local Edge vs. Cloud boundaries, Fail-Closed Security)
-4. `.opencode/agents/ui-agent.md` (UI/UX constraints, Z-index guards, and the strict **Simplified Chinese Localization Law**)
-5. `.opencode/agents/ipc-agent.md` (Backend Proxy, Stream Flow, and Error Bridge)
-6. `.opencode/agents/system-blueprint.md` (Lead Pipelines, Gold Filter, and Autopilot flow)
-7. `.opencode/agents/build-agent.md` (Packaging, Security, and Build hygiene)
-8. `V1.2-商业版交付与运维手册.md` (Delivery & Operations Manual, License Issuance, Security Audit SOP)
+## 5. 硬性禁止（只列禁止项，不复述阈值）
 
-The AI must explicitly acknowledge parsing this chain in its thoughts before proposing any code changes.
+1. 禁止在渲染层或 preload 做授权绕过、特权 IO、密钥访问或付费后端直连。
+2. 禁止前端乐观显示"已发送/已送达"——必须等待本地真实动作或云端权威事件。
+3. 禁止把"高分"或 `cloud_send` 权限等同于"允许发送"。
+4. 禁止伪造进度、伪造评分、伪造"已送达"或把未评分静默渲染为 0 分。
+5. 禁止把云端投递/跟进语义写入本地既有状态联合类型而不做迁移与兼容层。
+6. 禁止 Agent 以 `setTimeout` 模拟替代真实外部动作或真实平台状态校验。
+7. 禁止超出 `kone-PRD.md §零.3` 规定的并发与截断红线（数值以该表为准）。
+8. 禁止打包私钥、`.opencode` 缓存或 `tests/` 产物。
+9. 禁止在文档中复述其他 SSOT 已定义的数值——只允许指针引用。
+10. 禁止将目标态（`[路线图]`）能力对外宣称已完成。
+
+## 6. 提交前卫生
+
+1. 源码/测试/文档改动必须与生成物、本地残留分离。
+2. 不得暂存运行时残留：`.tmp-*`、`.playwright-mcp/`、`.codenomad/`、`.vite/`、`dist/`、日志、以及 Windows 重定向误产物 `$null`。
+3. 改动涉及状态、数据、权限、投递、事件、公开 API 或合规时，必须同步更新：对应 SSOT + `CHANGELOG.md` + 测试 + 验收证据。

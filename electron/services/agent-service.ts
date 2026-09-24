@@ -1,5 +1,14 @@
 import * as crypto from 'crypto'
 import { IPC_CHANNELS } from '../ipc/channels'
+import { registerIpc, registry } from '../ipc/registry'
+import {
+  agentListContract,
+  agentGetLogContract,
+  agentGetStatusContract,
+  agentSuppressListContract,
+  agentSuppressAddContract,
+  agentSuppressRemoveContract,
+} from '../ipc/contracts/agent.contract'
 import { app } from './electron-bridge'
 import { ConfigStore, SECRET_KEYS, getUserLlmApiKey } from './config-service'
 import { getSecret } from './secret-manager'
@@ -8,7 +17,7 @@ import { resolveDkimSelectors } from './dns-service'
 import { createLicenseService, registerSecureFeatureIpc } from './license-service'
 import type { AgentLogEntry, AgentStatus, SalesAgentType, SalesAgentState } from '../../src/shared/ipc-contracts'
 import type { AgentTaskQueue } from './agent-pipeline'
-import { isStaleTask } from './agent-pipeline'
+import { isStaleTask, markPipelineStaged } from './agent-pipeline'
 import { getSandboxPathForAccount, findAccountByType } from './sandbox-service'
 import { EmailAgent } from './agents/email-agent'
 import { WhatsAppAgent } from './agents/whatsapp-agent'
@@ -203,7 +212,8 @@ const agents: Map<string, SalesAgentState> = new Map([
       agentType: 'email',
       status: 'idle',
       label: '邮件长效跟随助理',
-      description: '直连企业 SMTP 真实发信 + DNS 信誉检测软锁定；多轮定时序列（回复检测即将支持）。Basic 20 封/天',
+      description:
+        '直连企业 SMTP 真实发信 + DNS 信誉检测软锁定；多轮定时序列（IMAP 回复检测已支持，未配置时人工挂起不盲推）。Basic 20 封/天',
       progress: 0,
       totalTargets: 0,
       completedCount: 0,
@@ -232,6 +242,13 @@ type StagedTarget = {
   country?: string
 }
 const stagedTargets: Map<string, StagedTarget[]> = new Map()
+
+/**
+ * P0-3 修复：记录每个 Agent 当前暂存批次的来源管道 runId。
+ * 用户确认触达时据此把 runId 传入 startAgent，使 `isStaleTask` 真正参与判定，
+ * 丢弃"已被新一轮搜索取代"的旧批次。
+ */
+const stagedRunIds: Map<string, string> = new Map()
 
 const emitAgentStatus = (agent: SalesAgentState) => {
   // Defensive: this runs from async pipeline callbacks that may fire after the
@@ -898,6 +915,9 @@ export const startFollowupScheduler = (store: ConfigStore): void => {
       addLogEntry('agent-email', 'followup_tick_error', err instanceof Error ? err.message : String(err || ''))
     })
   }, FOLLOWUP_TICK_INTERVAL_MS)
+  /* P0-4：后台内务定时器不得阻止事件循环退出——否则 node --test 直接调用
+     registerAgentHandlers 的用例会挂住，Electron 主进程退出也会被拖住。 */
+  if (typeof followupTimer.unref === 'function') followupTimer.unref()
 }
 
 export const stopFollowupScheduler = (): void => {
@@ -1051,6 +1071,8 @@ export const stageAgentsFromPipeline = (
     ['agent-email', 'email'],
   ]
 
+  let stagedAny = false
+
   for (const [agentId, taskKey] of agentMapping) {
     const tasks = queue[taskKey]
     if (tasks.length === 0) continue
@@ -1077,6 +1099,7 @@ export const stageAgentsFromPipeline = (
 
     // Stage for human review — do NOT send.
     stagedTargets.set(agentId, targets)
+    if (runId) stagedRunIds.set(agentId, runId)
     agent.queuedCount = targets.length
     addLogEntry(
       agentId,
@@ -1084,16 +1107,32 @@ export const stageAgentsFromPipeline = (
       `Staged ${targets.length} leads for ${agent.label} — awaiting user confirmation`,
     )
     emitAgentStatus(agent)
+    stagedAny = true
   }
+
+  // P0-3 修复：只有确实暂存过目标才更新"最近一次暂存 runId"。
+  // 这样"新一轮搜索未产出合格线索"不会误杀上一轮尚未确认的暂存目标。
+  if (stagedAny && runId) markPipelineStaged(runId)
 }
 
 // Retrieve (and clear) the staged targets a user confirmed for an agent.
 export const consumeStagedTargets = (agentId: string): StagedTarget[] => {
   const targets = stagedTargets.get(agentId) || []
   stagedTargets.delete(agentId)
+  stagedRunIds.delete(agentId)
   const agent = agents.get(agentId)
   if (agent) agent.queuedCount = 0
   return targets
+}
+
+/**
+ * P0-3 修复：消费暂存批次时同时取出其来源 runId，供 startAgent 做时空隔离判定。
+ * 保留 `consumeStagedTargets` 的既有签名（返回数组）以兼容现有测试与调用方。
+ */
+export const consumeStagedBatch = (agentId: string): { targets: StagedTarget[]; runId?: string } => {
+  const runId = stagedRunIds.get(agentId)
+  const targets = consumeStagedTargets(agentId)
+  return { targets, runId }
 }
 
 export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
@@ -1103,7 +1142,25 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
   // touch timeline and lead reach-status survive app restarts (kone-PRD §3.7.8).
   hydrateAgentPersistence(store)
 
-  ipcMain.handle(IPC_CHANNELS.AGENT.LIST, async (_event) => {
+  /* P0-4 修复：多轮邮件跟进调度器此前仅导出、从未接线 —— 而 executeEmailAgent 在
+     stage0 首封成功时已通过 createPlan 写入持久化跟进计划，导致"计划被创建但永不推进"
+     的能力悬空。此处于启动时接线，使重启后仍能续推历史计划。
+     Fail-Closed 保障全部来自 runFollowupTick 自身门禁：必须有 SMTP 实例且 connect()
+     成功、IMAP 已配置（否则 pendingManual 人工挂起，绝不盲推）、未超日频上限、
+     未命中抑制名单、且处于收件人当地 09:00-18:00 发送窗口。 */
+  try {
+    applyLicenseLimits(licenseGuard.getStoredClaims?.(), store)
+  } catch {
+    /* 授权信息不可用时保留默认日频，tick 仍受 SMTP/IMAP 门禁保护 */
+  }
+  startFollowupScheduler(store)
+
+  /* AGENT 服务 plain 通道第二批 registry 迁移（见 ARCH-STANDARDS §3 迁移注记）：
+     6 个无授权包装的通道经 `registerIpc()` 收敛到注册中心，由 main.ts 末尾
+     `registry.attach(ipcMain)` 统一绑定；契约在 dev 模式做响应校验。
+     `AGENT.CONTROL` 仍由下方 `registerSecureFeatureIpc` 包装（Fail-Closed），不迁移。 */
+
+  registerIpc(IPC_CHANNELS.AGENT.LIST, agentListContract, async (_event) => {
     try {
       const claims = licenseGuard.getStoredClaims?.()
       applyLicenseLimits(claims, store)
@@ -1118,10 +1175,11 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.AGENT.GET_LOG, async (_event, agentId: string) => {
+  registerIpc(IPC_CHANNELS.AGENT.GET_LOG, agentGetLogContract, async (_event, agentId: unknown) => {
     try {
-      const entry = agentLogs.get(agentId) || []
-      return { success: true, data: { agentId, logEntries: entry } }
+      const id = String(agentId || '')
+      const entry = agentLogs.get(id) || []
+      return { success: true, data: { agentId: id, logEntries: entry } }
     } catch (error) {
       return {
         success: false,
@@ -1133,7 +1191,7 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
 
   /* P0-1 双管道读端：渲染进程按 leadKey 读取持久化线索态 agentStatus
      （kone-PRD §0.7 要求前端消费"线索表格/抽屉中的 Agent 触达状态徽标"） */
-  ipcMain.handle(IPC_CHANNELS.AGENT.GET_STATUS, async (_event, leadKey: string) => {
+  registerIpc(IPC_CHANNELS.AGENT.GET_STATUS, agentGetStatusContract, async (_event, leadKey: unknown) => {
     try {
       const key = String(leadKey || '').trim()
       if (!key) {
@@ -1151,7 +1209,7 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
 
   // P1-4 邮件合规：退订/DNC 抑制名单管理。发送前 sendEmail 会照合此名单，
   // 抑制对象（退订/退信/投诉/手动）永不再触达（PROJECT-PRD §3.7.7）。
-  ipcMain.handle(IPC_CHANNELS.AGENT.SUPPRESS_LIST, async (_event) => {
+  registerIpc(IPC_CHANNELS.AGENT.SUPPRESS_LIST, agentSuppressListContract, async (_event) => {
     try {
       return { success: true, data: { entries: readSuppressionList(store) } }
     } catch (error) {
@@ -1163,33 +1221,30 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
     }
   })
 
-  ipcMain.handle(
-    IPC_CHANNELS.AGENT.SUPPRESS_ADD,
-    async (_event, payload: { email: string; reason?: string; note?: string }) => {
-      try {
-        const email = String(payload?.email || '').trim()
-        if (!email) return { success: false, error: '邮箱或域名参数缺失', code: 400 }
-        const reason = (
-          ['unsubscribe', 'bounce', 'complaint', 'manual'].includes(String(payload?.reason))
-            ? payload!.reason
-            : 'manual'
-        ) as 'unsubscribe' | 'bounce' | 'complaint' | 'manual'
-        const entries = addSuppression(store, email, reason, payload?.note)
-        addLogEntry('agent-email', 'suppression_added', `Suppressed=${email} Reason=${reason}`)
-        return { success: true, data: { entries } }
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to add suppression',
-          code: 500,
-        }
-      }
-    },
-  )
-
-  ipcMain.handle(IPC_CHANNELS.AGENT.SUPPRESS_REMOVE, async (_event, payload: { email: string }) => {
+  registerIpc(IPC_CHANNELS.AGENT.SUPPRESS_ADD, agentSuppressAddContract, async (_event, payload: unknown) => {
     try {
-      const email = String(payload?.email || '').trim()
+      const p = payload as { email?: unknown; reason?: unknown; note?: unknown }
+      const email = String(p?.email || '').trim()
+      if (!email) return { success: false, error: '邮箱或域名参数缺失', code: 400 }
+      const reason = ['unsubscribe', 'bounce', 'complaint', 'manual'].includes(String(p?.reason))
+        ? (p.reason as 'unsubscribe' | 'bounce' | 'complaint' | 'manual')
+        : 'manual'
+      const entries = addSuppression(store, email, reason, p?.note as string | undefined)
+      addLogEntry('agent-email', 'suppression_added', `Suppressed=${email} Reason=${reason}`)
+      return { success: true, data: { entries } }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add suppression',
+        code: 500,
+      }
+    }
+  })
+
+  registerIpc(IPC_CHANNELS.AGENT.SUPPRESS_REMOVE, agentSuppressRemoveContract, async (_event, payload: unknown) => {
+    try {
+      const p = payload as { email?: unknown }
+      const email = String(p?.email || '').trim()
       if (!email) return { success: false, error: '邮箱或域名参数缺失', code: 400 }
       const entries = removeSuppression(store, email)
       addLogEntry('agent-email', 'suppression_removed', `Unsuppressed=${email}`)
@@ -1244,16 +1299,26 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
           }
           // Human-in-the-loop: if the caller passes no explicit targets, consume
           // the pipeline-staged queue the user just confirmed by clicking start.
-          const startTargets = payload?.targets ?? consumeStagedTargets(agentId)
-          void startAgent(agentId, startTargets, undefined, store)
+          // P0-3 修复：同时取出该批次的来源 runId，使时空隔离判定真正生效
+          // （若期间又跑了一轮搜索并暂存了新目标，本批次将被判为陈旧并丢弃）。
+          if (payload?.targets) {
+            void startAgent(agentId, payload.targets, undefined, store)
+          } else {
+            const batch = consumeStagedBatch(agentId)
+            void startAgent(agentId, batch.targets, batch.runId, store)
+          }
         } else if (action === 'stop') {
           await stopAgent(agentId)
         } else if (action === 'pause') {
           agent.status = 'paused'
           emitAgentStatus(agent)
         } else if (action === 'resume') {
-          const resumeTargets = payload?.targets ?? consumeStagedTargets(agentId)
-          void startAgent(agentId, resumeTargets, undefined, store)
+          if (payload?.targets) {
+            void startAgent(agentId, payload.targets, undefined, store)
+          } else {
+            const batch = consumeStagedBatch(agentId)
+            void startAgent(agentId, batch.targets, batch.runId, store)
+          }
         }
 
         return {
@@ -1270,4 +1335,14 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
     },
     'Sales Agent Control',
   )
+
+  /* P0-4/续：注册中心自绑定兼容层。
+     registry 为全局单例，主进程统一在 `registerIpcHandlers()` 末尾经
+     `registry.attach(ipcMain)` 绑定；但历史 e2e / 独立测试直接调用
+     `registerAgentHandlers(ipcMain, store)` 而未显式 attach，导致迁移后的
+     6 个 plain 通道未落到 ipcMain、调用方 `ipcMain.getHandler(...)` 抛 "missing"。
+     此处于本函数末尾自绑定本批通道，使调用方无需改动即可触达；
+     `attach` 内部以 `_attached` 幂等去重，主进程末尾的 attach 不会重复绑定（不会触发
+     Electron "second handler" 报错），仅补齐本函数之后才注册的其他通道。 */
+  registry.attach(ipcMain)
 }

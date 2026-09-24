@@ -2,7 +2,15 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const Module = require('node:module')
-const { createIpcMainMock, createEventMock, createStoreMock, createElectronMock, withModuleMocks, resetModule, createLicenseGuardMock } = require('./helpers.js')
+const {
+  createIpcMainMock,
+  createEventMock,
+  createStoreMock,
+  createElectronMock,
+  withModuleMocks,
+  resetModule,
+  createLicenseGuardMock,
+} = require('./helpers.js')
 
 const originalFetch = global.fetch
 const originalLoad = Module._load
@@ -20,102 +28,110 @@ test('cloud handoff payload obeys compact slice caps and filters invalid email l
     return {
       ok: true,
       status: 200,
-      async json() { return {} },
-      async text() { return '' },
+      async json() {
+        return {}
+      },
+      async text() {
+        return ''
+      },
     }
   }
 
-  await withModuleMocks({
-    electron: electronMock,
-    [`../utils/http-client::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'automation-service.js')}`]: {
-      safeFetch: global.fetch,
-    },
-  }, async () => {
-    resetModule(automationServicePath)
-    resetModule(channelsPath)
-    const { registerAutomationHandlers } = require(automationServicePath)
-    const { IPC_CHANNELS } = require(channelsPath)
-    const ipcMain = createIpcMainMock()
-    const store = createStoreMock({
-      user_config: {
-        n8n: { webhookUrl: 'https://n8n.example.com/webhook/start' },
-      },
-      'system.machineId': 'cloud-handoff-device',
-    })
-    const licenseGuard = createLicenseGuardMock({
-      claims: {
-        status: 'active',
-        expiresAt: Date.now() + 60_000,
-        features: ['cloud_send'],
-        licenseKey: 'KONE-CLOUD',
-        plan: 'enterprise',
-      },
-    })
-
-    registerAutomationHandlers(ipcMain, store, licenseGuard)
-    const long = 'X'.repeat(5000)
-    const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN)(createEventMock(), {
-      templateId: 'default',
-      leads: [
+  await withModuleMocks(
+    {
+      electron: electronMock,
+      [`../utils/http-client::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'automation-service.js')}`]:
         {
-          email: 'valid@example.com',
-          company: long,
-          website: 'https://example.com',
-          matchScore: 88,
-          country: long,
-          contact: long,
-          contactTitle: long,
-          phone: long,
-          address: long,
-          source: long,
-          inferredRole: long,
-          matchReasons: ['a', 'b', 'c', 'd', 'e'],
-          riskFlags: ['r1', 'r2', 'r3', 'r4'],
-          snippet: long,
-          aiAnalysis: {
-            companyProfile: long,
-            painPoints: long,
-            valueMapping: long,
+          safeFetch: global.fetch,
+        },
+    },
+    async () => {
+      resetModule(automationServicePath)
+      resetModule(channelsPath)
+      const { registerAutomationHandlers } = require(automationServicePath)
+      const { IPC_CHANNELS } = require(channelsPath)
+      const ipcMain = createIpcMainMock()
+      const store = createStoreMock({
+        user_config: {
+          n8n: { webhookUrl: 'https://n8n.example.com/webhook/start' },
+        },
+        'system.machineId': 'cloud-handoff-device',
+      })
+      const licenseGuard = createLicenseGuardMock({
+        claims: {
+          status: 'active',
+          expiresAt: Date.now() + 60_000,
+          features: ['cloud_send'],
+          licenseKey: 'KONE-CLOUD',
+          plan: 'enterprise',
+        },
+      })
+
+      registerAutomationHandlers(ipcMain, store, licenseGuard)
+      const long = 'X'.repeat(5000)
+      const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN)(createEventMock(), {
+        templateId: 'default',
+        leads: [
+          {
+            email: 'valid@example.com',
+            company: long,
+            website: 'https://example.com',
+            matchScore: 88,
+            country: long,
+            contact: long,
+            contactTitle: long,
+            phone: long,
+            address: long,
             source: long,
-          },
-          aiGeneratedPitch: {
-            emailSubject: long,
-            emailBody: long,
-          },
-          userSettings: {
-            selectedModel: long,
-            icpProfile: {
-              targetProduct: long,
-              buyerPersona: long,
-              coreAdvantage: long,
-              negativeIcp: long,
+            inferredRole: long,
+            matchReasons: ['a', 'b', 'c', 'd', 'e'],
+            riskFlags: ['r1', 'r2', 'r3', 'r4'],
+            snippet: long,
+            aiAnalysis: {
+              companyProfile: long,
+              painPoints: long,
+              valueMapping: long,
+              source: long,
+            },
+            aiGeneratedPitch: {
+              emailSubject: long,
+              emailBody: long,
+            },
+            userSettings: {
+              selectedModel: long,
+              icpProfile: {
+                targetProduct: long,
+                buyerPersona: long,
+                coreAdvantage: long,
+                negativeIcp: long,
+              },
             },
           },
-        },
-        {
-          email: '',
-          company: 'No Email Lead',
-          website: 'https://no-email.example.com',
-          matchScore: 95,
-        },
-        {
-          email: 'low-score@example.com',
-          company: 'Low Score Lead',
-          website: 'https://low-score.example.com',
-          matchScore: 40,
-        },
-        {
-          email: 'unscored@example.com',
-          company: 'Unscored Lead',
-          website: 'https://unscored.example.com',
-        },
-      ],
-    })
+          {
+            email: '',
+            company: 'No Email Lead',
+            website: 'https://no-email.example.com',
+            matchScore: 95,
+          },
+          {
+            email: 'low-score@example.com',
+            company: 'Low Score Lead',
+            website: 'https://low-score.example.com',
+            matchScore: 40,
+          },
+          {
+            email: 'unscored@example.com',
+            company: 'Unscored Lead',
+            website: 'https://unscored.example.com',
+          },
+        ],
+      })
 
-    assert.equal(result?.success, true)
-    assert.equal(result?.data?.accepted, 1)
-    assert.equal(result?.data?.rejected, 3)
-  })
+      assert.equal(result?.success, true)
+      assert.equal(result?.data?.accepted, 1)
+      assert.equal(result?.data?.rejected, 3)
+    },
+  )
 
   assert.ok(capturedRequests.length > 0)
   const requestBody = JSON.parse(String(capturedRequests[0].options.body || '{}'))

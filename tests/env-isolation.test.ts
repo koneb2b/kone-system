@@ -160,7 +160,6 @@ test('anchor persistence tolerates EPERM in both development and packaged runtim
   global.fetch = originalFetch
 })
 
-
 test.after(() => {
   restorePatchedFs()
   if (typeof global.fetch === 'undefined') {

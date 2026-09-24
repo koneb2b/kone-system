@@ -1,3 +1,5 @@
+/* 缩短慢源 race 超时：provider mock 永不 settle，避免单测挂 120s 等 race 兜底 */
+process.env.KONE_LATE_SOURCE_TIMEOUT_MS = '100'
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
@@ -52,13 +54,25 @@ const licenseServiceMock = {
 
 Module._load = function mockLoad(request, parent, isMain) {
   if (request === 'electron') return electronMock
-  if (request === './secret-manager' && parent && /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)) {
+  if (
+    request === './secret-manager' &&
+    parent &&
+    /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)
+  ) {
     return secretManagerMock
   }
-  if (request === './secret-manager' && parent && /electron[\\/]services[\\/]config-service\.js$/.test(parent.filename)) {
+  if (
+    request === './secret-manager' &&
+    parent &&
+    /electron[\\/]services[\\/]config-service\.js$/.test(parent.filename)
+  ) {
     return secretManagerMock
   }
-  if (request === './license-service' && parent && /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)) {
+  if (
+    request === './license-service' &&
+    parent &&
+    /electron[\\/]services[\\/]search-service\.js$/.test(parent.filename)
+  ) {
     return licenseServiceMock
   }
   return originalLoad.call(this, request, parent, isMain)
@@ -96,9 +110,10 @@ const textResponse = (status, text) => ({
   },
 })
 
-const llmResponse = (payload) => jsonResponse(200, {
-  choices: [{ message: { content: JSON.stringify(payload) } }],
-})
+const llmResponse = (payload) =>
+  jsonResponse(200, {
+    choices: [{ message: { content: JSON.stringify(payload) } }],
+  })
 
 global.fetch = async (url) => {
   const target = String(url)
@@ -127,16 +142,12 @@ global.fetch = async (url) => {
       observedQueries.push(query)
       if (query.includes('site:linkedin.com/company')) {
         return jsonResponse(200, {
-          organic_results: [
-            { title: 'Blocked Parts Co | LinkedIn', snippet: 'Industrial battery dealer in Germany' },
-          ],
+          organic_results: [{ title: 'Blocked Parts Co | LinkedIn', snippet: 'Industrial battery dealer in Germany' }],
         })
       }
       if (query.includes('site:kompass.com')) {
         return jsonResponse(200, {
-          organic_results: [
-            { title: 'Blocked Parts Co - Kompass', snippet: 'B2B industrial supplier profile' },
-          ],
+          organic_results: [{ title: 'Blocked Parts Co - Kompass', snippet: 'B2B industrial supplier profile' }],
         })
       }
       if (query.includes('site:europages.com')) {
@@ -150,7 +161,11 @@ global.fetch = async (url) => {
     }
   }
 
-  if (target === 'https://blocked.example' || target === 'https://blocked.example/contact' || target === 'https://blocked.example/contact-us') {
+  if (
+    target === 'https://blocked.example' ||
+    target === 'https://blocked.example/contact' ||
+    target === 'https://blocked.example/contact-us'
+  ) {
     return textResponse(403, 'forbidden')
   }
 
@@ -223,18 +238,21 @@ test('403 多源降级会触发 LinkedIn/Kompass/Europages 查询并返回 socia
   const executeHandler = handlers.get(IPC_CHANNELS.SEARCH.EXECUTE)
   assert.equal(typeof executeHandler, 'function')
 
-  const result = await executeHandler({
-    sender: {
-      send(channel, payload) {
-        senderEvents.push({ channel, payload })
+  const result = await executeHandler(
+    {
+      sender: {
+        send(channel, payload) {
+          senderEvents.push({ channel, payload })
+        },
       },
     },
-  }, {
-    keyword: 'Industrial battery dealer',
-    country: 'Germany',
-    city: '',
-    filterOptions: {},
-  })
+    {
+      keyword: 'Industrial battery dealer',
+      country: 'Germany',
+      city: '',
+      filterOptions: {},
+    },
+  )
 
   assert.equal(result.success, true)
   assert.ok(Array.isArray(result.data.results))

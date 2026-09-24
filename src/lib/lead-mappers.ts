@@ -186,3 +186,73 @@ export const mapSearchResultToLeadItem = (result: LeadMapperInput, context: Lead
     agentStatus: normalizeAgentStatus(result.agentStatus),
   }
 }
+
+/* 搜索结果卡片"结算态"推导：根据线索评分态与当前搜索阶段，决定卡片展示
+ * 待评估 / 流式分析中 / 已评分 / 社交盲评 / AI 未启用 / 降级回退 等形态。
+ * 纯函数，便于单元测试；`isStreaming` / `aiScoringSkipped` 为全局搜索阶段标志，
+ * 由调用方（搜索结果列表）注入，避免与单条线索数据耦合。 */
+export const SOCIAL_BLIND_SCORE_MESSAGE = '官网受保护，已使用 LinkedIn / 行业目录公开信息完成盲评'
+
+export type SettlementMeta = {
+  state: string
+  showPending: boolean
+  showFallback: boolean
+  fallbackTone: 'blue' | 'amber'
+  fallbackReason: string
+}
+
+export const getLeadSettlementMeta = (
+  lead: LeadSearchResult,
+  opts: { isStreaming: boolean; aiScoringSkipped: boolean },
+): SettlementMeta => {
+  const { isStreaming, aiScoringSkipped } = opts
+  const hasNumericScore = typeof lead.matchScore === 'number'
+  const primaryReason =
+    Array.isArray(lead.matchReasons) && lead.matchReasons.length > 0 ? String(lead.matchReasons[0] || '').trim() : ''
+  const riskFlags = Array.isArray(lead.riskFlags) ? lead.riskFlags.map((item) => String(item || '').trim()) : []
+  const hasWebsite403 = riskFlags.includes('website_403')
+  const hasBlindScoreFailed = riskFlags.includes('blind_score_failed')
+  const isSocialBlindScore = lead.fallbackStatus === 'social_blind_score' && hasNumericScore
+
+  if (isSocialBlindScore) {
+    return {
+      state: 'social_blind_score',
+      showPending: false,
+      showFallback: true,
+      fallbackTone: 'blue',
+      fallbackReason: SOCIAL_BLIND_SCORE_MESSAGE,
+    }
+  }
+  if (hasNumericScore) {
+    return { state: 'scored', showPending: false, showFallback: false, fallbackTone: 'amber', fallbackReason: '' }
+  }
+  if (isStreaming) {
+    return { state: 'streaming', showPending: true, showFallback: false, fallbackTone: 'amber', fallbackReason: '' }
+  }
+  if (aiScoringSkipped) {
+    return {
+      state: 'ai_skipped',
+      showPending: false,
+      showFallback: true,
+      fallbackTone: 'amber',
+      fallbackReason: '当前未启用 AI 评分，已展示基础结果',
+    }
+  }
+  if (hasWebsite403 && hasBlindScoreFailed) {
+    return {
+      state: 'fallback',
+      showPending: false,
+      showFallback: true,
+      fallbackTone: 'amber',
+      fallbackReason: '官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核',
+    }
+  }
+  const hasUsableFallbackData = Boolean(primaryReason || riskFlags.some(Boolean))
+  return {
+    state: 'fallback',
+    showPending: false,
+    showFallback: true,
+    fallbackTone: 'amber',
+    fallbackReason: hasUsableFallbackData ? primaryReason || riskFlags.find(Boolean) || '待人工复核' : '待人工复核',
+  }
+}

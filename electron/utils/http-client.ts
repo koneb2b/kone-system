@@ -84,14 +84,41 @@ const recordSuccess = (host: string) => {
   circuitState.openUntil = 0
 }
 
-export const safeFetch = async (url: string, options?: RequestInit) => {
+/* P0-6：safeFetch 原先不设超时，网络挂起即永久 pending（webhook 推送、
+   云端协同等调用点会一直卡住，UI 无法收敛到错误态）。此处统一加默认超时。 */
+export const DEFAULT_FETCH_TIMEOUT_MS = 20_000
+
+const combineSignals = (upstream: AbortSignal | null | undefined, fallback: AbortSignal): AbortSignal => {
+  if (!upstream) return fallback
+  const anyFn = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any
+  return typeof anyFn === 'function' ? anyFn([upstream, fallback]) : fallback
+}
+
+export const safeFetch = async (url: string, options?: RequestInit, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) => {
   const host = normalizeHost(url)
 
   if (isCircuitOpen(host)) {
     throw createCircuitBreakerError(host)
   }
 
-  const response = await fetch(url, options)
+  const controller = new AbortController()
+  /* 注意：请求超时定时器**不得** unref()。unref 会让事件循环认为无待处理工作，
+     在没有其他句柄时提前退出，导致超时永不触发（表现为永久 pending）。
+     长驻内务定时器（防抖落盘、跟进调度）才应 unref。 */
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(url, { ...(options || {}), signal: combineSignals(options?.signal, controller.signal) })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      /* preserve-caught-error：把原始异常挂到 cause，便于排查底层网络原因 */
+      throw new Error(`请求超时（${timeoutMs}ms）：${host}`, { cause: error })
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
 
   if (FAILURE_STATUSES.has(response.status)) {
     recordProtectedFailure(host, url, response.status)

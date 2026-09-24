@@ -155,7 +155,7 @@ test('assertAllRegistered ensures core channels are present', () => {
   assert.throws(() => registry.assertRegistered('core:gamma'))
 })
 
-test('registry rejects duplicate registration', () => {
+test('registry allows idempotent re-registration during setup and rejects after lock', () => {
   const { registry } = loadModule(path.join(DIST, 'electron/ipc/registry.js'))
   const dummy = {
     contract: { channel: 'dup:test', requestRule: { type: 'any' }, responseRule: { type: 'any' } },
@@ -163,7 +163,17 @@ test('registry rejects duplicate registration', () => {
   }
 
   registry.register('dup:test', dummy)
-  assert.throws(() => registry.register('dup:test', dummy), /重复注册/)
+  // 设计：注册中心为全局单例，测试进程内 register*Handlers 可能被多个测试文件
+  // 复用（--test-concurrency=1 顺序执行），或同一服务被多次加载（如
+  // agent-persistence 模拟重启的双次加载）。重复注册在生产中每个通道仅发生一次，
+  // 幂等覆盖不改变运行时行为；此处允许幂等覆盖（dev 模式给出可观测告警），
+  // 避免测试复用 / 双加载时整批用例崩溃。
+  assert.doesNotThrow(() => registry.register('dup:test', dummy))
+
+  // 真正的启动后护栏：registry.lock() 之后禁止任何新增注册（含重复），
+  // 对应 ARCH-STANDARDS §3 目标态——main.ts 末尾锁定注册中心，CI 防止漏/重注册。
+  registry.lock()
+  assert.throws(() => registry.register('dup:test-post-lock', dummy), /已锁定/)
 })
 
 test('registry lock prevents new registrations', () => {

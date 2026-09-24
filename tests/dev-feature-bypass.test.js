@@ -85,7 +85,10 @@ test('dev search handler reaches business logic instead of FEATURE_DENIED', asyn
   })
 
   registerSearchHandlers(ipcMain, store)
-  const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)(createEventMock(), { keyword: 'golf cart battery', country: 'US' })
+  const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)(createEventMock(), {
+    keyword: 'golf cart battery',
+    country: 'US',
+  })
 
   assert.notEqual(result?.error, 'FEATURE_DENIED')
   assert.notEqual(result?.code, 403)

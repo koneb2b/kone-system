@@ -110,20 +110,18 @@ test('P1-1: setSearchResults must NEVER persist (volatile payload, ARCH §4.3)',
   configState.setCalls = []
   configState.getCalls = []
   const { useLeadsStore } = loadStore()
-  await useLeadsStore
-    .getState()
-    .setSearchResults([
-      {
-        id: 'x',
-        company: 'Volatile',
-        industry: '',
-        contact: '',
-        contactTitle: '',
-        email: '',
-        phone: '',
-        unlocked: false,
-      },
-    ])
+  await useLeadsStore.getState().setSearchResults([
+    {
+      id: 'x',
+      company: 'Volatile',
+      industry: '',
+      contact: '',
+      contactTitle: '',
+      email: '',
+      phone: '',
+      unlocked: false,
+    },
+  ])
   assert.equal(configState.setCalls.length, 0, 'searchResults must not trigger ANY config write')
   assert.equal(useLeadsStore.getState().searchResults.length, 1, 'searchResults still held in memory')
 })

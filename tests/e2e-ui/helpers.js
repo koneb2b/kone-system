@@ -15,13 +15,14 @@ const ensureArtifactDir = () => {
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true })
 }
 
-const sanitizeName = (value) => String(value || '').replace(/[^a-z0-9-_]/gi, '-').toLowerCase()
+const sanitizeName = (value) =>
+  String(value || '')
+    .replace(/[^a-z0-9-_]/gi, '-')
+    .toLowerCase()
 
 const startElectronDevStack = () => {
   const command = process.platform === 'win32' ? 'cmd.exe' : 'npm'
-  const args = process.platform === 'win32'
-    ? ['/d', '/s', '/c', 'npm run dev']
-    : ['run', 'dev']
+  const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'npm run dev'] : ['run', 'dev']
   const child = spawn(command, args, {
     cwd: process.cwd(),
     env: {
@@ -57,7 +58,9 @@ const waitForDebugEndpoint = async (logs) => {
     try {
       const response = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`)
       if (response.ok) return true
-    } catch {}
+    } catch {
+      /* 调试端点尚未就绪，下一轮重试 */
+    }
     await sleep(1000)
   }
   ensureArtifactDir()
@@ -79,7 +82,9 @@ const getElectronPage = async (browser) => {
       if (targetPage.url() === 'about:blank') {
         try {
           await targetPage.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 })
-        } catch {}
+        } catch {
+          /* 空白页无导航事件，继续沿用当前页 */
+        }
       }
       return targetPage
     }
@@ -91,9 +96,13 @@ const getElectronPage = async (browser) => {
 const waitForAppReady = async (page) => {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      await page.waitForSelector('[data-stage="dashboard"], [data-stage="activation-screen"], [data-stage="locked"]', { timeout: 2000 })
+      await page.waitForSelector('[data-stage="dashboard"], [data-stage="activation-screen"], [data-stage="locked"]', {
+        timeout: 2000,
+      })
       return true
-    } catch {}
+    } catch {
+      /* 应用尚未进入目标 stage，继续轮询 */
+    }
     await sleep(500)
   }
   return false
@@ -124,7 +133,9 @@ const waitForAnyAnchor = async (page, anchors, timeoutMs = DEFAULT_TIMEOUT_MS) =
     }
     await sleep(250)
   }
-  throw new Error(`No module anchor matched within timeout. anchors=${anchors.map((item) => `${item.type}:${item.value}`).join(', ')}`)
+  throw new Error(
+    `No module anchor matched within timeout. anchors=${anchors.map((item) => `${item.type}:${item.value}`).join(', ')}`,
+  )
 }
 
 const navigateViaSidebar = async (page, navId) => {

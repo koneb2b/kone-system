@@ -106,10 +106,12 @@ test('request trial resolves structured failure object when non-permission ancho
   const { IPC_CHANNELS } = require(channelsModulePath)
 
   const ipcMain = createIpcMainMock()
-  const service = createLicenseService(createStoreMock({
-    'system.machineId': 'machine-ipc',
-    'system.hardwareMachineId': 'machine-ipc',
-  }))
+  const service = createLicenseService(
+    createStoreMock({
+      'system.machineId': 'machine-ipc',
+      'system.hardwareMachineId': 'machine-ipc',
+    }),
+  )
   service.registerHandlers(ipcMain, electronMock.app)
 
   const result = await ipcMain.getHandler(IPC_CHANNELS.LICENSE.REQUEST_TRIAL)()
@@ -128,10 +130,12 @@ test('submit and verify resolve structured failures for invalid license payloads
   const { IPC_CHANNELS } = require(channelsModulePath)
 
   const ipcMain = createIpcMainMock()
-  const service = createLicenseService(createStoreMock({
-    'system.machineId': 'machine-submit',
-    'system.hardwareMachineId': 'machine-submit',
-  }))
+  const service = createLicenseService(
+    createStoreMock({
+      'system.machineId': 'machine-submit',
+      'system.hardwareMachineId': 'machine-submit',
+    }),
+  )
   service.registerHandlers(ipcMain, electronMock.app)
 
   const submitResult = await ipcMain.getHandler(IPC_CHANNELS.LICENSE.SUBMIT)(null, { licenseKey: 'bad-license-key' })

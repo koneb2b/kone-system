@@ -2,7 +2,14 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const Module = require('node:module')
-const { createIpcMainMock, createEventMock, createStoreMock, createElectronMock, withModuleMocks, resetModule } = require('./helpers.js')
+const {
+  createIpcMainMock,
+  createEventMock,
+  createStoreMock,
+  createElectronMock,
+  withModuleMocks,
+  resetModule,
+} = require('./helpers.js')
 
 const originalFetch = global.fetch
 const originalLoad = Module._load
@@ -19,9 +26,15 @@ test('dirty HTML is de-noised before LLM and truncated to <= 3000 chars', async 
       if (/llm/i.test(String(key || ''))) return 'mock-llm-key'
       return ''
     },
-    setSecret() { return { exists: true, masked: '***' } },
-    checkSecret() { return { exists: true, masked: '***' } },
-    migrateSecrets() { return false },
+    setSecret() {
+      return { exists: true, masked: '***' }
+    },
+    checkSecret() {
+      return { exists: true, masked: '***' }
+    },
+    migrateSecrets() {
+      return false
+    },
   }
   const licenseServiceMock = {
     createLicenseService() {
@@ -40,8 +53,12 @@ test('dirty HTML is de-noised before LLM and truncated to <= 3000 chars', async 
         ok: true,
         status: 200,
         headers: { get: () => 'text/html' },
-        async text() { return noisyHtml },
-        async json() { throw new Error('not json') },
+        async text() {
+          return noisyHtml
+        },
+        async json() {
+          throw new Error('not json')
+        },
       }
     }
     if (target === 'https://mock-llm.example/v1/chat/completions') {
@@ -53,64 +70,68 @@ test('dirty HTML is de-noised before LLM and truncated to <= 3000 chars', async 
         headers: { get: () => 'application/json' },
         async json() {
           return {
-            choices: [{
-              message: {
-                content: JSON.stringify({
-                  content: 'Mock analysis content',
-                  companyProfile: 'Profile',
-                  painPoints: 'Pain',
-                  valueMapping: 'Value',
-                  emailSubject: 'Subject',
-                  emailBody: 'Body',
-                }),
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    content: 'Mock analysis content',
+                    companyProfile: 'Profile',
+                    painPoints: 'Pain',
+                    valueMapping: 'Value',
+                    emailSubject: 'Subject',
+                    emailBody: 'Body',
+                  }),
+                },
               },
-            }],
+            ],
           }
         },
-        async text() { return '' },
+        async text() {
+          return ''
+        },
       }
     }
     throw new Error(`Unexpected fetch: ${target}`)
   }
 
-  await withModuleMocks({
-    electron: electronMock,
-    [
-      `./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`
-    ]: secretManagerMock,
-    [
-      `./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`
-    ]: secretManagerMock,
-    [
-      `./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`
-    ]: licenseServiceMock,
-  }, async () => {
-    resetModule(searchServicePath)
-    resetModule(channelsPath)
-    const { registerSearchHandlers } = require(searchServicePath)
-    const { IPC_CHANNELS } = require(channelsPath)
-    const ipcMain = createIpcMainMock()
-    const store = createStoreMock({
-      user_config: {
-        providers: [{ id: 'llm', baseUrl: 'https://mock-llm.example/v1' }],
-        llmApiKey: 'mock-llm-key',
-        selectedModel: 'gpt-4o-mini',
-        icpProfile: { targetProduct: 'battery', buyerPersona: 'dealer', coreAdvantage: 'stable delivery' },
-      },
-    })
+  await withModuleMocks(
+    {
+      electron: electronMock,
+      [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]:
+        secretManagerMock,
+      [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`]:
+        secretManagerMock,
+      [`./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]:
+        licenseServiceMock,
+    },
+    async () => {
+      resetModule(searchServicePath)
+      resetModule(channelsPath)
+      const { registerSearchHandlers } = require(searchServicePath)
+      const { IPC_CHANNELS } = require(channelsPath)
+      const ipcMain = createIpcMainMock()
+      const store = createStoreMock({
+        user_config: {
+          providers: [{ id: 'llm', baseUrl: 'https://mock-llm.example/v1' }],
+          llmApiKey: 'mock-llm-key',
+          selectedModel: 'gpt-4o-mini',
+          icpProfile: { targetProduct: 'battery', buyerPersona: 'dealer', coreAdvantage: 'stable delivery' },
+        },
+      })
 
-    registerSearchHandlers(ipcMain, store)
-    const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.ANALYSIS_GENERATE)(createEventMock(), {
-      lead: {
-        company: 'Example GmbH',
-        website: 'https://example.com',
-        snippet: 'Fallback snippet',
-      },
-      scenario: 'direct_quote',
-    })
+      registerSearchHandlers(ipcMain, store)
+      const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.ANALYSIS_GENERATE)(createEventMock(), {
+        lead: {
+          company: 'Example GmbH',
+          website: 'https://example.com',
+          snippet: 'Fallback snippet',
+        },
+        scenario: 'direct_quote',
+      })
 
-    assert.equal(result?.success, true)
-  })
+      assert.equal(result?.success, true)
+    },
+  )
 
   assert.ok(capturedBodies.length > 0)
   const payloadText = capturedBodies[0].messages.map((message) => String(message.content || '')).join(' ')

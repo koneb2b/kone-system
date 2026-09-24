@@ -2,6 +2,12 @@ import { app } from './electron-bridge'
 import * as fs from 'fs'
 import * as path from 'path'
 import { IPC_CHANNELS } from '../ipc/channels'
+import { registerIpc, registry } from '../ipc/registry'
+import {
+  autopilotGetStateContract,
+  autopilotSetStateContract,
+  autopilotClearLegacyContract,
+} from '../ipc/contracts/autopilot.contract'
 import type { AutopilotStateEnvelope, AutopilotStateKind } from '../../src/shared/ipc-contracts'
 import { getPublicUserConfig, setConfigValue, type ConfigStore } from './config-service'
 
@@ -71,8 +77,15 @@ export const clearLegacyAutopilotNode = (store: ConfigStore) => {
   setConfigValue(store, 'user_config', next)
 }
 
+/**
+ * 第三批 registry 迁移：AUTOPILOT.GET_STATE / SET_STATE / CLEAR_LEGACY 三个无授权
+ * 包装的 plain 通道经 `registerIpc()` 收敛到注册中心，由 `registry.attach(ipcMain)`
+ * 统一绑定（见函数末尾自绑定）。契约在 dev 模式做响应信封校验，production 跳过。
+ *
+ * 注意：`AUTOPILOT.SYNC_STATE` 由 `main.ts` 直接 `ipcMain.handle` 注册，不在本处。
+ */
 export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
-  ipcMain.handle(IPC_CHANNELS.AUTOPILOT.GET_STATE, () => {
+  registerIpc(IPC_CHANNELS.AUTOPILOT.GET_STATE, autopilotGetStateContract, async () => {
     try {
       return { success: true, data: readAutopilotStateEnvelope() }
     } catch (error: any) {
@@ -81,17 +94,22 @@ export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store:
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.AUTOPILOT.SET_STATE, (_event, payload: { state: unknown }) => {
-    try {
-      writeAutopilotState(payload?.state ?? null)
-      return { success: true, data: null }
-    } catch (error: any) {
-      console.error(' [AutopilotState] Set failed:', error)
-      return { success: false, error: error?.message || 'Autopilot state write failed', code: error?.code }
-    }
-  })
+  registerIpc(
+    IPC_CHANNELS.AUTOPILOT.SET_STATE,
+    autopilotSetStateContract,
+    async (_event: unknown, payload: unknown) => {
+      try {
+        const p = payload as { state?: unknown }
+        writeAutopilotState(p?.state ?? null)
+        return { success: true, data: null }
+      } catch (error: any) {
+        console.error(' [AutopilotState] Set failed:', error)
+        return { success: false, error: error?.message || 'Autopilot state write failed', code: error?.code }
+      }
+    },
+  )
 
-  ipcMain.handle(IPC_CHANNELS.AUTOPILOT.CLEAR_LEGACY, () => {
+  registerIpc(IPC_CHANNELS.AUTOPILOT.CLEAR_LEGACY, autopilotClearLegacyContract, async () => {
     try {
       clearLegacyAutopilotNode(store)
       return { success: true, data: null }
@@ -100,4 +118,9 @@ export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store:
       return { success: false, error: error?.message || 'Autopilot legacy clear failed', code: error?.code }
     }
   })
+
+  /* 自绑定兼容层（与 agent-service 同构）：历史 e2e / 独立测试直接调用本函数而未
+     显式 attach，迁移后 3 个 plain 通道需落到 ipcMain 才能被 getHandler 取到。
+     attach 按 ipcMain 实例幂等，主进程末尾的 attach 不会重复绑定。 */
+  registry.attach(ipcMain)
 }

@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict')
-const { buildFallbackAwareMapsQuery, normalizeSearchResponseCandidates, resolveSerpSearchPlan } = require('../dist-electron/electron/services/search-service.js')
+const {
+  buildFallbackAwareMapsQuery,
+  normalizeSearchResponseCandidates,
+  resolveSerpSearchPlan,
+} = require('../dist-electron/electron/services/search-service.js')
 
 const run = async () => {
   const stageEvents = []
@@ -96,8 +100,14 @@ const run = async () => {
   assert.equal(normalized.filteredLocalResults.length, 0)
   assert.equal(normalized.normalizedCandidates.length, 1)
   assert.equal(normalized.normalizedCandidates[0] && normalized.normalizedCandidates[0].source, 'Google Organic')
-  assert.equal(normalized.normalizedCandidates[0] && normalized.normalizedCandidates[0].company, 'Tokyo Battery Trading')
-  assert.equal(normalized.normalizedCandidates[0] && normalized.normalizedCandidates[0].website, 'https://tokyobattery.example')
+  assert.equal(
+    normalized.normalizedCandidates[0] && normalized.normalizedCandidates[0].company,
+    'Tokyo Battery Trading',
+  )
+  assert.equal(
+    normalized.normalizedCandidates[0] && normalized.normalizedCandidates[0].website,
+    'https://tokyobattery.example',
+  )
 
   console.log('[mock-search-fallback] all assertions passed')
 }

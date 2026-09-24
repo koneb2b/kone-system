@@ -17,6 +17,15 @@ import {
 } from './config-service'
 import { type OfflineLicenseClaims, verifyOfflineLicensePayload } from './offline-license'
 import { setSecret } from './secret-manager'
+import { registerIpc, registry, secureAnyContract } from '../ipc/registry'
+import {
+  systemGetDeviceStatusContract,
+  licenseGetInfoContract,
+  licenseRequestTrialContract,
+  licenseSubmitContract,
+  licenseVerifyContract,
+  licenseCheckStatusContract,
+} from '../ipc/contracts/license.contract'
 
 export type LicenseTier = 'unregistered' | 'basic' | 'premium' | 'expired'
 
@@ -557,18 +566,34 @@ export const registerSecureIpc = <TArgs extends unknown[], TResult>(
   licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
   handler: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult | Promise<TResult>,
   operationName?: SecureOperationName<TArgs>,
-) =>
-  ipcMain.handle(channel, async (event, ...args) => {
-    const resolvedOperationName = resolveOperationName(channel, operationName, event, args as TArgs)
+) => {
+  const secureHandler = async (event: Electron.IpcMainInvokeEvent, ...args: unknown[]): Promise<unknown> => {
+    const resolvedArgs = args as TArgs
+    const resolvedOperationName = resolveOperationName(channel, operationName, event, resolvedArgs)
     const trialDenied = ensureTrialAccess(store, licenseGuard, resolvedOperationName)
     if (trialDenied) return trialDenied
 
     try {
-      return await handler(event, ...(args as TArgs))
+      return await handler(event, ...resolvedArgs)
     } catch (error) {
       return buildStructuredIpcErrorResponse(resolvedOperationName, error)
     }
+  }
+
+  // 生产绑定：保持原有 ipcMain.handle 路径，Fail-Closed 授权行为零变化。
+  ipcMain.handle(channel, secureHandler)
+
+  // 治理登记（P0-4/续）：把 Fail-Closed 包装通道也登记进注册中心，供未来
+  // `assertAllRegistered()` 启动门禁覆盖；标记 skipAttach —— 真实绑定已由上方的
+  // ipcMain.handle 完成，attach() 不会重复绑定。skipValidation 因包装器自身已做
+  // 401/403 信封处理，无需 registry 再校验。
+  registry.register(channel, {
+    contract: secureAnyContract,
+    handler: secureHandler as (event: unknown, ...args: unknown[]) => Promise<unknown>,
+    skipAttach: true,
+    skipValidation: true,
   })
+}
 
 export const registerSecureFeatureIpc = <TArgs extends unknown[], TResult>(
   ipcMain: Electron.IpcMain,
@@ -698,7 +723,7 @@ export const createLicenseService = (store: ConfigStore) => {
           : code,
     })
 
-    ipcMain.handle(IPC_CHANNELS.SYSTEM.GET_DEVICE_STATUS, () => {
+    registerIpc(IPC_CHANNELS.SYSTEM.GET_DEVICE_STATUS, systemGetDeviceStatusContract, async () => {
       try {
         const machineId = getPhysicalMachineId(store)
         return { success: true, data: { available: Boolean(machineId), machineId } }
@@ -707,7 +732,7 @@ export const createLicenseService = (store: ConfigStore) => {
       }
     })
 
-    ipcMain.handle(IPC_CHANNELS.LICENSE.GET_INFO, async () => {
+    registerIpc(IPC_CHANNELS.LICENSE.GET_INFO, licenseGetInfoContract, async () => {
       try {
         const tier = await refreshTier()
         const machineId = getPhysicalMachineId(store)
@@ -753,7 +778,7 @@ export const createLicenseService = (store: ConfigStore) => {
       }
     })
 
-    ipcMain.handle(IPC_CHANNELS.LICENSE.REQUEST_TRIAL, async () => {
+    registerIpc(IPC_CHANNELS.LICENSE.REQUEST_TRIAL, licenseRequestTrialContract, async () => {
       try {
         const machineId = getPhysicalMachineId(store)
         const current = await syncTrialAnchor(machineId)
@@ -831,10 +856,11 @@ export const createLicenseService = (store: ConfigStore) => {
       }
     })
 
-    ipcMain.handle(IPC_CHANNELS.LICENSE.SUBMIT, async (_event, payload: { licenseKey: string }) => {
+    registerIpc(IPC_CHANNELS.LICENSE.SUBMIT, licenseSubmitContract, async (_event: unknown, payload: unknown) => {
+      const p = (payload || {}) as { licenseKey?: string }
       try {
         const machineId = getPhysicalMachineId(store)
-        const licenseKey = String(payload?.licenseKey || '').trim()
+        const licenseKey = String(p.licenseKey || '').trim()
         if (!licenseKey) return { success: false, error: '请输入激活码', code: 400 }
 
         const trial = await syncTrialAnchor(machineId)
@@ -906,7 +932,7 @@ export const createLicenseService = (store: ConfigStore) => {
       }
     })
 
-    ipcMain.handle(IPC_CHANNELS.LICENSE.VERIFY, async (_event, key: string) => {
+    registerIpc(IPC_CHANNELS.LICENSE.VERIFY, licenseVerifyContract, async (_event: unknown, key: unknown) => {
       try {
         const response = await (async () => {
           const machineId = getPhysicalMachineId(store)
@@ -973,7 +999,7 @@ export const createLicenseService = (store: ConfigStore) => {
       }
     })
 
-    ipcMain.handle(IPC_CHANNELS.LICENSE.CHECK_STATUS, async () => {
+    registerIpc(IPC_CHANNELS.LICENSE.CHECK_STATUS, licenseCheckStatusContract, async () => {
       try {
         if (process.env.KONE_REGRESSION_TEST === '1') {
           const mode = getRegressionLicenseMode()
@@ -1040,6 +1066,10 @@ export const createLicenseService = (store: ConfigStore) => {
         return buildIpcErrorResponse(error, '读取授权状态失败')
       }
     })
+
+    // 自绑定兼容层：让历史 e2e / consumer 测试在无显式 attach 时也能
+    // 通过 ipcMain.getHandler() 触达本批迁移的 6 个通道（见 registry.ts attach 按实例幂等）。
+    registry.attach(ipcMain)
   }
 
   return { licenseGuard, registerHandlers, getTier, refreshTier, getUserLlmApiKey }

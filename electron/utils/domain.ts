@@ -11,6 +11,9 @@ export const extractDomain = (input: string): string => {
     if (!cleaned.includes('://')) cleaned = `https://${cleaned}`
     return new URL(cleaned).hostname.replace(/^www\./, '')
   } catch {
-    return input.trim().toLowerCase().replace(/^www\./, '')
+    return input
+      .trim()
+      .toLowerCase()
+      .replace(/^www\./, '')
   }
 }

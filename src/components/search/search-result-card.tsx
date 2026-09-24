@@ -1,13 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Check, AlertTriangle, Radar, Mail, Loader2, Copy, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
 import { analysisGenerate } from '@/lib/electron-api'
 import { stableHash } from '@/lib/utils'
-import type { LeadSearchResult } from '@/store/leads-store'
+import { getLeadSettlementMeta } from '@/lib/lead-mappers'
+// 注意：此处必须**值导入** useLeadsStore（不可用 import type）——
+// 第 113 行的组件级 selector 订阅在运行时真实调用它，若仅保留类型导入，
+// 编译期会被擦除，渲染该卡片时抛出 ReferenceError: useLeadsStore is not defined。
+import { useLeadsStore, type LeadSearchResult } from '@/store/leads-store'
 
 const INTERNAL_FALLBACK_MARKERS = new Set(['website_403', 'blind_score_failed'])
 
@@ -82,34 +86,36 @@ const inferCountryLanguage = (country?: string): string | undefined => {
   return hit?.lang
 }
 
-type SettlementMeta = {
-  state: string
-  showPending: boolean
-  showFallback: boolean
-  fallbackTone: 'blue' | 'amber'
-  fallbackReason: string
-}
-
 interface SearchResultCardProps {
-  lead: LeadSearchResult
+  fallbackLead: LeadSearchResult
+  leadKey?: string
   index: number
-  settlementMeta: SettlementMeta
+  isStreaming: boolean
+  aiScoringSkipped: boolean
   savingLeadId: number | null
   savedLeadIds: Set<number>
   onSaveLead: (lead: LeadSearchResult) => void
   onCloudSendHint?: () => void
 }
 
-export function SearchResultCard({
-  lead,
+export const SearchResultCard = memo(function SearchResultCard({
+  fallbackLead,
+  leadKey,
   index,
-  settlementMeta,
+  isStreaming,
+  aiScoringSkipped,
   savingLeadId,
   savedLeadIds,
   onSaveLead,
   onCloudSendHint,
 }: SearchResultCardProps) {
   const { toast } = useToast()
+  /* 组件级 selector 订阅（P1-3 续）：按 leadKey 订阅自身线索切片，
+   * 流式评分增量更新时仅被更新的卡片重渲染；无 leadKey 或索引缺失时回退到父级传入的
+   * fallbackLead，保证任何情况下卡片都有可渲染数据（不依赖订阅一定命中）。 */
+  const liveLead = useLeadsStore((s) => (leadKey ? s.searchResultsByKey[leadKey] : undefined))
+  const lead = liveLead ?? fallbackLead
+  const settlementMeta = getLeadSettlementMeta(lead, { isStreaming, aiScoringSkipped })
   const [generatingEmail, setGeneratingEmail] = useState(false)
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null)
   const [copied, setCopied] = useState(false)
@@ -362,4 +368,4 @@ export function SearchResultCard({
       ) : null}
     </div>
   )
-}
+})

@@ -70,7 +70,7 @@ Kone 是一个面向 B2B 出海场景的 Electron 桌面应用，核心定位不
 
 ### 1.2 架构哲学
 
-从 `ARCH-STANDARDS.md`、`.clinerules` 与 `system-blueprint.md` 可确认，Kone 的底层哲学是：
+从 `ARCH-STANDARDS.md`、`.clinerules` 与 `.opencode/agents/system-blueprint.md` 可确认，Kone 的底层哲学是：
 
 - `src/` 仅负责渲染与状态编排，不承担特权业务执行。
 - `electron/` 主进程负责外部 API、授权、网络、Webhook 与高成本计算。
@@ -520,6 +520,8 @@ export type LeadStatus = "new" | "contacting" | "replied" | "archived"
 export type FollowUpStatus = LeadStatus
 ```
 
+> **V1.3 目标态声明**：上方四态是当前实现的兼容聚合显示。云端协同场景使用 `CLOUD-COLLABORATION-DELIVERY.md` 定义的三类独立状态；不得把云端投递、抑制、退订、投诉、硬退或跟进状态继续混入该兼容枚举。
+
 ### 2.2.1 状态归一逻辑
 
 `normalizeLeadStatus(status?: string): LeadStatus`
@@ -603,6 +605,54 @@ matchScore: typeof result.matchScore === 'number' ? result.matchScore : undefine
 - 搜索页 UI 用它展示 `B2B` / `B2C` 标签
 
 这说明当前 `isB2B` 更偏搜索态判断信号，而不是线索库长期字段。
+
+---
+
+## 2.5 本地审批到云端协同的实现映射（目标态）
+
+> 本节是实现映射，不重复定义业务规则。产品行为以 `kone-PRD.md §5.1` 为准；审批、投递、抑制、Webhook、事件、租户与幂等以 `CLOUD-COLLABORATION-DELIVERY.md` 为准。以下新增模块均为目标态，未通过代码和验收门禁前不得标记为已落地。
+
+### 2.5.1 实现时序
+
+```text
+SearchExecuteResult
+  -> 本地准入与评分
+  -> ApprovalCandidate（证据/风险/邮箱等级/草稿）
+  -> 人工批准生成 ApprovalRecord + draftVersion
+  -> CloudHandoffRequest（字段白名单 + schemaVersion + idempotencyKey）
+  -> 云端二次门禁
+  -> accepted/rejected/queued
+  -> Outreach/Event
+  -> per-lead 状态回写
+  -> 本地线索时间线与团队看板
+```
+
+### 2.5.2 页面与模块职责
+
+- `search-engine`：只产生候选、评分和降级状态，不授予发送权限。
+- `leads-table` / `analysis-drawer`：展示证据、风险、邮箱等级、团队冲突和审批入口；原“发送至云端”动作迁移为“提交已批准商机”。
+- 审批工作台（待实现）：管理 `pending_approval`、草稿版本、批准/驳回/要求修改和人工邮箱例外。
+- `automation-workflow`：迁移为审批后队列、投递和事件状态页，不得将 payload 组装成功显示为已触发。
+- 单线索时间线（待实现）：消费审批、同步、队列、发送、送达、退订、投诉、硬退、回复和异常事件。
+- 团队防撞详情（待实现）：审批前显示公司/联系人归属、保护期和已有触达阶段。
+
+### 2.5.3 契约边界
+
+- 本地 IPC 契约继续由 `src/shared/ipc-contracts.ts` 与 `electron/ipc/channels.ts` 管理。
+- 云端 API/Event Schema 必须独立版本化，不得把云端 `outreach`、`event` 或 `suppression` 状态塞入既有 `AgentStatus` 字符串。
+- 目标态至少需要：审批提交、云端交接、同步状态查询、per-lead 事件订阅、冲突响应、抑制查询及稳定错误码契约。
+- 当前四态 `LeadStatus` 仅作兼容聚合显示；三类权威状态及迁移规则引用 `CLOUD-COLLABORATION-DELIVERY.md`。
+
+### 2.5.4 云端响应与错误语义
+
+云端响应必须区分 `rejected | accepted | queued`。未配置、未批准、草稿版本冲突、抑制命中、团队撞单、重复请求、超配额、域名健康失败和熔断均返回稳定错误码与可行动原因；不得归约为模糊的 `skipped`、不得返回 `triggered: true`、不得乐观写入“已发送”。
+
+### 2.5.5 迁移约束
+
+1. 先落地状态字典、Schema 与兼容映射，再改 UI 和发送入口。
+2. 现有 `automation:start-campaign` 在迁移期只能作为兼容入口，必须增加审批与云端二次门禁；完成替代后按版本弃用。
+3. 本地 Email Agent 如保留真实发送，必须应用与云端一致的审批、抑制、幂等、配额和事件审计，不得成为旁路。
+4. 云端状态只由真实云端事件回写；本地已验证动作与本地 Agent 运行态仍走现有 IPC 双管道。
 
 ---
 
@@ -1174,7 +1224,9 @@ Trial 过期时还可能返回：
 - `shouldBlockPremiumPage = (activeNav === "team-dashboard" || activeNav === "automation") && !loading && !canAccessPremiumWorkspace`
 - 会渲染 `PremiumAccessBlocked`
 
-### 3.4.3 上云前 Payload 裁剪
+### 3.4.3 上云前 Payload 裁剪（迁移期兼容实现）
+
+> **V1.3 目标态裁决**：本节描述现有 `compactLeads` 裁剪实现，仅作为迁移期兼容记录。新的审批后上云最小载荷、字段白名单和云端二次门禁以 `CLOUD-COLLABORATION-DELIVERY.md` 为准；未完成迁移前，不得用本节结构宣称已满足云端审批、幂等、租户隔离和事件审计要求。
 
 主进程函数：`triggerN8nWorkflow(store, leads, templateId?)`
 
@@ -1240,7 +1292,9 @@ Trial 过期时还可能返回：
 
 只有 `entry.lead_info.email` 非空的 lead 才能进入最终推送数组。
 
-### 3.4.4 渐进式开发 / 云端未配置降级
+### 3.4.4 渐进式开发 / 云端未配置降级（迁移期兼容）
+
+> **V1.3 目标态裁决**：`triggered: true` 只表示兼容实现中的本地 payload 已组装，不表示云端已接受、排队或发送。目标态必须返回明确状态与稳定错误码：云端未配置为 `rejected/CLOUD_NOT_CONFIGURED`，云端门禁通过才可为 `queued` 或 `accepted`。详见 `CLOUD-COLLABORATION-DELIVERY.md`。
 
 若 Webhook URL 是占位符，或不是 `https://` 开头，则：
 
@@ -1258,7 +1312,9 @@ Trial 过期时还可能返回：
 
 这是典型的“功能链路走通，但云端执行被软降级”的设计。
 
-### 3.4.5 Dashboard 单线索交接
+### 3.4.5 Dashboard 单线索交接（迁移期兼容）
+
+> **V1.3 目标态裁决**：`handleSendToCloud` / `startCampaign(...)` 是迁移期兼容入口，只能提交“已批准商机”；目标态动作名称应迁移为“提交审批/提交已批准商机”，且必须经云端二次门禁返回 `rejected | accepted | queued` 与稳定错误码。
 
 `dashboard-page.tsx` 中 `handleSendToCloud(lead)` 会把单条 `LeadItem` 包装成：
 
@@ -1515,9 +1571,9 @@ Autopilot 依托以下本地资源：
 
 ---
 
-## 3.7 Search-to-Agent 数据管道（V1.3 宪章 · 已落地）
+## 3.7 Search-to-Agent 数据管道（V1.3 · 本地暂存已落地，云端投递为目标态）
 
-目标：在搜索完成评分后，自动将高价值线索分发至各智能体（WhatsApp/LinkedIn/Email）执行触达，并将执行结果写回线索状态，形成"搜索→评分→触达→回写"的完整闭环。
+目标：在搜索完成评分后，将高价值线索分发至本地 Agent 暂存、证据与草稿生成流程；只有经 `pending_approval -> approved` 和云端二次门禁后，才可进入云端队列/投递。本地 `matchScore >= 60`、可触达资产或 `cloud_send` 授权均不构成发送许可。云端边界以 `CLOUD-COLLABORATION-DELIVERY.md` 为准。
 
 ### 3.7.1 管道架构总览
 
@@ -1734,7 +1790,7 @@ async function writeBackAgentStatus(
 - 然后立刻补发：
   - `search:stream-complete`
 
-这严格符合 `.clinerules` 与 `ipc-agent.md` 中“异常也必须 complete 收尾，防止 UI 永久 loading”的要求。
+这严格符合 `.clinerules` 与 `.opencode/agents/ipc-agent.md` 中“异常也必须 complete 收尾，防止 UI 永久 loading”的要求。
 
 ### 4.1.2 429 / 配额 / 网络错误
 
@@ -1996,7 +2052,7 @@ export type CampaignStartRequest = {
 
 - 展示 `leads`
 - 快速执行 `AI 深度分析`
-- 支持导出与发送至云端
+- 支持导出与“提交已批准商机”（目标态；迁移期兼容旧“发送至云端”动作）
 - 不直接处理流式评分事件
 
 ### 6.3 `analysis-drawer.tsx`
@@ -2024,9 +2080,11 @@ export type CampaignStartRequest = {
 
 - 邮箱验证
 - 清洗死邮箱
-- 组装云端发送 payload
-- 触发 `startCampaign(...)`
+- 迁移期兼容：组装云端发送 payload、触发 `startCampaign(...)`
+- 目标态：审批后队列、投递状态、事件状态与失败原因展示
 - 追踪打开状态
+
+> 目标态说明：本页不得再把 payload 组装成功展示为“已触发发送”。触发、排队、发送、送达必须来自云端二次门禁与事件回写。
 
 ### 6.6 `dashboard-page.tsx`
 

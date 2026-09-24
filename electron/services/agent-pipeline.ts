@@ -34,7 +34,33 @@ export type AgentTaskQueue = {
 
 let currentPipelineRunId: string | null = null
 
+/**
+ * P0-3 修复：最近一次**真实暂存过目标**的管道 runId。
+ *
+ * 原缺陷：`isStaleTask` 只与 `currentPipelineRunId`（暂存窗口内的瞬时值）比较，
+ * 而 `withPipelineIsolation` 在 finally 中必然把它清空。用户点击"开始触达"时
+ * `currentPipelineRunId` 恒为 null，`isStaleTask` 恒返回 false —— 陈旧任务防重
+ * 实际从未生效。
+ *
+ * 修复：引入"最近一次成功暂存的 runId"作为暂存窗口关闭后的比较基准。
+ * 只有真正暂存过目标（>=1 条）的管道才更新它，避免"新一轮搜索没有产出合格线索"
+ * 反而误杀上一轮尚未确认的暂存目标。
+ */
+let latestStagedRunId: string | null = null
+
 export const getCurrentPipelineRunId = () => currentPipelineRunId
+export const getLatestStagedRunId = () => latestStagedRunId
+
+/** 由暂存层（stageAgentsFromPipeline）在确实暂存到目标后调用。 */
+export const markPipelineStaged = (runId: string): void => {
+  latestStagedRunId = runId
+}
+
+/** 测试隔离用：清空暂存基准，避免用例间互相污染。 */
+export const resetPipelineIsolation = (): void => {
+  currentPipelineRunId = null
+  latestStagedRunId = null
+}
 
 export const qualifiesForPipeline = (
   matchScore: number | null | undefined,
@@ -127,6 +153,12 @@ export const withPipelineIsolation = <T>(fn: (runId: string) => Promise<T>): Pro
 }
 
 export const isStaleTask = (taskRunId: string): boolean => {
-  if (!currentPipelineRunId) return false // No active pipeline — no stale comparison
+  if (!currentPipelineRunId) {
+    // 暂存窗口已关闭（例如用户在搜索完成后点击"开始触达"）。
+    // 此时以"最近一次成功暂存的 runId"为基准：来自更早管道的任务即为陈旧。
+    // 若从未有过成功暂存，则无比较基准，返回 false（保持 null-safe）。
+    if (!latestStagedRunId) return false
+    return taskRunId !== latestStagedRunId
+  }
   return taskRunId !== currentPipelineRunId
 }

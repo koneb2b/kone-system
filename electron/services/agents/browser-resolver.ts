@@ -70,6 +70,16 @@ export const launchPersistentBrowser = async (
 
   const baseOptions: Record<string, unknown> = {
     headless: false,
+    // AG-01 威胁模型说明：
+    // --no-sandbox / --disable-setuid-sandbox 用于兼容受限 Windows 运行环境
+    // （Puppeteer 启动的 Chromium 在部分企业安全策略下无法启用 OS 级沙箱）。
+    // 受控边界：
+    // 1. 仅由 Agent 专用入口 launchPersistentBrowser 使用；主窗口不受影响
+    //    （window-service 未禁用 sandbox，保持 contextIsolation + nodeIntegration:false）。
+    // 2. 浏览器使用独立 userDataDir（persist:kone_sandbox_*），与主应用 profile 隔离。
+    // 3. 导航目标受 Agent 层 URL 约束；下载、扩展、远程调试默认不启用。
+    // 4. 风险接受：正式发布前应评估替代隔离方案（AppContainer / 独立低权限进程），
+    //    并在 security-review 中签字确认后方可维持该配置。
     args: ['--no-sandbox', '--disable-setuid-sandbox', ...extraArgs],
     userDataDir,
   }

@@ -23,7 +23,15 @@ type VerifyDeps = {
   fetchImpl: typeof fetch
 }
 
-const BASIC_FEATURES = ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot']
+const BASIC_FEATURES = [
+  'search_basic',
+  'search_deep',
+  'analysis_basic',
+  'analysis_advanced',
+  'lead_export',
+  'export_full',
+  'local_autopilot',
+]
 const PREMIUM_FEATURES = [...BASIC_FEATURES, 'cloud_send', 'team_collaboration']
 const ENTERPRISE_FEATURES = ['enterprise', ...PREMIUM_FEATURES]
 const EXPORT_ROW_LIMIT = 100
@@ -76,7 +84,9 @@ export const createLicenseGuard = (deps: GuardDeps) => {
       if (feature === 'export') normalized.add('lead_export')
     }
 
-    const plan = String(claims?.plan || '').trim().toLowerCase()
+    const plan = String(claims?.plan || '')
+      .trim()
+      .toLowerCase()
     if (plan === 'enterprise') {
       ENTERPRISE_FEATURES.forEach((feature) => normalized.add(feature))
     } else if (plan === 'premium' || plan === 'pro') {
@@ -178,8 +188,14 @@ export const createLicenseGuard = (deps: GuardDeps) => {
         licenseKey: normalizedKey,
         machineId,
         plan:
-          payload.plan === 'enterprise' || payload.plan === 'premium' || payload.plan === 'pro' || payload.plan === 'trial' || payload.plan === 'basic'
-            ? (payload.plan === 'pro' ? 'premium' : payload.plan)
+          payload.plan === 'enterprise' ||
+          payload.plan === 'premium' ||
+          payload.plan === 'pro' ||
+          payload.plan === 'trial' ||
+          payload.plan === 'basic'
+            ? payload.plan === 'pro'
+              ? 'premium'
+              : payload.plan
             : undefined,
       }
     }

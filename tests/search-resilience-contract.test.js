@@ -12,7 +12,10 @@ test('SerpApi 429 is fail-fast and not retried by search service', () => {
 })
 
 test('SerpApi 400 location fallback only handles explicit unsupported-location errors', () => {
-  assert.match(source, /mode === 'maps-location' && isSerpApiUnsupportedLocationError\(searchResponse\.status, rawText\)/)
+  assert.match(
+    source,
+    /mode === 'maps-location' && isSerpApiUnsupportedLocationError\(searchResponse\.status, rawText\)/,
+  )
   assert.match(source, /status !== 400\) return false/)
   assert.match(source, /normalized\.includes\('unsupported'\) && normalized\.includes\('location'\)/)
 })

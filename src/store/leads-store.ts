@@ -280,9 +280,114 @@ const probeLeadStore = (_count: number) => {
   // Intentionally no-op: keep renderer production bundles free of store probe logs.
 }
 
+/** 评分帧合并：把搜索产物的 `scoredLead` 字段合入已有线索条目（保持不可变）。 */
+export const mergeScoredLeadFields = (
+  existing: LeadSearchResult,
+  scored: Record<string, unknown>,
+): LeadSearchResult => {
+  const scoredId = typeof scored.id === 'string' ? String(scored.id) : undefined
+  return {
+    ...existing,
+    matchScore: typeof scored.matchScore === 'number' ? scored.matchScore : existing.matchScore,
+    matchReasons: Array.isArray(scored.matchReasons) ? scored.matchReasons : existing.matchReasons,
+    riskFlags: Array.isArray(scored.riskFlags) ? scored.riskFlags : existing.riskFlags,
+    fallbackStatus:
+      scored.fallbackStatus === 'social_blind_score' ? ('social_blind_score' as const) : existing.fallbackStatus,
+    scoreSource:
+      scored.scoreSource === 'ai' || scored.scoreSource === 'deterministic' ? scored.scoreSource : existing.scoreSource,
+    opportunityScore:
+      scored.opportunityScore && typeof scored.opportunityScore === 'object'
+        ? (scored.opportunityScore as LeadSearchResult['opportunityScore'])
+        : existing.opportunityScore,
+    contact: typeof scored.contact === 'string' ? scored.contact : existing.contact,
+    contactTitle: typeof scored.contactTitle === 'string' ? scored.contactTitle : existing.contactTitle,
+    email: typeof scored.email === 'string' ? scored.email : existing.email,
+    phone: typeof scored.phone === 'string' ? scored.phone : existing.phone,
+    snippet: typeof scored.snippet === 'string' ? scored.snippet : existing.snippet,
+    inferredRole: typeof scored.inferredRole === 'string' ? scored.inferredRole : existing.inferredRole,
+    salesStrategy: typeof scored.salesStrategy === 'string' ? scored.salesStrategy : existing.salesStrategy,
+    dataSourceType: (scored.dataSourceType as LeadSearchResult['dataSourceType']) || existing.dataSourceType,
+    exhibitionFootprints: Array.isArray(scored.exhibitionFootprints)
+      ? scored.exhibitionFootprints
+      : existing.exhibitionFootprints,
+    customsData: (scored.customsData as LeadSearchResult['customsData']) || existing.customsData,
+    decisionMakers: Array.isArray(scored.decisionMakers)
+      ? (scored.decisionMakers as DecisionMaker[])
+      : existing.decisionMakers,
+    agentStatus: (scored.agentStatus as LeadSearchResult['agentStatus']) || existing.agentStatus,
+    /* leadKey 必须沿用已有条目的稳定 UUID，避免合并产生新 leadKey 切断管道关联。 */
+    leadKey: existing.leadKey ?? scoredId,
+  }
+}
+
+/** 在 searchResults 中按 leadKey / website / company 顺序回退定位目标条目下标。 */
+const findScoredLeadIndex = (results: LeadSearchResult[], scored: Record<string, unknown>): number => {
+  const scoredId = typeof scored.id === 'string' ? String(scored.id) : undefined
+  const scoredWebsite = typeof scored.website === 'string' ? scored.website : undefined
+  const scoredCompany = typeof scored.company === 'string' ? scored.company : undefined
+  /* L0-4/F1：按「条件优先级」匹配，而非「逐条位置优先」。
+     原实现在单条 lead 内依次尝试 leadKey → website → company 并立即 return，
+     于是靠前条目的**弱匹配**（company / website）会遮蔽靠后条目的**强匹配**（leadKey）：
+     评分被写到错误条目上，真正目标线索的分数始终为 undefined，即审计所述
+     "评分更新静默丢弃路径"（同名公司 / 共用官网的采集去重场景极易触发）。
+     改为每一级条件先全量扫描，未命中才降级到下一级：强键 → 次强 → 兜底。 */
+
+  // 1) 强匹配：leadKey 是线索唯一身份，优先全量扫描
+  if (scoredId) {
+    for (let i = 0; i < results.length; i += 1) {
+      if (results[i].leadKey && results[i].leadKey === scoredId) return i
+    }
+  }
+
+  // 2) 次强：website（保留原守卫——仅当至少一方具备 leadKey 上下文时才用 website 定位）
+  if (scoredWebsite) {
+    for (let i = 0; i < results.length; i += 1) {
+      const lead = results[i]
+      if (lead.website && lead.website === scoredWebsite && !(!scoredId && !lead.leadKey)) return i
+    }
+  }
+
+  // 3) 兜底：company（公司名可能漂移，仅作最后回退）
+  if (scoredCompany) {
+    for (let i = 0; i < results.length; i += 1) {
+      if (results[i].company && results[i].company === scoredCompany) return i
+    }
+  }
+
+  return -1
+}
+
+const sortByScoreThenOriginalOrder = (results: LeadSearchResult[]): LeadSearchResult[] => {
+  return results
+    .map((lead, index) => ({ lead, index }))
+    .sort((a, b) => {
+      const aScored = typeof a.lead.matchScore === 'number'
+      const bScored = typeof b.lead.matchScore === 'number'
+      if (aScored !== bScored) return aScored ? -1 : 1
+      if (aScored && bScored) {
+        const scoreDelta = (b.lead.matchScore || 0) - (a.lead.matchScore || 0)
+        if (scoreDelta !== 0) return scoreDelta
+      }
+      return a.index - b.index
+    })
+    .map(({ lead }) => lead)
+}
+
+const reinsertTopRanked = (results: LeadSearchResult[], topCount: number): LeadSearchResult[] => {
+  if (results.length === 0) return results
+  if (topCount <= 0) return results
+  const sorted = sortByScoreThenOriginalOrder(results)
+  const top = sorted.slice(0, topCount)
+  const topKeys = new Set(top.map((lead) => lead.leadKey ?? `${lead.website || ''}::${lead.company || ''}`))
+  const rest = results.filter((lead) => !topKeys.has(lead.leadKey ?? `${lead.website || ''}::${lead.company || ''}`))
+  return [...top, ...rest]
+}
+
 type LeadsState = {
   leads: LeadItem[]
   searchResults: LeadSearchResult[]
+  /** P1-3：以 leadKey 为键的搜索结果索引，使 setSearchResults 之外也能按 id 单点更新。 */
+  searchResultsByKey: Record<string, LeadSearchResult>
   hydrated: boolean
   teamClaimedDomains: Set<string>
   hydrateFromConfig: () => Promise<void>
@@ -292,6 +397,8 @@ type LeadsState = {
   updateLead: (id: number, patch: Partial<LeadItem>) => Promise<LeadItem[]>
   deleteLead: (id: number) => Promise<LeadItem[]>
   setSearchResults: (results: LeadSearchResult[]) => Promise<void>
+  /** P1-3：流式评分单点更新——只替换目标条目，避免每帧全量重建导致所有订阅者重渲染。 */
+  updateScoredLead: (scoredLead: Record<string, unknown>, opts?: { reposition?: boolean; topCount?: number }) => boolean
   refreshTeamClaimedDomains: () => Promise<void>
   refreshCollisionsForDomains: (domains: string[]) => Promise<void>
   isDomainClaimed: (domain: string) => boolean
@@ -300,6 +407,7 @@ type LeadsState = {
 export const useLeadsStore = create<LeadsState>((set, get) => ({
   leads: [],
   searchResults: [],
+  searchResultsByKey: {},
   hydrated: false,
   teamClaimedDomains: new Set<string>(),
   hydrateFromConfig: async () => {
@@ -349,8 +457,29 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
     return next
   },
   setSearchResults: async (results) => {
-    set({ searchResults: results })
+    const byKey: Record<string, LeadSearchResult> = {}
+    for (const lead of results) {
+      if (lead.leadKey) byKey[lead.leadKey] = lead
+    }
+    set({ searchResults: results, searchResultsByKey: byKey })
     probeLeadStore(get().leads.length)
+  },
+  updateScoredLead: (scoredLead, opts) => {
+    const { searchResults } = get()
+    const index = findScoredLeadIndex(searchResults, scoredLead)
+    if (index < 0) return false
+    const patched = mergeScoredLeadFields(searchResults[index], scoredLead)
+    const next = searchResults.slice()
+    next[index] = patched
+    const reposition = opts?.reposition !== false
+    const topCount = opts?.topCount ?? 8
+    const finalResults = reposition ? reinsertTopRanked(next, topCount) : next
+    const byKey: Record<string, LeadSearchResult> = {}
+    for (const lead of finalResults) {
+      if (lead.leadKey) byKey[lead.leadKey] = lead
+    }
+    set({ searchResults: finalResults, searchResultsByKey: byKey })
+    return true
   },
   refreshTeamClaimedDomains: async () => {
     try {

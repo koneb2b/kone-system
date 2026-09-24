@@ -14,6 +14,7 @@ import { registerSecureFeatureIpc } from './license-service'
 import { getPhysicalMachineId } from './license-service'
 import { extractDomain } from '../utils/domain'
 import type { ConfigStore } from './config-service'
+import * as crypto from 'crypto'
 
 /* ──────────────────────────────────────────────
  *  Types
@@ -41,6 +42,11 @@ export type DomainCollisionResult = {
   ownerLabel?: string
   ownerMachineId?: string
   domain: string
+  /* B-01 修复：区分"确实无碰撞"与"查询失败无法确认"。
+     unknown=true 表示因网络/权限/数据库错误无法确认防撞状态，
+     前端不得将其展示为"可安全触达"。 */
+  unknown?: boolean
+  error?: string
 }
 
 export type TeamLeadEntry = CloudLead & { id: string; created_at: string }
@@ -63,12 +69,30 @@ const getSupabaseConfig = (store: ConfigStore): SupabaseConfig => {
   return { url, anonKey }
 }
 
+/* P0-6 修复：Supabase REST 调用原先全部没有超时，网络挂起即永久 pending。
+   通过注入 global.fetch 一次性覆盖所有 .from()/.rpc()/鉴权请求，
+   无需在 9 个调用点逐一包裹 AbortSignal。 */
+const SUPABASE_TIMEOUT_MS = 15_000
+
+const supabaseFetchWithTimeout = (input: unknown, init?: RequestInit): Promise<Response> => {
+  const controller = new AbortController()
+  /* 请求超时定时器不得 unref()，否则在无其他句柄时事件循环会提前退出、超时永不触发。 */
+  const timer = setTimeout(() => controller.abort(), SUPABASE_TIMEOUT_MS)
+
+  const upstream = init?.signal
+  const anyFn = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any
+  const signal = upstream && typeof anyFn === 'function' ? anyFn([upstream, controller.signal]) : controller.signal
+
+  return fetch(input as Parameters<typeof fetch>[0], { ...(init || {}), signal }).finally(() => clearTimeout(timer))
+}
+
 const getClient = (store: ConfigStore): SupabaseClient => {
   const config = getSupabaseConfig(store)
   const hash = `${config.url}|${config.anonKey}`
   if (cachedClient && cachedConfigHash === hash) return cachedClient
   cachedClient = createClient(config.url, config.anonKey, {
     auth: { persistSession: false },
+    global: { fetch: supabaseFetchWithTimeout as unknown as typeof fetch },
   })
   cachedConfigHash = hash
   return cachedClient
@@ -81,23 +105,32 @@ const GOLD_FILTER_MIN_SCORE = 80
 
 const compactLead = (lead: Record<string, unknown>, machineId: string): Partial<CloudLead> => ({
   domain: extractDomain(String(lead.website || lead.domain || '')),
-  email: String(lead.email || '').trim().slice(0, 255) || undefined,
-  company: String(lead.company || '').trim().slice(0, 200) || undefined,
-  country: String(lead.country || '').trim().slice(0, 50) || undefined,
+  email:
+    String(lead.email || '')
+      .trim()
+      .slice(0, 255) || undefined,
+  company:
+    String(lead.company || '')
+      .trim()
+      .slice(0, 200) || undefined,
+  country:
+    String(lead.country || '')
+      .trim()
+      .slice(0, 50) || undefined,
   ai_tags: Array.isArray(lead.matchReasons) ? lead.matchReasons.map(String).slice(0, 5) : [],
   score: Math.round(Number(lead.matchScore || lead.score || 0)),
   owner_machine_id: machineId,
-  owner_label: String(lead.ownerLabel || '').trim().slice(0, 100) || undefined,
+  owner_label:
+    String(lead.ownerLabel || '')
+      .trim()
+      .slice(0, 100) || undefined,
   status: 'following',
 })
 
 /**
  * 防撞单检测：查询云端该 domain 是否已被其他设备认领
  */
-const checkDomainCollision = async (
-  store: ConfigStore,
-  domain: string,
-): Promise<DomainCollisionResult> => {
+const checkDomainCollision = async (store: ConfigStore, domain: string): Promise<DomainCollisionResult> => {
   const normalizedDomain = extractDomain(domain)
   const client = getClient(store)
   const machineId = getPhysicalMachineId(store)
@@ -110,7 +143,12 @@ const checkDomainCollision = async (
       .limit(1)
       .single()
 
-    if (error || !data) {
+    if (error) {
+      // B-01 修复：Supabase 返回错误时不能假设"无碰撞"——必须返回 unknown
+      return { collision: false, domain: normalizedDomain, unknown: true, error: error.message }
+    }
+    if (!data) {
+      // 查询成功但无匹配行 = 确实无碰撞
       return { collision: false, domain: normalizedDomain }
     }
     return {
@@ -120,8 +158,8 @@ const checkDomainCollision = async (
       domain: normalizedDomain,
     }
   } catch {
-    // 网络不可达 → 优雅降级
-    return { collision: false, domain: normalizedDomain }
+    // 网络不可达 → 不能假设无碰撞
+    return { collision: false, domain: normalizedDomain, unknown: true, error: '网络不可达，无法确认防撞状态' }
   }
 }
 
@@ -146,10 +184,7 @@ const syncLeadToCloud = async (
   try {
     const { error } = await client
       .from('leads')
-      .upsert(
-        { ...payload, updated_at: new Date().toISOString() },
-        { onConflict: 'domain,owner_machine_id' },
-      )
+      .upsert({ ...payload, updated_at: new Date().toISOString() }, { onConflict: 'domain,owner_machine_id' })
     if (error) {
       console.error('[Supabase] syncLeadToCloud failed:', error.message)
       return { synced: false, reason: `云端写入失败: ${error.message}` }
@@ -189,7 +224,10 @@ const fetchTeamLeads = async (
 const fetchTrackingStatus = async (
   store: ConfigStore,
   domains: string[],
-): Promise<{ tracking: Record<string, { isOpened: boolean; openedAt?: string; openedGeo?: string }>; offline: boolean }> => {
+): Promise<{
+  tracking: Record<string, { isOpened: boolean; openedAt?: string; openedGeo?: string }>
+  offline: boolean
+}> => {
   const client = getClient(store)
   if (domains.length === 0) return { tracking: {}, offline: false }
   try {
@@ -211,16 +249,11 @@ const fetchTrackingStatus = async (
 /**
  * 拉取所有已被团队其他成员认领的域名集合（防撞单墙用）
  */
-const fetchClaimedDomains = async (
-  store: ConfigStore,
-): Promise<{ domains: string[]; offline: boolean }> => {
+const fetchClaimedDomains = async (store: ConfigStore): Promise<{ domains: string[]; offline: boolean }> => {
   const client = getClient(store)
   const machineId = getPhysicalMachineId(store)
   try {
-    const { data, error } = await client
-      .from('leads')
-      .select('domain')
-      .neq('owner_machine_id', machineId)
+    const { data, error } = await client.from('leads').select('domain').neq('owner_machine_id', machineId)
     if (error) return { domains: [], offline: false }
     return { domains: (data || []).map((r: { domain: string }) => r.domain), offline: false }
   } catch {
@@ -250,10 +283,7 @@ const upsertLead = async (
   try {
     const { data, error } = await client
       .from('leads')
-      .upsert(
-        { ...payload, updated_at: new Date().toISOString() },
-        { onConflict: 'domain,owner_machine_id' },
-      )
+      .upsert({ ...payload, updated_at: new Date().toISOString() }, { onConflict: 'domain,owner_machine_id' })
       .select('id')
       .single()
     if (error) {
@@ -273,7 +303,7 @@ const upsertLead = async (
 const checkDomainCollisions = async (
   store: ConfigStore,
   domains: string[],
-): Promise<{ claimedDomains: string[]; offline: boolean }> => {
+): Promise<{ claimedDomains: string[]; offline: boolean; error?: string }> => {
   if (!domains.length) return { claimedDomains: [], offline: false }
   const client = getClient(store)
   const machineId = getPhysicalMachineId(store)
@@ -285,7 +315,7 @@ const checkDomainCollisions = async (
       .select('domain')
       .in('domain', normalized)
       .neq('owner_machine_id', machineId)
-    if (error) return { claimedDomains: [], offline: false }
+    if (error) return { claimedDomains: [], offline: true, error: error.message }
     const claimed = [...new Set((data || []).map((r: { domain: string }) => r.domain))]
     return { claimedDomains: claimed, offline: false }
   } catch {
@@ -299,14 +329,28 @@ const checkDomainCollisions = async (
  */
 const createCampaign = async (
   store: ConfigStore,
-  config: { leadId?: string; domain: string; email: string; templateId: string; sequenceStep?: number },
-): Promise<{ created: boolean; campaignId?: string; status?: string; error?: string }> => {
+  config: {
+    leadId?: string
+    domain: string
+    email: string
+    templateId: string
+    sequenceStep?: number
+    idempotencyKey?: string
+  },
+): Promise<{ created: boolean; campaignId?: string; status?: string; error?: string; duplicate?: boolean }> => {
   const client = getClient(store)
   const machineId = getPhysicalMachineId(store)
   const domain = extractDomain(config.domain)
   if (!domain || !config.email) {
     return { created: false, error: '缺少域名或邮箱' }
   }
+  // IDEM-01 修复：生成或使用提供的幂等键
+  const idempotencyKey =
+    config.idempotencyKey ||
+    crypto
+      .createHash('sha256')
+      .update(`${machineId}|${domain}|${config.email}|${config.templateId}|${config.sequenceStep || 1}`)
+      .digest('hex')
   try {
     const { data, error } = await client
       .from('campaigns')
@@ -318,10 +362,23 @@ const createCampaign = async (
         sequence_step: config.sequenceStep || 1,
         status: 'queued',
         owner_machine_id: machineId,
+        idempotency_key: idempotencyKey,
       })
       .select('id, status')
       .single()
     if (error) {
+      // IDEM-01：检测幂等键冲突（重复提交）——返回已有记录而非报错
+      if (error.code === '23505' || error.message.includes('duplicate')) {
+        const { data: existing } = await client
+          .from('campaigns')
+          .select('id, status')
+          .eq('owner_machine_id', machineId)
+          .eq('idempotency_key', idempotencyKey)
+          .single()
+        if (existing) {
+          return { created: false, campaignId: existing.id, status: existing.status || 'queued', duplicate: true }
+        }
+      }
       return { created: false, error: `任务写入失败: ${error.message}` }
     }
     return { created: true, campaignId: data?.id, status: data?.status || 'queued' }
@@ -343,17 +400,13 @@ const startRealtimeSubscription = (
   const client = getClient(store)
   realtimeChannel = client
     .channel('kone-leads-realtime')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'leads' },
-      (payload) => {
-        sendToRenderer({
-          eventType: payload.eventType,
-          new: payload.new || null,
-          old: payload.old || null,
-        })
-      },
-    )
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, (payload) => {
+      sendToRenderer({
+        eventType: payload.eventType,
+        new: payload.new || null,
+        old: payload.old || null,
+      })
+    })
     .subscribe()
 }
 
@@ -508,11 +561,21 @@ export const registerSupabaseHandlers = (
     store,
     licenseGuard,
     'cloud_send',
-    async (_event, payload: { leadId?: string; domain: string; email: string; templateId: string; sequenceStep?: number } | undefined | null) => {
+    async (
+      _event,
+      payload:
+        | { leadId?: string; domain: string; email: string; templateId: string; sequenceStep?: number }
+        | undefined
+        | null,
+    ) => {
       if (!payload || typeof payload !== 'object') {
         return { success: false, error: '创建发信任务参数无效', code: 400 }
       }
-      if (typeof payload.domain !== 'string' || typeof payload.email !== 'string' || typeof payload.templateId !== 'string') {
+      if (
+        typeof payload.domain !== 'string' ||
+        typeof payload.email !== 'string' ||
+        typeof payload.templateId !== 'string'
+      ) {
         return { success: false, error: 'domain、email 或 templateId 参数无效', code: 400 }
       }
       const result = await createCampaign(store, payload)

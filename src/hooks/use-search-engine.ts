@@ -1,5 +1,6 @@
 'use client'
 
+import { formatSearchErrorMessage } from '@/lib/error-message'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { useLeadsStore, LeadSearchResult } from '@/store/leads-store'
@@ -172,29 +173,14 @@ const sortSearchResults = (results: LeadSearchResult[]) => {
     .map(({ lead }) => lead)
 }
 
-const mergeTopRankedResults = (current: LeadSearchResult[], next: LeadSearchResult[], topCount = 8) => {
-  if (current.length <= 1) return next
-  const ranked = sortSearchResults(next)
-  const rankedTop = ranked.slice(0, topCount)
-  const rankedKeys = new Set(rankedTop.map((lead) => `${lead.website || ''}::${lead.company || ''}`))
-  const untouched = current.filter((lead) => !rankedKeys.has(`${lead.website || ''}::${lead.company || ''}`))
-  return [...rankedTop, ...untouched]
-}
-
-const formatErrorMessage = (error: unknown, fallback: string) => {
-  const message = error instanceof Error ? error.message : fallback
-  const normalized = message.toLowerCase()
-  if (/trial_expired|试用已结束/.test(normalized)) return '当前授权已失效，请先完成激活后继续使用。'
-  if (/403|401|授权|license|无权/.test(normalized)) return '当前授权状态异常，请联系顾问协助处理。'
-  if (/network|timeout|fetch|socket|econn|enet|数据流/.test(normalized)) return 'AI 数据流连接异常，请稍后重试。'
-  if (/config|base url|key|配置/.test(normalized)) return '当前配置未完成，暂时无法执行智能搜索。'
-  return '当前搜索服务暂不可用，请稍后重试或联系顾问。'
-}
+/* 原 mergeTopRankedResults（按 website::company 合并顶 K）已由 leads-store 的
+   `updateScoredLead` + `reinsertTopRanked` 取代（按 leadKey 定位，见 L0-4/F1），
+   该实现自 P1-3 起不再被调用，属死代码，移除以避免误导后续维护者。 */
 
 const buildPersistentErrorMessage = (error: unknown, fallback: string) => {
   const rawMessage = error instanceof Error ? error.message : String(error || fallback)
   const normalized = rawMessage.toLowerCase()
-  const friendlyMessage = formatErrorMessage(error, fallback)
+  const friendlyMessage = formatSearchErrorMessage(error, fallback)
 
   if (/trial_expired|试用已结束/.test(normalized)) return friendlyMessage
   if (/network|timeout|fetch|failed to fetch|socket|econn|enet|429|5\d\d/.test(normalized)) {
@@ -412,7 +398,10 @@ export function useSearchEngine(): UseSearchEngineReturn {
     }
   }, [])
 
-  // Reset page when filters change
+  // Reset page when filters change.
+  // 注意：不得把 `searchResults` 列入依赖——否则评分流式期间每帧（每条
+  // emitLeadScored）都会触发此处，使分页不断跳回第 1 页，用户永远无法翻页。
+  // 过滤条件变化才需要重置分页。
   useEffect(() => {
     setCurrentPage(1)
   }, [
@@ -423,7 +412,6 @@ export function useSearchEngine(): UseSearchEngineReturn {
     localDomainOnlyEnabled,
     highRelevanceOnlyEnabled,
     b2bRoleOnlyEnabled,
-    searchResults,
   ])
 
   // Clamp current page
@@ -476,55 +464,14 @@ export function useSearchEngine(): UseSearchEngineReturn {
       streamTotalRef.current = nextTotal
       setStreamTotal(nextTotal)
       if (!scoredLead || typeof scoredLead !== 'object') return
-      const currentResults = useLeadsStore.getState().searchResults
-      let hasMatch = false
-      const updatedResults = currentResults.map((lead) => {
-        /* L0-4/F1 修复：优先用 leadKey 稳定 UUID 匹配（贯穿搜索→管道→写回的关联键）。
-           旧逻辑仅按 website/company 字符串全等匹配——富化阶段公司名规范化差异
-           （空格/大小写/别名）会导致评分回填被静默丢弃（hasMatch=false）。 */
-        const scoredId =
-          typeof (scoredLead as Record<string, unknown>).id === 'string'
-            ? String((scoredLead as Record<string, unknown>).id)
-            : undefined
-        const sameLeadKey = Boolean(lead.leadKey && scoredId && lead.leadKey === scoredId)
-        const sameWebsite = lead.website && scoredLead.website && lead.website === scoredLead.website
-        const sameCompany = lead.company && scoredLead.company && lead.company === scoredLead.company
-        if (!sameLeadKey && !sameWebsite && !sameCompany) return lead
-        hasMatch = true
-        return {
-          ...lead,
-          matchScore: typeof scoredLead.matchScore === 'number' ? scoredLead.matchScore : lead.matchScore,
-          matchReasons: Array.isArray(scoredLead.matchReasons) ? scoredLead.matchReasons : lead.matchReasons,
-          riskFlags: Array.isArray(scoredLead.riskFlags) ? scoredLead.riskFlags : lead.riskFlags,
-          fallbackStatus:
-            scoredLead.fallbackStatus === 'social_blind_score' ? ('social_blind_score' as const) : lead.fallbackStatus,
-          scoreSource:
-            scoredLead.scoreSource === 'ai' || scoredLead.scoreSource === 'deterministic'
-              ? scoredLead.scoreSource
-              : lead.scoreSource,
-          opportunityScore:
-            scoredLead.opportunityScore && typeof scoredLead.opportunityScore === 'object'
-              ? scoredLead.opportunityScore
-              : lead.opportunityScore,
-          contact: typeof scoredLead.contact === 'string' ? scoredLead.contact : lead.contact,
-          contactTitle: typeof scoredLead.contactTitle === 'string' ? scoredLead.contactTitle : lead.contactTitle,
-          email: typeof scoredLead.email === 'string' ? scoredLead.email : lead.email,
-          phone: typeof scoredLead.phone === 'string' ? scoredLead.phone : lead.phone,
-          snippet: typeof scoredLead.snippet === 'string' ? scoredLead.snippet : lead.snippet,
-          inferredRole: typeof scoredLead.inferredRole === 'string' ? scoredLead.inferredRole : lead.inferredRole,
-          salesStrategy: typeof scoredLead.salesStrategy === 'string' ? scoredLead.salesStrategy : lead.salesStrategy,
-          dataSourceType: scoredLead.dataSourceType || lead.dataSourceType,
-          exhibitionFootprints: Array.isArray(scoredLead.exhibitionFootprints)
-            ? scoredLead.exhibitionFootprints
-            : lead.exhibitionFootprints,
-          customsData: scoredLead.customsData || lead.customsData,
-          decisionMakers: Array.isArray(scoredLead.decisionMakers) ? scoredLead.decisionMakers : lead.decisionMakers,
-          agentStatus: scoredLead.agentStatus || lead.agentStatus,
-        }
+      /* P1-3：单点增量更新——按 leadKey / website / company 定位目标条目，
+         仅替换该条目并维护顶 K 排序，避免每帧 O(n) 重建 + 引用替换
+         导致 10 处整对象订阅者全部重渲染。 */
+      const updated = useLeadsStore.getState().updateScoredLead(scoredLead as Record<string, unknown>, {
+        reposition: autoSortEnabled,
+        topCount: 8,
       })
-      if (!hasMatch) return
-      const nextResults = autoSortEnabled ? mergeTopRankedResults(currentResults, updatedResults, 8) : updatedResults
-      void setSearchResults(nextResults)
+      if (!updated) return
     })
 
     const unsubscribeComplete = onSearchStreamComplete(() => {

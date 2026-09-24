@@ -1,5 +1,6 @@
 'use client'
 
+import { formatErrorMessage, escapeCsvValue } from '@/lib/error-message'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Filter, Download, Mail, Phone, MessageCircle, Send, AlertCircle, ScanSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,16 +13,6 @@ import { getLeadUniqueKey, LeadItem, useLeadsStore } from '@/store/leads-store'
 import { getDataSourceMeta } from '@/lib/data-source-meta'
 import { saveExportFile, agentGetStatus, onAgentLeadStatusUpdated } from '@/lib/electron-api'
 import type { AgentStatus } from '@/shared/ipc-contracts'
-
-const formatErrorMessage = (error: unknown, fallback: string) => {
-  const message = error instanceof Error ? error.message : fallback
-  const normalized = message.toLowerCase()
-  if (/403|401|授权|license|无权/.test(normalized)) return `授权异常：${message}`
-  if (/network|timeout|fetch|socket|econn|enet/.test(normalized)) return `网络异常：${message}`
-  if (/write|file|export|downloads|path/.test(normalized)) return `文件写入异常：${message}`
-  if (/config|missing|base url|key|webhook/.test(normalized)) return `配置异常：${message}`
-  return `系统异常：${message}`
-}
 
 type Lead = LeadItem
 type UserRole = 'trial' | 'pro' | 'enterprise'
@@ -80,14 +71,6 @@ function MatchBar({
       </span>
     </div>
   )
-}
-
-const escapeCsvValue = (value: string | number | boolean | undefined | null) => {
-  const text = String(value ?? '')
-  if (/[",\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`
-  }
-  return text
 }
 
 /* P0-1 双管道读端：Agent 触达状态徽标（kone-PRD §0.7 要求前端消费线索态 agentStatus） */

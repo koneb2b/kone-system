@@ -1,5 +1,6 @@
 'use client'
 
+import { formatErrorMessage, escapeCsvValue } from '@/lib/error-message'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Search,
@@ -67,16 +68,6 @@ type ReplyCoachAnalysis = {
 const getReplyCoachAnalysis = (lead: LeadItem): ReplyCoachAnalysis | null => {
   const entry = lead.analysisCache?.reply_coach?.replyCoaching
   return entry && typeof entry === 'object' ? (entry as ReplyCoachAnalysis) : null
-}
-
-const formatErrorMessage = (error: unknown, fallback: string) => {
-  const message = error instanceof Error ? error.message : fallback
-  const normalized = message.toLowerCase()
-  if (/403|401|授权|license|无权/.test(normalized)) return `授权异常：${message}`
-  if (/network|timeout|fetch|socket|econn|enet/.test(normalized)) return `网络异常：${message}`
-  if (/write|file|export|downloads|path/.test(normalized)) return `文件写入异常：${message}`
-  if (/config|missing|base url|key/.test(normalized)) return `配置异常：${message}`
-  return `系统异常：${message}`
 }
 
 const formatAnalysisActionError = (error: unknown, fallback: string) => {
@@ -250,14 +241,6 @@ function MatchBar({ score }: { score?: number | null }) {
       <span className={`text-xs font-semibold tabular-nums ${textColor}`}>{score}%</span>
     </div>
   )
-}
-
-const escapeCsvValue = (value: string | number | boolean | undefined | null) => {
-  const text = String(value ?? '')
-  if (/[",\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`
-  }
-  return text
 }
 
 const serializeGeneratedStrategies = (strategies?: Record<string, string>) => {

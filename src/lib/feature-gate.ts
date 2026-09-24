@@ -87,9 +87,37 @@ const FEATURE_ALIASES: Record<string, string[]> = {
   search: ['search_basic'],
   analysis: ['analysis_basic'],
   export: ['lead_export'],
-  basic: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot'],
-  premium: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot', 'cloud_send', 'team_collaboration'],
-  enterprise: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'export_full', 'local_autopilot', 'cloud_send', 'team_collaboration'],
+  basic: [
+    'search_basic',
+    'search_deep',
+    'analysis_basic',
+    'analysis_advanced',
+    'lead_export',
+    'export_full',
+    'local_autopilot',
+  ],
+  premium: [
+    'search_basic',
+    'search_deep',
+    'analysis_basic',
+    'analysis_advanced',
+    'lead_export',
+    'export_full',
+    'local_autopilot',
+    'cloud_send',
+    'team_collaboration',
+  ],
+  enterprise: [
+    'search_basic',
+    'search_deep',
+    'analysis_basic',
+    'analysis_advanced',
+    'lead_export',
+    'export_full',
+    'local_autopilot',
+    'cloud_send',
+    'team_collaboration',
+  ],
 }
 
 let cachedStatus: LicenseStatusLike | null = null
@@ -106,7 +134,9 @@ const normalizeFeatureSet = (features: string[] = [], plan?: string) => {
     aliases.forEach((alias) => normalized.add(alias))
   }
 
-  const normalizedPlan = String(plan || '').trim().toLowerCase()
+  const normalizedPlan = String(plan || '')
+    .trim()
+    .toLowerCase()
   if (normalizedPlan === 'enterprise') {
     normalized.add('enterprise')
     FEATURE_ALIASES.enterprise.forEach((alias) => normalized.add(alias))
@@ -125,7 +155,9 @@ const normalizeFeatureSet = (features: string[] = [], plan?: string) => {
 }
 
 const derivePlan = (featureSet: Set<string>, claimedPlan?: string): LicensePlan => {
-  const normalizedPlan = String(claimedPlan || '').trim().toLowerCase()
+  const normalizedPlan = String(claimedPlan || '')
+    .trim()
+    .toLowerCase()
   if (normalizedPlan === 'enterprise' || normalizedPlan === 'trial' || normalizedPlan === 'basic') {
     return normalizedPlan
   }
@@ -135,7 +167,12 @@ const derivePlan = (featureSet: Set<string>, claimedPlan?: string): LicensePlan 
   if (featureSet.has('premium') || featureSet.has('cloud_send') || featureSet.has('team_collaboration')) {
     return 'premium'
   }
-  if (featureSet.has('basic') || featureSet.has('search_deep') || featureSet.has('analysis_advanced') || featureSet.has('export_full')) {
+  if (
+    featureSet.has('basic') ||
+    featureSet.has('search_deep') ||
+    featureSet.has('analysis_advanced') ||
+    featureSet.has('export_full')
+  ) {
     return 'basic'
   }
   if (featureSet.has('search_basic') || featureSet.has('analysis_basic') || featureSet.has('lead_export')) {
@@ -171,8 +208,10 @@ const toFeatureGateState = (license: LicenseStatusLike | null | undefined): Feat
     plan,
     canAccess,
     getSearchLimit: () => ({
-      cooldownMs: canAccess('search_deep') || plan === 'enterprise' || plan === 'basic' || plan === 'premium' ? 0 : 15000,
-      maxResults: canAccess('search_deep') || plan === 'enterprise' || plan === 'basic' || plan === 'premium' ? 100 : 10,
+      cooldownMs:
+        canAccess('search_deep') || plan === 'enterprise' || plan === 'basic' || plan === 'premium' ? 0 : 15000,
+      maxResults:
+        canAccess('search_deep') || plan === 'enterprise' || plan === 'basic' || plan === 'premium' ? 100 : 10,
       allowDeepAnalysis: canAccess('search_deep') || plan === 'basic' || plan === 'premium' || plan === 'enterprise',
     }),
     getExportLimit: () => {

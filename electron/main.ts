@@ -19,8 +19,9 @@ import { registerAgentHandlers } from './services/agent-service'
 import { registerDnsHandlers } from './services/dns-service'
 import { registerProviderHandlers } from './services/provider-service'
 import { createMainWindow } from './services/window-service'
-import { IPC_CHANNELS } from './ipc/channels'
-import { registry } from './ipc/registry'
+import { IPC_CHANNELS, collectInvokeChannels } from './ipc/channels'
+import { registry, registerIpc } from './ipc/registry'
+import { autopilotSyncLifecycleContract } from './ipc/contracts/autopilot.contract'
 import type { AutopilotLifecycle } from '../src/shared/ipc-contracts'
 
 import { initCrashReporter } from './services/crash-reporter'
@@ -88,9 +89,10 @@ const registerIpcHandlers = () => {
   registerDnsHandlers(ipcMain, store)
   registerProviderHandlers(ipcMain, store)
 
-  // P0-4：注册中心网关接通。当前生产 handler 仍走 register*Handlers 直挂 ipcMain，
-  // registry 仅绑定已通过 registerIpc() 登记的通道（迁移过程中逐步增加）。
-  // 迁移完成后 assertAllRegistered 将作为启动门禁生效。
+  // P0-4/收口：注册中心网关接通。迁移已完成——全部 invoke 通道均经 `registerIpc()` 登记进
+  // 注册中心（含 20 处 Fail-Closed 包装器以 `skipAttach` 治理登记，真实绑定仍由包装器自己完成），
+  // plain 直挂已清零；此处把登记的通道统一绑定（按 ipcMain 实例幂等）到真实 ipcMain。
+  // 启动门禁 `assertAllRegistered()` 在 `whenReady()` 末尾、本函数执行完之后触发。
   registry.attach(ipcMain)
 }
 
@@ -212,20 +214,34 @@ app
     createTray(mainWindow)
     bindWindowCloseToTray(mainWindow)
     initAutoUpdater()
-    ipcMain.handle(IPC_CHANNELS.AUTOPILOT.SYNC_STATE, (_event, lifecycle: unknown) => {
-      if (
-        lifecycle === 'idle' ||
-        lifecycle === 'running' ||
-        lifecycle === 'paused' ||
-        lifecycle === 'completed' ||
-        lifecycle === 'error'
-      ) {
-        autopilotLifecycle = lifecycle
-        refreshTrayMenu(mainWindow)
-        return { success: true, data: null }
-      }
-      return { success: false, error: 'Invalid autopilot lifecycle', code: 400 }
-    })
+    // 第四批迁移收口：最后一处 plain 直挂。契约 autopilotSyncLifecycleContract 规定请求为
+    // { lifecycle } 对象（与 v2 测试一致）；preload 负责把公开 API 的 lifecycle 字符串包成
+    // 该对象，主进程在此解包，从而既保持契约真值、又不破坏渲染层调用形态。
+    registerIpc(
+      IPC_CHANNELS.AUTOPILOT.SYNC_STATE,
+      autopilotSyncLifecycleContract,
+      async (_event: unknown, payload: unknown) => {
+        const lifecycle = (payload as { lifecycle?: string } | undefined)?.lifecycle
+        if (
+          lifecycle === 'idle' ||
+          lifecycle === 'running' ||
+          lifecycle === 'paused' ||
+          lifecycle === 'completed' ||
+          lifecycle === 'error'
+        ) {
+          autopilotLifecycle = lifecycle
+          refreshTrayMenu(mainWindow)
+          return { success: true, data: null }
+        }
+        return { success: false, error: 'Invalid autopilot lifecycle', code: 400 }
+      },
+    )
+
+    // P0-4/收口：启动门禁。所有 invoke 通道（含经 Fail-Closed 包装器治理登记的 20 处）均已在上方
+    // registerIpcHandlers() + SYNC_STATE 登记进注册中心。`collectInvokeChannels()` 已排除仅推送通道，
+    // 故此处断言全部 invoke 通道均已注册；断言通过后锁定注册中心，禁止运行期新增注册（防回归）。
+    registry.assertAllRegistered(collectInvokeChannels())
+    registry.lock()
   })
   .catch((error) => {
     console.error('[Main] App startup failed:', error)
@@ -253,4 +269,10 @@ app.on('activate', async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  /* P0-5：退出前强制同步落盘，确保防抖窗口内尚未写盘的配置变更不丢失。 */
+  try {
+    store.flushSync?.()
+  } catch (error) {
+    console.error('[Config] 退出前落盘失败:', error instanceof Error ? error.message : String(error))
+  }
 })

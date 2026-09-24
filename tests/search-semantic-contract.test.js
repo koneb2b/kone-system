@@ -27,7 +27,19 @@ test('search stage payload exposes structured degraded semantic metadata (Analys
   const searchHook = read('src', 'hooks', 'use-search-engine.ts')
   assert.match(searchHook, /isAiSkippedStageMessage\(payload\?\.message\)/)
   assert.match(searchEngine, /aiScoringSkipped/)
-  assert.match(searchEngine, /未启用 AI 评分/)
+
+  // 用户可见的「未启用 AI 评分」降级文案随卡片组件抽离迁移至 `search-result-card.tsx`：
+  // `search-engine.tsx` 负责把 `aiScoringSkipped` 透传给 `SearchResultCard`，卡片再按
+  // `settlementMeta.state === 'ai_skipped'` 渲染该文案。此处对"标志 → 文案"整条链路都断言，
+  // 既避免断言停留在已抽离走的旧文件上，也防止透传被摘除后文案静默失效。
+  const searchResultCard = read('src', 'components', 'search', 'search-result-card.tsx')
+  assert.match(searchResultCard, /未启用 AI 评分/)
+  assert.match(searchResultCard, /getLeadSettlementMeta\(lead, \{ isStreaming, aiScoringSkipped \}\)/)
+  assert.match(
+    searchEngine,
+    /aiScoringSkipped=\{aiScoringSkipped\}/,
+    'search-engine 应将 aiScoringSkipped 透传给 SearchResultCard',
+  )
 })
 
 test('search result IDs use stable hashing via lead-mappers createNumericLeadId', () => {

@@ -11,10 +11,12 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════
-  # LAYER 1: Unit Tests (fast, no Electron needed)
+  # LAYER 0: Spec & IPC consistency (no build needed, fastest signal)
+  # 落实 ARCH-STANDARDS §16.5：broken references / stale function names /
+  # duplicate normative definitions / schema drift 必须让 CI 判红。
   # ═══════════════════════════════════════════════
-  unit:
-    name: 'Layer 1 — Unit Tests'
+  consistency:
+    name: 'Layer 0 — Spec & IPC Consistency'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +25,25 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
       - run: npm ci
-      - run: npm run test:unit
+      - run: npm run verify:consistency
         timeout-minutes: 3
+
+  # ═══════════════════════════════════════════════
+  # LAYER 1: Unit Tests (fast, no Electron needed)
+  # ═══════════════════════════════════════════════
+  unit:
+    name: 'Layer 1 — Unit Tests'
+    runs-on: windows-latest
+    needs: [consistency]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit
+        timeout-minutes: 10
 
   # ═══════════════════════════════════════════════
   # LAYER 2: IPC Contract Tests (needs tsc build)
@@ -42,7 +61,7 @@ jobs:
       - run: npm ci
       - run: npm run build:electron:dev
       - run: node --test tests/ipc-contract-sweep.test.ts tests/ipc-contracts-v2.test.ts
-        timeout-minutes: 3
+        timeout-minutes: 5
 
   # ═══════════════════════════════════════════════
   # LAYER 3: Authorization & Environment Tests
@@ -60,7 +79,33 @@ jobs:
       - run: npm ci
       - run: npm run build:electron:dev
       - run: node --test tests/license-gateway.test.js tests/env-isolation.test.ts tests/dev-bypass.test.ts tests/e2e/permission-lock.test.js
+        timeout-minutes: 5
+
+  # ═══════════════════════════════════════════════
+  # QUALITY: Lint, format check, and renderer build
+  # ═══════════════════════════════════════════════
+  quality:
+    name: 'Quality — Typecheck & Lint & Format & Vite Build'
+    runs-on: windows-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      # 类型检查：vite build 用 esbuild 只做转译、不做类型检查，
+      # 因此"漏导入 → 运行时 ReferenceError"这类缺陷不会让构建变红。
+      # 本步骤是该类缺陷的唯一 CI 拦截点（src 侧），必须保留。
+      - run: npm run typecheck
+        timeout-minutes: 5
+      - run: npm run lint
+        timeout-minutes: 5
+      - run: npm run format
         timeout-minutes: 3
+      - run: npx vite build
+        timeout-minutes: 8
 
   # ═══════════════════════════════════════════════
   # BUILD: Electron tsc compilation check
@@ -77,18 +122,77 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run build:electron:dev
-        timeout-minutes: 5
+        timeout-minutes: 8
 
   # ═══════════════════════════════════════════════
-  # GATE: All layers must pass
+  # RELEASE EVIDENCE: packaged smoke (clean-machine Agent/delivery behaviour)
+  # 仅在实际推送（非 PR）时执行，避免 PR 成本过高；但一旦执行即必须为 success。
+  # ═══════════════════════════════════════════════
+  packaged:
+    name: 'Release — Packaged Smoke'
+    runs-on: windows-latest
+    needs: [build, quality]
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:smoke
+        timeout-minutes: 30
+
+  # ═══════════════════════════════════════════════
+  # RELEASE EVIDENCE: security audit on the packaged artifact
+  # ═══════════════════════════════════════════════
+  security:
+    name: 'Release — Security Audit'
+    runs-on: windows-latest
+    needs: [packaged]
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:security-audit
+        timeout-minutes: 30
+
+  # ═══════════════════════════════════════════════
+  # GATE: All layers must pass.
+  # 任何非 success（含 failure / cancelled / skipped / timed_out /
+  # action_required / startup_failure / stale / 空结果）一律判红。
   # ═══════════════════════════════════════════════
   gate:
     name: 'Gate — All Clear'
     runs-on: windows-latest
-    needs: [build]
+    needs: [consistency, unit, ipc, auth, build, quality, packaged, security]
     if: always()
     steps:
-      - run: |
-          $result = "${{ needs.unit.result }} ${{ needs.ipc.result }} ${{ needs.auth.result }} ${{ needs.build.result }}"
-          if ($result -match 'failure|cancelled') { exit 1 }
+      - name: Evaluate release gate
+        shell: pwsh
+        run: |
+          $expected = @('consistency', 'unit', 'ipc', 'auth', 'build', 'quality')
+          if ('${{ github.event_name }}' -ne 'pull_request') {
+            $expected += @('packaged', 'security')
+          }
+          $nonSuccess = @(
+            'failure', 'cancelled', 'skipped', 'timed_out', 'action_required',
+            'startup_failure', 'cardinality_violation', 'stale', ''
+          )
+          $failed = @()
+          foreach ($jobName in $expected) {
+            $status = "${{ needs.${jobName}.result }}"
+            if ($nonSuccess -contains $status) {
+              Write-Host "❌ ${jobName} result: '${status}'"
+              $failed += "${jobName}=${status}"
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Host "❌ GATE FAILED: $($failed -join ', ')"
+            exit 1
+          }
           Write-Host "✅ ALL LAYERS PASSED"

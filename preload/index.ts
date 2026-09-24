@@ -48,7 +48,9 @@ const electronAPI: ElectronApi = {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.AUTOPILOT.GET_STATE),
     setState: (payload) => ipcRenderer.invoke(IPC_CHANNELS.AUTOPILOT.SET_STATE, payload),
     clearLegacy: () => ipcRenderer.invoke(IPC_CHANNELS.AUTOPILOT.CLEAR_LEGACY),
-    syncLifecycle: (lifecycle) => ipcRenderer.invoke(IPC_CHANNELS.AUTOPILOT.SYNC_STATE, lifecycle),
+    // 包装为 { lifecycle } 对象以匹配 autopilotSyncLifecycleContract 请求契约
+    // （preload 的职责即构造线协议形态；渲染层公开 API 仍传原始 lifecycle 字符串）。
+    syncLifecycle: (lifecycle) => ipcRenderer.invoke(IPC_CHANNELS.AUTOPILOT.SYNC_STATE, { lifecycle }),
   },
   secret: {
     set: (payload: SecretSetRequest) => ipcRenderer.invoke(IPC_CHANNELS.SECRET.SET, payload),
@@ -71,8 +73,11 @@ const electronAPI: ElectronApi = {
   },
   onSearchStage: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-      if (payload && typeof payload === 'object') {
+      // DATA-08 修复：流式事件校验增强——拒绝非对象 payload 并记录警告
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
         callback(payload as any)
+      } else {
+        console.warn('[Preload] onSearchStage: 丢弃非法 payload', typeof payload)
       }
     }
     ipcRenderer.on(IPC_CHANNELS.SEARCH.STAGE, listener)

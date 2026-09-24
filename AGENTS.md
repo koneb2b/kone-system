@@ -9,7 +9,7 @@ This repository uses Oh My OpenCode Flow Engineering as a mandatory working mode
 
 ## Mandatory Document Chain
 
-Before analyzing, planning, or modifying existing logic, every agent must read these 8 documents in order. `kone-PRD.md` is the global authoritative requirements source (全局唯一权威需求主源头):
+Before analyzing, planning, or modifying existing logic, every agent must read these 10 documents in order. `kone-PRD.md` is the global authoritative requirements source (全局唯一权威需求主源头):
 
 1. `kone-PRD.md` — V1.3 全局唯一权威需求主源头 (Global Authoritative Requirements Source)
 2. `PROJECT-PRD.md`
@@ -19,8 +19,12 @@ Before analyzing, planning, or modifying existing logic, every agent must read t
 6. `.opencode/agents/system-blueprint.md`
 7. `.opencode/agents/build-agent.md`
 8. `V1.2-商业版交付与运维手册.md`
+9. `PROVIDER-CAPABILITY.md` — Provider 真实能力与宣传口径唯一事实源
+10. `CLOUD-COLLABORATION-DELIVERY.md` — 云端协同/投递/抑制/Webhook 领域唯一事实源
 
 Skipping any document in this chain is a protocol violation.
+
+> 说明：第 9、10 项为 2026-09-22 补入。此前本链仅列 8 份，却要求"在强制文档链之后"另行阅读云端协同文档，造成链外补充与治理面不一致。任何涉及 Provider 能力或云端投递的变更，必须先读第 9、10 项。
 
 ## Plan-First Rule
 
@@ -107,11 +111,25 @@ Agent 执行管道 (agent-pipeline.ts)
 - Provider 只负责采集与归一化，不得写 Zustand、不得发送 IPC、不得保存线索。
 - `google_maps`、`google_organic`、AnySearch、`linkedin_search`、`customs_shipment`、`trade_show`、`yellow_pages`、`facebook_search` 的失败必须互相隔离，任何单源失败不得中断整轮搜索。
 
+## Local-Cloud Collaboration Change Protocol
+
+For any change involving approval, cloud handoff, delivery, suppression, webhook, reply, quota, events, workspace access or cross-device status:
+
+1. Read `CLOUD-COLLABORATION-DELIVERY.md` after the mandatory document chain and before planning.
+2. Treat `kone-PRD.md §5.1` as product truth and the cloud collaboration document as domain truth. Do not copy field-level rules into unrelated files.
+3. Update contracts before implementation: local IPC and cloud API/Event Schema are separate versioned boundaries.
+4. The implementation plan must list affected SSOTs, backward compatibility, migration, rollback, negative authorization tests, event/idempotency tests and acceptance evidence.
+5. A high score, staged Agent task or `cloud_send` feature never authorizes delivery. Approval plus server-side second-gate success is mandatory.
+6. Do not write cloud delivery semantics into existing `LeadStatus` or `AgentStatus` strings without an explicit migration and compatibility layer.
+7. UI may show success only after a verified local action or authoritative cloud event. Optimistic send/delivery success is forbidden.
+8. Any non-success CI result, including `timed_out`, `action_required` or missing result, must fail the release gate.
+9. The change is incomplete until documentation, schema, tests, packaged smoke, release evidence and rollback conditions are aligned.
+
 ## Pre-Commit Hygiene
 
 - Before committing, separate source/test/document changes from generated or local-only artifacts.
 - Do not stage ignored runtime residue such as `.tmp-*`, `.playwright-mcp/`, `.codenomad/`, `.vite/`, `dist/`, logs, or accidental Windows redirection files like `$null`.
-- `dist-electron/` and packaged smoke artifacts may be tracked in the current repository history; changing that policy requires an explicit cleanup task rather than an incidental feature commit.
+- `dist-electron/` and packaged build artifacts are **not tracked** in the current repository history (`.gitignore` excludes `dist-electron/`, `dist/` and `release/`); `tests/packaged-smoke-report.json` and `tests/packaged-smoke.png` are the tracked exceptions. Changing that policy requires an explicit cleanup task rather than an incidental feature commit.
 - If tests or smoke scripts update tracked artifacts such as `tests/packaged-smoke-report.json` or `tests/packaged-smoke.png`, review whether those artifact diffs are intentional before staging.
 
 ## Secrets Whitelist
@@ -146,7 +164,7 @@ Agent 执行管道 (agent-pipeline.ts)
 - `AgentTask` is the minimum work unit; tasks are queued per Agent type.
 - Agent execution updates both `AgentState` (memory Map → `AGENT.STATUS_CHANGED` IPC) and `agentStatus` (persistent → `LeadItem.agentStatus`).
 - The dual-channel write-back is mandatory: runtime state for UI panel, persistent status for lead timeline.
-- Daily limits must be enforced per Agent (WhatsApp: 3-5/day, LinkedIn: determined by session, Email: 20/day for Basic).
+- Daily limits must be enforced per Agent (WhatsApp: 3-5/day, LinkedIn: ≤30 profile view/day, Email: 20/day for Basic). 数值以 `kone-PRD.md §零.3` 宪法常量表为唯一权威源，实现须优先读取 `userConfig.agentDailyLimits`，仅在缺失时回落默认值。
 - Agent execution must not fake completion. Real external effects or real platform state changes are required before incrementing `completedCount` or writing `agentStatus`.
 
 ### Provider Expansion Priority

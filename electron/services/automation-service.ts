@@ -8,6 +8,8 @@
  */
 
 import { IPC_CHANNELS } from '../ipc/channels'
+import { registerIpc, registry } from '../ipc/registry'
+import { automationStartCampaignContract } from '../ipc/contracts/automation.contract'
 import { ensureTrialAccess, registerSecureFeatureIpc } from './license-service'
 import { getPhysicalMachineId } from './license-service'
 import { extractDomain } from '../utils/domain'
@@ -28,6 +30,8 @@ export type EmailVerifyResult = {
 
 export type CampaignStartResult = {
   triggered: boolean
+  /* B-02 修复：区分"组装成功"与"真实推送至云端 Webhook"。 */
+  pushed?: boolean
   accepted?: number
   rejected?: number
   error?: string
@@ -92,13 +96,36 @@ export const buildVerificationQueues = (results: EmailVerifyResult[]): Verificat
   return queues
 }
 
-const verifyEmailsBatch = async (emails: string[]): Promise<EmailVerifyResult[]> => {
-  // 串行执行，避免 SMTP 端口爆发
-  const results: EmailVerifyResult[] = []
-  for (const email of emails.slice(0, 50)) {
-    results.push(await verifyEmail(email))
+/* P1-11：邮箱验证并发度。原实现完全串行，单邮箱最坏约 17.5s
+   （SMTP 8s + 灰名单回退 1.5s + catch-all 探测 8s），50 条最坏 >14 分钟，
+   期间该 IPC 永不返回。改为**有界**并发：既避免 SMTP 端口爆发，
+   又把最坏耗时压到约 1/4。可用环境变量覆盖以便测试。 */
+const EMAIL_VERIFY_CONCURRENCY = Math.max(1, Number(process.env.KONE_EMAIL_VERIFY_CONCURRENCY) || 4)
+
+/** 有界并发映射：结果顺序与入参严格对齐（按索引回填），不改变批处理语义。 */
+export const mapWithConcurrency = async <T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const runner = async () => {
+    for (;;) {
+      const index = cursor
+      if (index >= items.length) return
+      cursor += 1
+      results[index] = await worker(items[index])
+    }
   }
+  const runnerCount = Math.max(1, Math.min(limit, items.length || 1))
+  await Promise.all(Array.from({ length: runnerCount }, () => runner()))
   return results
+}
+
+const verifyEmailsBatch = async (emails: string[]): Promise<EmailVerifyResult[]> => {
+  const targets = emails.slice(0, 50)
+  return mapWithConcurrency(targets, EMAIL_VERIFY_CONCURRENCY, (email) => verifyEmail(email))
 }
 
 /* ──────────────────────────────────────────────
@@ -288,6 +315,7 @@ const triggerN8nWorkflow = async (
     console.error('[Automation] 渐进式模式拦截成功. 目标线索数:', compactLeads.length)
     return {
       triggered: true,
+      pushed: false,
       accepted: compactLeads.length,
       rejected: leads.length - compactLeads.length,
       message: `渐进式开发模式：数据组装成功，云端 Webhook 暂未配置，已取消推送；已拦截 ${leads.length - compactLeads.length} 条低分或无邮箱线索`,
@@ -308,6 +336,7 @@ const triggerN8nWorkflow = async (
     if (response.ok) {
       return {
         triggered: true,
+        pushed: true,
         accepted: compactLeads.length,
         rejected: leads.length - compactLeads.length,
         message: `已成功同步 ${compactLeads.length} 条线索至云端发送队列，已拦截 ${leads.length - compactLeads.length} 条低分或无邮箱线索`,
@@ -348,9 +377,11 @@ export const registerAutomationHandlers = (
   )
 
   // automation:start-campaign — premium only
-  ipcMain.handle(
+  registerIpc(
     IPC_CHANNELS.AUTOMATION.START_CAMPAIGN,
-    async (_event, payload: { leads: Array<Record<string, unknown>>; templateId?: string }) => {
+    automationStartCampaignContract,
+    async (_event: unknown, payload: unknown) => {
+      const p = (payload || {}) as { leads: Array<Record<string, unknown>>; templateId?: string }
       const authorizationLevel = resolveAuthorizationLevel(store, licenseGuard)
       const trialDenied = ensureTrialAccess(store, licenseGuard, '自动化发信')
       if (trialDenied) {
@@ -370,11 +401,17 @@ export const registerAutomationHandlers = (
       }
 
       try {
-        const result = await triggerN8nWorkflow(store, payload?.leads || [], payload?.templateId)
+        const result = await triggerN8nWorkflow(store, p?.leads || [], p?.templateId)
         return { success: true, data: result }
       } catch (error: any) {
         return { success: false, error: error?.message || '自动化发信失败', code: error?.code }
       }
     },
   )
+
+  /* 自绑定兼容层（与 agent-service / autopilot-state-service / auth-service /
+     sandbox-service 同构）：历史 e2e / 独立测试直接调用本函数而未显式 attach，
+     迁移后 START_CAMPAIGN 需落到 ipcMain 才能被 getHandler 取到。attach 按
+     ipcMain 实例幂等，主进程末尾的 attach 不会重复绑定。 */
+  registry.attach(ipcMain)
 }

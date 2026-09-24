@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
   template_id     TEXT NOT NULL DEFAULT 'default',
   sequence_step   INTEGER NOT NULL DEFAULT 1,
 
+  -- IDEM-01 幂等键：防止重复提交产生重复发送任务
+  idempotency_key  TEXT,
+
   -- 状态机
   status          TEXT NOT NULL DEFAULT 'queued'
                   CHECK (status IN ('queued', 'sending', 'sent', 'opened', 'replied', 'bounced', 'unsubscribed')),
@@ -78,6 +81,11 @@ CREATE INDEX IF NOT EXISTS idx_campaigns_lead
 
 CREATE INDEX IF NOT EXISTS idx_campaigns_domain
   ON campaigns (domain);
+
+-- IDEM-01 幂等键唯一约束：同设备同幂等键只允许一条 campaign
+CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_idempotency
+  ON campaigns (owner_machine_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_campaigns_status
   ON campaigns (status);
@@ -116,18 +124,16 @@ CREATE INDEX IF NOT EXISTS idx_warmup_account
 CREATE INDEX IF NOT EXISTS idx_warmup_date
   ON warmup_stats (stat_date DESC);
 
--- 4. RLS (Row Level Security) — 基础策略
--- 注意：使用 anon key 时，需要开放读写权限给 anon 角色
--- 生产环境应替换为基于 JWT claims 的精细策略
+-- 4. RLS (Row Level Security) — SEC-02 修复：租户隔离
+-- 注意：anon 全量策略已移除，详见 scripts/supabase-rls-migration.sql
+-- 新建数据库时应先执行 supabase-schema.sql 再执行 supabase-rls-migration.sql
 
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE warmup_stats ENABLE ROW LEVEL SECURITY;
 
--- 允许 anon 角色全量读写（开发/MVP 阶段）
-CREATE POLICY "leads_anon_all" ON leads FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "campaigns_anon_all" ON campaigns FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "warmup_stats_anon_all" ON warmup_stats FOR ALL TO anon USING (true) WITH CHECK (true);
+-- SEC-02: anon 全量策略已移除——不再创建 leads_anon_all / campaigns_anon_all / warmup_stats_anon_all
+-- 组织级 RLS 策略详见 scripts/supabase-rls-migration.sql
 
 -- 5. updated_at 自动更新触发器
 CREATE OR REPLACE FUNCTION update_updated_at_column()

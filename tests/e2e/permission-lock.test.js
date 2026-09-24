@@ -58,24 +58,31 @@ const registerSecureFeatureIpcMock = (
   handler,
   operationName = channel,
 ) => {
-  registerSecureIpcMock(ipcMain, channel, store, licenseGuard, async (event, ...args) => {
-    try {
-      if (Array.isArray(featureName)) {
-        licenseGuard.requireAnyFeature(featureName, operationName)
-      } else {
-        licenseGuard.requireFeature(featureName, operationName)
+  registerSecureIpcMock(
+    ipcMain,
+    channel,
+    store,
+    licenseGuard,
+    async (event, ...args) => {
+      try {
+        if (Array.isArray(featureName)) {
+          licenseGuard.requireAnyFeature(featureName, operationName)
+        } else {
+          licenseGuard.requireFeature(featureName, operationName)
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error: 'FEATURE_DENIED',
+          message: String(error?.message || `当前授权无权执行${operationName}`),
+          operationName,
+          code: Number(error?.code) || 403,
+        }
       }
-    } catch (error) {
-      return {
-        success: false,
-        error: 'FEATURE_DENIED',
-        message: String(error?.message || `当前授权无权执行${operationName}`),
-        operationName,
-        code: Number(error?.code) || 403,
-      }
-    }
-    return handler(event, ...args)
-  }, operationName)
+      return handler(event, ...args)
+    },
+    operationName,
+  )
 }
 
 const licenseServiceMock = {
@@ -197,7 +204,10 @@ Module._load = function mockElectron(request, parent, isMain) {
   return originalLoad.call(this, request, parent, isMain)
 }
 
-const { registerSecureIpc, registerSecureFeatureIpc } = require('../../dist-electron/electron/services/license-service.js')
+const {
+  registerSecureIpc,
+  registerSecureFeatureIpc,
+} = require('../../dist-electron/electron/services/license-service.js')
 const { registerSearchHandlers } = require('../../dist-electron/electron/services/search-service.js')
 const { registerAutomationHandlers } = require('../../dist-electron/electron/services/automation-service.js')
 const { registerSupabaseHandlers } = require('../../dist-electron/electron/services/supabase-service.js')
@@ -232,10 +242,7 @@ const createStoreMock = (values = {}) => ({
   },
 })
 
-const createLicenseGuardMock = ({
-  claims = null,
-  featureError = null,
-} = {}) => ({
+const createLicenseGuardMock = ({ claims = null, featureError = null } = {}) => ({
   getStoredClaims() {
     return claims
   },
@@ -399,14 +406,7 @@ test('scenario F: 系统时间回拨锁定 SYSTEM_TIME_ABNORMAL', async () => {
   })
   const licenseGuard = createLicenseGuardMock()
 
-  registerSecureIpc(
-    ipcMain,
-    'test:rollback',
-    store,
-    licenseGuard,
-    async () => ({ success: true }),
-    '测试回拨拦截',
-  )
+  registerSecureIpc(ipcMain, 'test:rollback', store, licenseGuard, async () => ({ success: true }), '测试回拨拦截')
 
   const result = await ipcMain.getHandler('test:rollback')(createEventMock())
 

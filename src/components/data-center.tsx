@@ -1,5 +1,6 @@
 'use client'
 
+import { formatErrorMessage } from '@/lib/error-message'
 import { useEffect, useMemo, useState } from 'react'
 import {
   TrendingUp,
@@ -39,16 +40,6 @@ import {
   Area,
   AreaChart,
 } from 'recharts'
-
-const formatErrorMessage = (error: unknown, fallback: string) => {
-  const message = error instanceof Error ? error.message : fallback
-  const normalized = message.toLowerCase()
-  if (/403|401|授权|license|无权/.test(normalized)) return `授权异常：${message}`
-  if (/network|timeout|fetch|socket|econn|enet/.test(normalized)) return `网络异常：${message}`
-  if (/write|file|export|downloads|path/.test(normalized)) return `文件写入异常：${message}`
-  if (/config|missing|base url|key/.test(normalized)) return `配置异常：${message}`
-  return `系统异常：${message}`
-}
 
 const emptyTrend = [{ date: '--', leads: 0 }]
 

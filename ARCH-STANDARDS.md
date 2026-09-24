@@ -44,7 +44,9 @@ Allowed:
 
 Mandatory principle:
 - any high-value operation must default to Fail-Closed authorization
-- all IPC channel registration must go through `electron/ipc/registry.ts` (single source of truth at runtime) — **目标态**；存量迁移进度见 §`electron/ipc/registry.ts` 迁移状态注记
+- IPC 的**命名与类型事实源**始终是 `src/shared/ipc-contracts.ts` + `electron/ipc/channels.ts`（唯一命名源，现行生效）
+- IPC 的**运行时注册路由**目标是收敛到 `electron/ipc/registry.ts`（`registerIpc()` → `attach()`），使注册、白名单、契约校验、`assertAllRegistered()` 启动门禁可统一治理 — **目标态**；存量迁移进度见 §`electron/ipc/registry.ts` 迁移状态注记
+- 二者职责不重叠：`channels.ts` 定义"有哪些通道、叫什么"，`registry.ts` 定义"谁注册、如何被校验与绑定"。不得以 `registry.ts` 取代 `channels.ts` 的命名源地位。
 
 ### `electron/ipc/contracts/` - IPC type-safe contract definitions
 Allowed:
@@ -60,13 +62,21 @@ Forbidden:
 
 ### `electron/ipc/registry.ts` - IPC channel runtime registry
 Responsibilities:
-- single source of truth for all registered IPC channels at runtime
+- 已注册通道的**运行时注册表**（注册路由的唯一收敛点；通道命名源仍是 `electron/ipc/channels.ts`）
 - channel whitelist enforcement (unknown channels rejected)
 - contract-aware validation via `registerHandler()` wrapper
 - testable gateway: `dumpRegistry()` for debug, `resetRegistry()` for test isolation
 - runtime binding via `attach(ipcMain)` — wires every registered channel to `ipcMain.handle` (called once at the end of `registerIpcHandlers()` in `main.ts`; idempotent against double-binding)
 
-> ⚠️ **迁移状态注记（P0-4）**：注册中心基础设施已完整落地（register/dispatch/lock/assert/dump/reset/attach），`main.ts` 已在启动时调用 `registry.attach(ipcMain)`。但**存量生产 handler 仍走各 `register*Handlers()` 直挂 `ipcMain.handle`，尚未迁移到 `registerIpc()`**。迁移须按服务逐批进行（每批附带契约定义 + 单测），迁移完成后 `assertAllRegistered()` 才作为启动门禁启用。在迁移完成前，"all IPC channel registration must go through registry" 是**目标态**而非现状。
+> ⚠️ **迁移状态注记（P0-4）**：注册中心基础设施已完整落地（register/dispatch/lock/assert/dump/reset/attach），`main.ts` 已在启动时调用 `registry.attach(ipcMain)`。存量生产 handler 正按服务逐批从直挂 `ipcMain.handle` 迁移到 `registerIpc()`——截至 2026-09-23 实测：`channels.ts` 定义 60 个通道，其中 **29 个已迁移到 `registerIpc()`**（AUTOPILOT.SYNC_STATE、AGENT.LIST / AGENT.GET_LOG / AGENT.GET_STATUS / AGENT.SUPPRESS_LIST / AGENT.SUPPRESS_ADD / AGENT.SUPPRESS_REMOVE、CONFIG.GET / CONFIG.SET / SECRET.SET / SECRET.CHECK、PROVIDER.LIST / PROVIDER.STATUS、AUTOPILOT.GET_STATE / AUTOPILOT.SET_STATE / AUTOPILOT.CLEAR_LEGACY、AUTH.LOGIN / AUTH.LOGOUT / AUTH.GET_SESSION、ACCOUNT.CONNECT / ACCOUNT.DISCONNECT / ACCOUNT.GET_LIST、AUTOMATION.START_CAMPAIGN、SYSTEM.GET_DEVICE_STATUS、LICENSE.GET_INFO / LICENSE.REQUEST_TRIAL / LICENSE.SUBMIT / LICENSE.VERIFY / LICENSE.CHECK_STATUS），剩余 20 个（**全部 20 处**经 `registerSecureIpc`/`registerSecureFeatureIpc` Fail-Closed 包装器；**0 处**直挂——最后一处直挂 `main.ts` 的 AUTOPILOT.SYNC_STATE 已在第四批收口），11 个为仅推送通道。**所有 plain（`ipcMain.handle` 直挂）通道已清零**；第四批收口后，全部 20 处 Fail-Closed 包装通道也经 `registerSecureIpc`/`registerSecureFeatureIpc` **治理登记**进注册中心（标记 `skipAttach`：真实 `ipcMain.handle` 绑定仍由包装器完成、`attach()` 不重复绑定，Fail-Closed 授权语义零变化），故 **49 个 invoke 通道已全部 registry-known**（29 经 `registerIpc` 显式迁移 + 20 经包装器治理登记，0 处直挂）。契约见 `electron/ipc/contracts/{agent,config,provider,autopilot,auth,account,automation,license}.contract.ts`；单测见 `tests/ipc-registry-{agent,config,provider}-migration.test.ts`、`tests/ipc-registry-plain-batch3-migration.test.ts`、`tests/ipc-registry-license-migration.test.ts` 与 `tests/ipc-registry-secure-wrapper.test.ts`。`verify-ipc-consistency.cjs` **如实上报** `registry` 已知通道数（含包装器治理登记；此前为硬编码 0 的假可观测指标，已修复）。
+>
+> 迁移配套约定（第三批起）：①每个迁移的 `register*Handlers` 末尾自绑定 `registry.attach(ipcMain)`，使直接调用该函数而未显式 attach 的历史 e2e / 独立测试仍能经 `ipcMain.getHandler()` 触达迁移通道；`attach` **按 ipcMain 实例幂等**（`WeakMap<ipcMain, Set<channel>>`），既不会在 production 主进程唯一 ipcMain 上重复绑定触发 Electron "second handler" 报错，也允许不同测试各自的 ipcMain mock 都拿到绑定，并会在下次 attach 时补齐后注册的通道。②`registry.register()` 对**已注册通道的重复注册幂等覆盖**（dev 模式 warn）：注册中心是全局单例，测试进程内 `register*Handlers` 会被多个测试文件复用（如 `agent-persistence` 模拟重启的双次加载、`gate-e2e` 的 4 次调用），抛错会令跨文件污染整批用例崩溃；production 中每个通道仅注册一次，幂等覆盖不改变运行时行为。真正的启动后护栏是 `lock()`——锁定后禁止任何新增注册（见 `tests/ipc-contracts-v2.test.ts`）。
+>
+> **迁移已完成 + 启动门禁已启用**：49 个 invoke 通道（29 经 `registerIpc` 显式迁移 + 20 经 Fail-Closed 包装器治理登记 `skipAttach`）已全部 registry-known，**0 处 plain 直挂**，"all IPC channel registration must go through registry" 已达成事实态。`main.ts` 已在 `whenReady()` 末尾（`registerIpcHandlers()` 与 `AUTOPILOT.SYNC_STATE` 登记完成之后）调用 `registry.assertAllRegistered(collectInvokeChannels())` 并 `registry.lock()`：
+> - `collectInvokeChannels()`（`electron/ipc/channels.ts`）递归收集 `IPC_CHANNELS` 全部通道后排除 `PUSH_CHANNELS`（11 个仅推送通道），精确返回 49 个 invoke 通道；`PUSH_CHANNELS` 与 `verify-ipc-consistency.cjs` 的 `PUSH_RE` 扫描器互为可观测校验，若两者漂移说明通道被误分类。
+> - 断言通过后 `registry.lock()`：运行期禁止新增注册，构成真正的启动后护栏（`register()` 的重复注册幂等只服务于测试复用场景）。
+>
+> 门禁的**非空守卫**由 `tests/ipc-startup-gate.test.ts` 证明：①忠实复刻 `main.ts` 注册序列后，`assertAllRegistered` 通过、`lock()` 生效且此后新增注册被拒；②故意漏注册（跳过 `registerAuthHandlers`）时 `assertAllRegistered` 抛错并指明缺失通道——证明门禁不是空断言。`tests/ipc-registry-secure-wrapper.test.ts` 已证明包装器治理登记后 Fail-Closed 仍返回 403、授权通过仍放行。
 
 ### `preload/` - Minimal secure bridge
 Allowed:
@@ -307,3 +317,52 @@ An architecture-affecting change is complete only when all are true:
 6. low-spec office hardware remains within safe CPU and memory behavior
 7. build and packaging rules remain clean
 8. multi-language search, provider contracts, and Agent write-back remain consistent across PRD, PROJECT-PRD, AGENTS.md, IPC contracts, and renderer behavior
+
+---
+
+## 15. Local-Cloud Collaboration Architecture (Target-State Hard Boundary)
+
+> Product behavior is defined in `kone-PRD.md §5.1`; approval, cloud handoff, delivery, suppression, webhook, reply, quota, circuit-breaker and tenant rules are defined only in `CLOUD-COLLABORATION-DELIVERY.md`. This section defines architecture boundaries and completion gates, not duplicate business fields.
+
+1. Local and cloud form one pipeline: local discovery/scoring/approval -> minimal cloud handoff -> cloud second gate -> queue/delivery -> event write-back.
+2. High score or `cloud_send` entitlement is never send authorization. A valid approval record and matching draft version are mandatory.
+3. Renderer has no cloud write authority and no secrets. Every privileged operation passes main-process authorization and server-side workspace authorization.
+4. Cloud must independently validate identity, tenant, schema version, idempotency, collision, suppression, approval, email grade/exception, domain health, quota and circuit breaker.
+5. Raw HTML, candidate batches, unapproved contacts, secrets, cookies and sessions are prohibited from cloud handoff.
+6. Business, outreach and follow-up states are separate contracts. `delivered != replied`; reply, unsubscribe, complaint and hard bounce stop future follow-up.
+7. Suppression is global and higher priority than import, scoring, approval, queue and retry.
+8. Cloud events are append-only audit evidence; aggregated status may change but original approval/delivery events must not be overwritten.
+9. Every cloud response and write-back failure must be observable and actionable. Optimistic success and silent downgrade are architecture violations.
+10. New cloud API/event schemas are independently versioned; they must not silently reuse local `LeadStatus` or `AgentStatus` strings.
+
+## 16. Specification and Change Governance
+
+1. SSOT ownership:
+   - product behavior/state/user journey: `kone-PRD.md`;
+   - architecture/security/performance: this file;
+   - cloud collaboration/delivery: `CLOUD-COLLABORATION-DELIVERY.md`;
+   - local IPC（命名与类型）: `src/shared/ipc-contracts.ts` + `electron/ipc/channels.ts`; 其**运行时注册路由**收敛点为 `electron/ipc/registry.ts`（目标态，见 §3 迁移状态注记）;
+   - Provider truth: `PROVIDER-CAPABILITY.md`;
+   - field shapes（代码事实源）: `src/shared/ipc-contracts.ts`，人类可读索引见 `FIELD-DICTIONARY.md`;
+   - state machine **mapping**: `STATE-MACHINES.md`（各状态机的语义仍归 `kone-PRD.md` 与 `CLOUD-COLLABORATION-DELIVERY.md`）;
+   - terminology: `GLOSSARY.md`;
+   - change timeline / implementation-to-spec write-back: `CHANGELOG.md`;
+   - deployment/operations/release evidence: operations manual.
+2. Other documents may reference an SSOT but must not independently redefine the same rule. 数值型常量**只允许**在 `kone-PRD.md §零.3` 定义一次；`.clinerules` 等工具入口文件只允许写流程与指针，不得复述数值。
+3. Changes to state, data, permission, delivery, events, public API or compliance require motivation, affected SSOTs, compatibility, migration, rollback, tests, acceptance, owner and effective version.
+4. Missing any required change artifact blocks Release Candidate admission.
+5. CI must fail on broken references, stale function names, duplicate normative definitions, schema/example drift, and every workflow result other than explicit `success`.
+
+## 17. Release Evidence Gate
+
+Any unmet item is `NO-GO`:
+
+1. lint/build/unit/IPC/E2E/security/packaged smoke evidence is incomplete or red;
+   - **类型检查（`npm run typecheck`，即 `tsc --noEmit -p tsconfig.json`）是独立且不可省略的一项**，不得因 `vite build` 通过就判定类型安全：`vite build` 经 esbuild **仅做转译、不做类型检查**，因此"漏导入 → 运行时 `ReferenceError`"一类缺陷不会让构建变红（实例：`search-result-card.tsx` 曾只做 `import type` 却在运行时调用 `useLeadsStore`，渲染即崩溃，而 vite build 与全部既有门禁均为绿）。electron 侧的 `build:electron:dev` 同样只覆盖 `electron/`，**不覆盖 `src/`**。
+2. approval, suppression, idempotency, quota, webhook verification, reply-stop or write-back recovery is untested;
+3. workspace/tenant isolation has no negative cross-tenant tests;
+4. SMTP/API secrets appear in normal config, Renderer, logs or package;
+5. clean-machine Agent/delivery behavior cannot be reproduced;
+6. the artifact lacks commit, dependency lock, hash, test result, signature, gray-release threshold, rollback trigger or owner;
+7. CI treats `timed_out`, `action_required`, empty or any non-success result as pass;
+8. Provider truth, sales claims, UI and implementation remain in unresolved conflict.

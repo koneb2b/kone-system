@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { formatSearchErrorMessage } from '@/lib/error-message'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { AlertCircle, AlertTriangle, BookMarked, Radar, FolderOpen, Link2, Activity, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -22,18 +23,6 @@ import { autopilotSyncLifecycle, onAutopilotAction, searchExecute } from '@/lib/
 import { useFeatureGate } from '@/lib/feature-gate'
 import { useSearchEngine } from '@/hooks/use-search-engine'
 import { useRecentSearches } from '@/hooks/use-recent-searches'
-
-const formatErrorMessage = (error: unknown, fallback: string) => {
-  const message = error instanceof Error ? error.message : fallback
-  const normalized = message.toLowerCase()
-  if (/trial_expired|试用已结束/.test(normalized)) return '当前授权已失效，请先完成激活后继续使用。'
-  if (/403|401|授权|license|无权/.test(normalized)) return '当前授权状态异常，请联系顾问协助处理。'
-  if (/network|timeout|fetch|socket|econn|enet|数据流/.test(normalized)) return 'AI 数据流连接异常，请稍后重试。'
-  if (/config|base url|key|配置/.test(normalized)) return '当前配置未完成，暂时无法执行智能搜索。'
-  return '当前搜索服务暂不可用，请稍后重试或联系顾问。'
-}
-
-const SOCIAL_BLIND_SCORE_MESSAGE = '官网受保护，已使用 LinkedIn / 行业目录公开信息完成盲评'
 
 type AnalysisResult = {
   url: string
@@ -322,70 +311,6 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     window.dispatchEvent(new Event('kone:navigate-leads'))
   }
 
-  const getLeadSettlementMeta = (lead: LeadSearchResult) => {
-    const hasNumericScore = typeof lead.matchScore === 'number'
-    const primaryReason =
-      Array.isArray(lead.matchReasons) && lead.matchReasons.length > 0 ? String(lead.matchReasons[0] || '').trim() : ''
-    const riskFlags = Array.isArray(lead.riskFlags) ? lead.riskFlags.map((item) => String(item || '').trim()) : []
-    const hasWebsite403 = riskFlags.includes('website_403')
-    const hasBlindScoreFailed = riskFlags.includes('blind_score_failed')
-    const isSocialBlindScore = lead.fallbackStatus === 'social_blind_score' && hasNumericScore
-
-    if (isSocialBlindScore) {
-      return {
-        state: 'social_blind_score' as const,
-        showPending: false,
-        showFallback: true,
-        fallbackTone: 'blue' as const,
-        fallbackReason: SOCIAL_BLIND_SCORE_MESSAGE,
-      }
-    }
-    if (hasNumericScore) {
-      return {
-        state: 'scored' as const,
-        showPending: false,
-        showFallback: false,
-        fallbackTone: 'amber' as const,
-        fallbackReason: '',
-      }
-    }
-    if (isStreaming) {
-      return {
-        state: 'streaming' as const,
-        showPending: true,
-        showFallback: false,
-        fallbackTone: 'amber' as const,
-        fallbackReason: '',
-      }
-    }
-    if (aiScoringSkipped) {
-      return {
-        state: 'ai_skipped' as const,
-        showPending: false,
-        showFallback: true,
-        fallbackTone: 'amber' as const,
-        fallbackReason: '当前未启用 AI 评分，已展示基础结果',
-      }
-    }
-    if (hasWebsite403 && hasBlindScoreFailed) {
-      return {
-        state: 'fallback' as const,
-        showPending: false,
-        showFallback: true,
-        fallbackTone: 'amber' as const,
-        fallbackReason: '官网存在防爬限制，且 AI 盲评超时失败，建议稍后重试或人工复核',
-      }
-    }
-    const hasUsableFallbackData = Boolean(primaryReason || riskFlags.some(Boolean))
-    return {
-      state: 'fallback' as const,
-      showPending: false,
-      showFallback: true,
-      fallbackTone: 'amber' as const,
-      fallbackReason: hasUsableFallbackData ? primaryReason || riskFlags.find(Boolean) || '待人工复核' : '待人工复核',
-    }
-  }
-
   // Sync savedLeadIds with leads store
   useEffect(() => {
     setSavedLeadIds(new Set(leads.map((item) => item.id)))
@@ -423,70 +348,82 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     })
   }, [autopilotRuntime.lifecycle])
 
-  const handleSaveLead = async (lead: LeadSearchResult) => {
-    const leadKey = getLeadUniqueKey({ company: lead.company, website: lead.website || '' })
-    const hasExistingLead = useLeadsStore.getState().leads.some((item) => getLeadUniqueKey(item) === leadKey)
+  const handleSaveLead = useCallback(
+    async (lead: LeadSearchResult) => {
+      const leadKey = getLeadUniqueKey({ company: lead.company, website: lead.website || '' })
+      const hasExistingLead = useLeadsStore.getState().leads.some((item) => getLeadUniqueKey(item) === leadKey)
 
-    if (savedLeadIds.has(lead.id) || hasExistingLead) {
-      toast({
-        title: '已保存',
-        description: '该线索已在库中，无需重复保存',
-        variant: 'default',
-        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-      })
-      return
-    }
-    if (savingLeadId === lead.id) return
-    if (hasExistingLead) {
+      if (savedLeadIds.has(lead.id) || hasExistingLead) {
+        toast({
+          title: '已保存',
+          description: '该线索已在库中，无需重复保存',
+          variant: 'default',
+          className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+        })
+        return
+      }
+      if (savingLeadId === lead.id) return
+      if (hasExistingLead) {
+        setSavedLeadIds((prev) => {
+          const next = new Set(prev)
+          next.add(lead.id)
+          return next
+        })
+        toast({
+          title: '已保存',
+          description: '该线索已在库中，无需重复保存',
+          variant: 'default',
+          className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+        })
+        return
+      }
+      setSavingLeadId(lead.id)
       setSavedLeadIds((prev) => {
         const next = new Set(prev)
         next.add(lead.id)
         return next
       })
-      toast({
-        title: '已保存',
-        description: '该线索已在库中，无需重复保存',
-        variant: 'default',
-        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-      })
-      return
-    }
-    setSavingLeadId(lead.id)
-    setSavedLeadIds((prev) => {
-      const next = new Set(prev)
-      next.add(lead.id)
-      return next
+      try {
+        const mapped = mapSearchResultToLeadItem(lead, {
+          country: lead.country || 'Global',
+          countryCode: lead.countryCode || 'GL',
+          industry: lead.industry,
+        })
+        await addLead(mapped)
+        toast({
+          title: '已保存线索',
+          description: `已写入 ${lead.company}`,
+          variant: 'default',
+          className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+        })
+      } catch (error) {
+        setSavedLeadIds((prev) => {
+          const next = new Set(prev)
+          if (!useLeadsStore.getState().leads.some((item) => getLeadUniqueKey(item) === leadKey)) {
+            next.delete(lead.id)
+          }
+          return next
+        })
+        toast({
+          title: '保存失败',
+          description: formatSearchErrorMessage(error, '线索保存失败'),
+          variant: 'destructive',
+        })
+      } finally {
+        setSavingLeadId(null)
+      }
+    },
+    [toast, savedLeadIds, savingLeadId, setSavedLeadIds, setSavingLeadId, addLead],
+  )
+
+  const handleCloudSendHint = useCallback(() => {
+    toast({
+      title: '请先保存线索',
+      description: '云端发送队列属于高级版能力，请先将线索保存至本地线索库后在推荐线索区或智能触达工作流中提交。',
+      variant: 'default',
+      className: 'bg-blue-50 border-blue-200 text-blue-800',
     })
-    try {
-      const mapped = mapSearchResultToLeadItem(lead, {
-        country: lead.country || 'Global',
-        countryCode: lead.countryCode || 'GL',
-        industry: lead.industry,
-      })
-      await addLead(mapped)
-      toast({
-        title: '已保存线索',
-        description: `已写入 ${lead.company}`,
-        variant: 'default',
-        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-      })
-    } catch (error) {
-      setSavedLeadIds((prev) => {
-        const next = new Set(prev)
-        if (!useLeadsStore.getState().leads.some((item) => getLeadUniqueKey(item) === leadKey)) {
-          next.delete(lead.id)
-        }
-        return next
-      })
-      toast({
-        title: '保存失败',
-        description: formatErrorMessage(error, '线索保存失败'),
-        variant: 'destructive',
-      })
-    } finally {
-      setSavingLeadId(null)
-    }
-  }
+  }, [toast])
 
   const handleAnalyzeUrl = async () => {
     if (!searchLimit.allowDeepAnalysis) {
@@ -542,7 +479,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     } catch (error) {
       toast({
         title: '分析失败',
-        description: formatErrorMessage(error, '无法分析该网页'),
+        description: formatSearchErrorMessage(error, '无法分析该网页'),
         variant: 'destructive',
       })
     } finally {
@@ -576,7 +513,7 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     } catch (error) {
       toast({
         title: '巡航启动失败',
-        description: formatErrorMessage(error, '后台巡航启动异常'),
+        description: formatSearchErrorMessage(error, '后台巡航启动异常'),
         variant: 'destructive',
       })
     } finally {
@@ -1231,25 +1168,18 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           ) : (
             <div className="divide-y divide-slate-100">
               {pagedResults.map((lead, index) => {
-                const settlementMeta = getLeadSettlementMeta(lead)
                 return (
                   <SearchResultCard
                     key={stableHash(`${lead.id}-${index}`)}
-                    lead={lead}
+                    fallbackLead={lead}
+                    leadKey={lead.leadKey}
                     index={index}
-                    settlementMeta={settlementMeta}
+                    isStreaming={isStreaming}
+                    aiScoringSkipped={aiScoringSkipped}
                     savingLeadId={savingLeadId}
                     savedLeadIds={savedLeadIds}
                     onSaveLead={handleSaveLead}
-                    onCloudSendHint={() => {
-                      toast({
-                        title: '请先保存线索',
-                        description:
-                          '云端发送队列属于高级版能力，请先将线索保存至本地线索库后在推荐线索区或智能触达工作流中提交。',
-                        variant: 'default',
-                        className: 'bg-blue-50 border-blue-200 text-blue-800',
-                      })
-                    }}
+                    onCloudSendHint={handleCloudSendHint}
                   />
                 )
               })}

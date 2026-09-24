@@ -47,6 +47,13 @@ export interface ContractEntry<I = unknown, O = unknown> {
   handler: (event: unknown, ...args: unknown[]) => Promise<O>
   /** 是否跳过校验（某些内部 handler） */
   skipValidation?: boolean
+  /**
+   * 是否跳过 `attach` 的真实绑定（P0-4/续，Fail-Closed 包装器治理登记用）。
+   * 设为 true 时，该通道仅登记进注册中心（供 `assertAllRegistered()` 门禁覆盖），
+   * 其真实 `ipcMain.handle` 绑定仍由调用方（registerSecureIpc 等）自行完成，
+   * `attach()` 不会重复绑定、避免 production 主进程触发 Electron "second handler" 报错。
+   */
+  skipAttach?: boolean
 }
 
 // ── 校验引擎 ──────────────────────────────────────

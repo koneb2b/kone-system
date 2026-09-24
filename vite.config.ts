@@ -17,6 +17,18 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    // P1-7：拆分第三方依赖，使业务代码迭代不失效 vendor 缓存，
+    // 并让首屏主 chunk 与图表/图标库解耦（recharts 单 chunk 达 414KB）。
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-charts': ['recharts'],
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
   },
 })
 

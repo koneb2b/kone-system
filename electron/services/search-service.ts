@@ -190,6 +190,12 @@ const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 const SEARCH_LLM_TIMEOUT_MS = 20_000
 const WEBSITE_PROBE_TIMEOUT_MS = 15_000
 const MAX_WEBSITE_TEXT_FOR_LLM = 3000
+/* P1-2：搜索扇出（关键词变体）并发上限。
+   注意并发域划分：`SEARCH_LLM_CONCURRENCY` / `SEARCH_ENRICH_CONCURRENCY` 的 `2`
+   是 **LLM 评分与官网富化** 的宪法红线（不得突破）；搜索扇出是**另一个独立并发域**，
+   原先完全无界——关键词数 = 英文变体 ≤4 + 各本地语言 ≤4/语言，多语言扩面时可一次性
+   打出十几个并发 HTTP 请求，触发上游限流或本机 socket 耗尽。此处显式设闸。 */
+const SEARCH_FANOUT_CONCURRENCY = 3
 const SCOUT_NEGATIVE_TERMS = [
   'auto repair',
   'body shop',
@@ -397,10 +403,14 @@ const COUNTRY_TLD_MAP: Record<string, string[]> = {
   australia: ['.au'],
 }
 
-const emitBasicResults = (sender: Electron.WebContents, candidates: Array<Partial<SearchExecuteResult>>) => {
+const emitBasicResults = (
+  sender: Electron.WebContents,
+  candidates: Array<Partial<SearchExecuteResult>>,
+  preserveScore = false,
+) => {
   sender.send(
     IPC_CHANNELS.SEARCH.BASIC_RESULTS,
-    candidates.map((item) => applySchemaDefaults({ ...item, matchScore: undefined })),
+    candidates.map((item) => applySchemaDefaults(preserveScore ? item : { ...item, matchScore: undefined })),
   )
 }
 
@@ -605,6 +615,31 @@ const runLimitedConcurrency = async <T>(
   }
 
   await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
+}
+
+/* P1-2：结果版有界并发——与 runLimitedConcurrency 相同的调度语义，
+   但回传结果数组且**严格按入参顺序对齐**（按索引回填）。
+   用于搜索扇出（关键词变体），使并发受控而结果排序不漂移。 */
+const mapLimitedConcurrency = async <T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length)
+  let currentIndex = 0
+  const normalizedLimit = Math.max(1, Math.min(limit, items.length || 1))
+
+  const runner = async () => {
+    while (true) {
+      const index = currentIndex
+      if (index >= items.length) return
+      currentIndex += 1
+      results[index] = await worker(items[index], index)
+    }
+  }
+
+  await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
+  return results
 }
 
 export const fetchSerpApiWithRetry = (url: string, timeoutMs: number) =>
@@ -2678,6 +2713,13 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         if (googleHost) resetCircuitBreaker(googleHost)
         if (llmHost) resetCircuitBreaker(llmHost)
 
+        /* 慢源后台聚合句柄：SerpApi 分支填充真实聚合器，非 SerpApi 为空（无渐进式慢源）。
+           let 而非 const 以允许分支内赋值；双波代码（if/else 之后）在此作用域读取。 */
+        let lateSourcesPromise: Promise<{ lateOrganic: any[]; lateLocal: any[] }> = Promise.resolve({
+          lateOrganic: [],
+          lateLocal: [],
+        })
+
         if (isSerpApi) {
           const attemptSearch = async (mode: SerpSearchMode, modeQuery: string, modeLocation: string) => {
             const useOrganic = mode === 'organic-keyword'
@@ -2772,8 +2814,10 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const searchPlans: Array<{
             serpResult: any
             lateSources: Promise<{ anyResult: any; providerResults: ProviderResult[] }>
-          }> = await Promise.all(
-            allSearchKeywords.map(async ({ keyword: mutatedKeyword, language: searchLanguage }) => {
+          }> = await mapLimitedConcurrency(
+            allSearchKeywords,
+            SEARCH_FANOUT_CONCURRENCY,
+            async ({ keyword: mutatedKeyword, language: searchLanguage }) => {
               if (myJobId !== activeJobIdFor())
                 return {
                   serpResult: { allOrganic: [], allLocal: [], activeSearchMode: 'organic-fallback' },
@@ -2883,7 +2927,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                 }),
               )
               return { serpResult, lateSources }
-            }),
+            },
           )
           const lateSourcePromises = searchPlans.map((plan) => plan.lateSources)
           /* 第一波合并：仅 SerpApi 主源结果（AnySearch/Provider 由聚合器延后并入） */
@@ -2968,7 +3012,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             }
             return { lateOrganic, lateLocal }
           }
-          const lateSourcesPromise = aggregateLateSources()
+          lateSourcesPromise = aggregateLateSources()
         } else {
           const rawSearches = await Promise.allSettled(
             allSearchKeywords.map(async ({ keyword: mutatedKeyword }) => {
@@ -3199,31 +3243,43 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           emitStage(_event.sender, 'complete', `已返回 ${fallbackSourceLabel} 基础结果（未启用 AI 评分）`)
           emitStreamComplete(_event.sender)
           // Pipeline: STAGE qualified leads for human review (never auto-send)
-          withPipelineIsolation(async (runId) => {
+          // P0-8 修复：管道暂存失败必须被观测，不得成为 unhandledRejection。
+          void withPipelineIsolation(async (runId) => {
             const pipelineQueue = buildAgentTaskQueue(targetedLeads)
             stageAgentsFromPipeline(pipelineQueue, _event.sender, store, runId)
+          }).catch((err) => {
+            probeLog('pipeline_stage_failed', err instanceof Error ? err.message : String(err))
           })
           return { success: true, data: { results: targetedLeads.map((item) => applySchemaDefaults(item)) } }
         }
 
-        probeLog('[Probe-IPC] Scoring queue starting', {
-          candidateCount: leadsForScoring.length,
-          concurrency: SEARCH_LLM_CONCURRENCY,
-        })
-        emitStage(_event.sender, 'scoring', '正在进行 ICP 智能评估...')
-
-        if (!llmKey || !llmEndpoint) {
-          probeError('[Probe-Auth] LLM config inconsistent after scoring gate', {
-            hasLlmKey: Boolean(llmKey),
-            hasLlmEndpoint: Boolean(llmEndpoint),
-            candidateCount: leadsForScoring.length,
+        /* 评分+富化 提取为可复用函数（渐进式两波共用）：
+           - tScore: 本轮待 AI 评分的线索（第一波=主源、第二波=慢源新增）
+           - tFinal: 本轮用于重建富化后最终结果集的完整线索（决定 finalResults 全集）
+           每个调用获得独立的 cleanedResults/completedCount/熔断窗口（本地 const 天然隔离），
+           符合渐进式两波各自独立评分的语义。 */
+        const executeScoring = async (
+          tScore: SearchExecuteResult[],
+          tFinal: SearchExecuteResult[],
+        ): Promise<SearchExecuteResult[]> => {
+          probeLog('[Probe-IPC] Scoring queue starting', {
+            candidateCount: tScore.length,
+            concurrency: SEARCH_LLM_CONCURRENCY,
           })
-          throw new Error('未检测到有效的 LLM 鉴权配置，无法执行 ICP 智能评估')
-        }
+          emitStage(_event.sender, 'scoring', '正在进行 ICP 智能评估...')
 
-        const cleanedResults: SearchExecuteResult[] = []
-        let completedCount = 0
-        /* LLM 持续失败快速降级（v2）：
+          if (!llmKey || !llmEndpoint) {
+            probeError('[Probe-Auth] LLM config inconsistent after scoring gate', {
+              hasLlmKey: Boolean(llmKey),
+              hasLlmEndpoint: Boolean(llmEndpoint),
+              candidateCount: leadsForScoring.length,
+            })
+            throw new Error('未检测到有效的 LLM 鉴权配置，无法执行 ICP 智能评估')
+          }
+
+          const cleanedResults: SearchExecuteResult[] = []
+          let completedCount = 0
+          /* LLM 持续失败快速降级（v2）：
            - 失败率滑动窗口（最近 10 次请求中网络失败 ≥ 50%）触发熔断，替代早期
              "连续失败 5 次"——对 LLM 偶发抖动更宽容，避免误伤整轮评分
            - 仅"服务不可达"类失败（网络/超时/5xx）计入窗口；HTTP 4xx（key 无效
@@ -3231,237 +3287,339 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
              "可达"，不进失败窗口
            - 熔断后剩余线索走确定性兜底（诚实标注），LLM 恢复后下次搜索自动
              回到全量 AI 评分 */
-        const CIRCUIT_WINDOW = 10
-        const CIRCUIT_FAIL_RATE = 0.5
-        const recentOutcomes: boolean[] = []
-        let llmCircuitOpen = false
-        const recordOutcome = (ok: boolean): boolean => {
-          recentOutcomes.push(ok)
-          if (recentOutcomes.length > CIRCUIT_WINDOW) recentOutcomes.shift()
-          if (recentOutcomes.length < CIRCUIT_WINDOW) return false
-          const fails = recentOutcomes.filter((o) => !o).length
-          return fails / recentOutcomes.length >= CIRCUIT_FAIL_RATE
-        }
-        const isServiceUnavailableError = (error: unknown): boolean =>
-          isTimeoutError(error) ||
-          (typeof (error as { status?: unknown })?.status === 'number' &&
-            Number((error as { status?: unknown }).status) >= 500)
-        await runLimitedConcurrency(leadsForScoring, SEARCH_LLM_CONCURRENCY, async (candidate, index) => {
-          if (myJobId !== activeJobIdFor()) return
-          if (llmCircuitOpen) {
-            const fallbackLead = applySchemaDefaults({
-              ...candidate,
-              scoreSource: 'deterministic',
-              matchReasons: ['AI 评估服务持续不可达，已降级为基础评分'],
-              riskFlags: ['官网访问超时或 AI 评估失败'],
-            })
-            cleanedResults[index] = fallbackLead
-            completedCount += 1
-            emitLeadScored(_event.sender, fallbackLead, completedCount, leadsForScoring.length)
-            return
+          const CIRCUIT_WINDOW = 10
+          const CIRCUIT_FAIL_RATE = 0.5
+          const recentOutcomes: boolean[] = []
+          let llmCircuitOpen = false
+          const recordOutcome = (ok: boolean): boolean => {
+            recentOutcomes.push(ok)
+            if (recentOutcomes.length > CIRCUIT_WINDOW) recentOutcomes.shift()
+            if (recentOutcomes.length < CIRCUIT_WINDOW) return false
+            const fails = recentOutcomes.filter((o) => !o).length
+            return fails / recentOutcomes.length >= CIRCUIT_FAIL_RATE
           }
-          /* P0 成本优化：评分缓存——同 ICP + 同关键词 + 同公司 24h 内复用评分结果，
+          const isServiceUnavailableError = (error: unknown): boolean =>
+            isTimeoutError(error) ||
+            (typeof (error as { status?: unknown })?.status === 'number' &&
+              Number((error as { status?: unknown }).status) >= 500)
+          await runLimitedConcurrency(tScore, SEARCH_LLM_CONCURRENCY, async (candidate, index) => {
+            if (myJobId !== activeJobIdFor()) return
+            if (llmCircuitOpen) {
+              const fallbackLead = applySchemaDefaults({
+                ...candidate,
+                scoreSource: 'deterministic',
+                matchReasons: ['AI 评估服务持续不可达，已降级为基础评分'],
+                riskFlags: ['官网访问超时或 AI 评估失败'],
+              })
+              cleanedResults[index] = fallbackLead
+              completedCount += 1
+              emitLeadScored(_event.sender, fallbackLead, completedCount, tScore.length)
+              return
+            }
+            /* P0 成本优化：评分缓存——同 ICP + 同关键词 + 同公司 24h 内复用评分结果，
              命中时跳过 LLM 调用（零网络等待、进度条照常推进）。ICP 或关键词
              变化自动换 key，不会跨评估上下文误用旧评分。key 提升到 try 外以便
              catch 分支记录诊断信息。 */
-          const scoreCacheKey = buildLlmScoreCacheKey(userConfig?.icpProfile || undefined, scoringKeyword, candidate)
-          try {
-            const cachedLlmResult = getLlmScoreCached<SearchExecuteResult[]>(scoreCacheKey)
-            if (Array.isArray(cachedLlmResult) && cachedLlmResult.length > 0) {
-              probeLog('[Probe-LLM-Cache] Score cache hit:', {
+            const scoreCacheKey = buildLlmScoreCacheKey(userConfig?.icpProfile || undefined, scoringKeyword, candidate)
+            try {
+              const cachedLlmResult = getLlmScoreCached<SearchExecuteResult[]>(scoreCacheKey)
+              if (Array.isArray(cachedLlmResult) && cachedLlmResult.length > 0) {
+                probeLog('[Probe-LLM-Cache] Score cache hit:', {
+                  company: candidate.company,
+                  website: candidate.website,
+                  key: scoreCacheKey,
+                })
+                const cachedScoredLead = mergeLlmResultsWithCandidates([candidate], cachedLlmResult)[0]
+                recordOutcome(true)
+                const nextLead = cachedScoredLead
+                  ? applySchemaDefaults({ ...cachedScoredLead, scoreSource: 'ai' })
+                  : applySchemaDefaults({ ...candidate, scoreSource: 'deterministic' })
+                cleanedResults[index] = nextLead
+                completedCount += 1
+                emitLeadScored(_event.sender, nextLead, completedCount, tScore.length)
+                return
+              }
+              probeLog('[Probe-LLM] Scoring candidate:', {
+                index,
                 company: candidate.company,
                 website: candidate.website,
-                key: scoreCacheKey,
+                timeoutMs: llmTimeoutMs,
               })
-              const cachedScoredLead = mergeLlmResultsWithCandidates([candidate], cachedLlmResult)[0]
+              const { system, user } = buildSearchScoringPrompt({
+                keyword: scoringKeyword,
+                icpProfile: userConfig?.icpProfile || undefined,
+                candidates: [candidate],
+              })
+              probeLlmRequest(llmBaseUrl)
+              const llmResponse = await withTimeoutGuard(
+                fetchWithTimeout(
+                  llmEndpoint,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llmKey}` },
+                    body: JSON.stringify({
+                      model: userConfig?.selectedModel || 'gpt-3.5-turbo',
+                      messages: [
+                        { role: 'system', content: system },
+                        { role: 'user', content: user },
+                      ],
+                      response_format: { type: 'json_object' },
+                    }),
+                  },
+                  llmTimeoutMs,
+                ),
+                llmTimeoutMs,
+                `Scoring LLM ${candidate.company || candidate.website || index}`,
+              )
+              probeLog('[Probe-LLM] Scoring candidate response:', {
+                index,
+                company: candidate.company,
+                status: llmResponse.status,
+              })
+
+              if (!llmResponse.ok) throw new Error(mapHttpError(llmResponse.status, 'LLM'))
+
+              const llmJson: any = await llmResponse.json().catch(() => ({}))
+              const llmResults = extractLlmResults(llmJson)
+              /* P0 成本优化：评分成功即写入缓存（同 ICP+关键词+公司 24h 复用），
+               仅缓存 LLM 语义字段（extractLlmResults 输出），不含线索 UUID；
+               命中时走完全相同的 merge/applySchemaDefaults 路径，口径零差异。 */
+              if (Array.isArray(llmResults) && llmResults.length > 0) {
+                setLlmScoreCached(scoreCacheKey, llmResults)
+              }
+              const scoredLead = mergeLlmResultsWithCandidates([candidate], llmResults)[0]
+              /* P1-1 置信标识：LLM 评分成功 → ai；评分失败走模板兜底 → deterministic。
+               LLM 可达（200 且可解析）即记成功——即使未解析出结构化分也不计失败窗口 */
               recordOutcome(true)
-              const nextLead = cachedScoredLead
-                ? applySchemaDefaults({ ...cachedScoredLead, scoreSource: 'ai' })
+              const nextLead = scoredLead
+                ? applySchemaDefaults({ ...scoredLead, scoreSource: 'ai' })
                 : applySchemaDefaults({ ...candidate, scoreSource: 'deterministic' })
               cleanedResults[index] = nextLead
               completedCount += 1
-              emitLeadScored(_event.sender, nextLead, completedCount, leadsForScoring.length)
-              return
-            }
-            probeLog('[Probe-LLM] Scoring candidate:', {
-              index,
-              company: candidate.company,
-              website: candidate.website,
-              timeoutMs: llmTimeoutMs,
-            })
-            const { system, user } = buildSearchScoringPrompt({
-              keyword: scoringKeyword,
-              icpProfile: userConfig?.icpProfile || undefined,
-              candidates: [candidate],
-            })
-            probeLlmRequest(llmBaseUrl)
-            const llmResponse = await withTimeoutGuard(
-              fetchWithTimeout(
-                llmEndpoint,
-                {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llmKey}` },
-                  body: JSON.stringify({
-                    model: userConfig?.selectedModel || 'gpt-3.5-turbo',
-                    messages: [
-                      { role: 'system', content: system },
-                      { role: 'user', content: user },
-                    ],
-                    response_format: { type: 'json_object' },
-                  }),
-                },
-                llmTimeoutMs,
-              ),
-              llmTimeoutMs,
-              `Scoring LLM ${candidate.company || candidate.website || index}`,
-            )
-            probeLog('[Probe-LLM] Scoring candidate response:', {
-              index,
-              company: candidate.company,
-              status: llmResponse.status,
-            })
-
-            if (!llmResponse.ok) throw new Error(mapHttpError(llmResponse.status, 'LLM'))
-
-            const llmJson: any = await llmResponse.json().catch(() => ({}))
-            const llmResults = extractLlmResults(llmJson)
-            /* P0 成本优化：评分成功即写入缓存（同 ICP+关键词+公司 24h 复用），
-               仅缓存 LLM 语义字段（extractLlmResults 输出），不含线索 UUID；
-               命中时走完全相同的 merge/applySchemaDefaults 路径，口径零差异。 */
-            if (Array.isArray(llmResults) && llmResults.length > 0) {
-              setLlmScoreCached(scoreCacheKey, llmResults)
-            }
-            const scoredLead = mergeLlmResultsWithCandidates([candidate], llmResults)[0]
-            /* P1-1 置信标识：LLM 评分成功 → ai；评分失败走模板兜底 → deterministic。
-               LLM 可达（200 且可解析）即记成功——即使未解析出结构化分也不计失败窗口 */
-            recordOutcome(true)
-            const nextLead = scoredLead
-              ? applySchemaDefaults({ ...scoredLead, scoreSource: 'ai' })
-              : applySchemaDefaults({ ...candidate, scoreSource: 'deterministic' })
-            cleanedResults[index] = nextLead
-            completedCount += 1
-            emitLeadScored(_event.sender, nextLead, completedCount, leadsForScoring.length)
-          } catch (error) {
-            probeLlmCrash(error)
-            probeError(
-              '[Probe-LLM-Error] Candidate:',
-              candidate.company,
-              'Error:',
-              error instanceof Error ? error.message : String(error || ''),
-              error instanceof Error ? error.stack : '',
-            )
-            probeLog('[Probe-LLM-Error-Ctx] Cache key:', scoreCacheKey)
-            /* 仅服务不可达类失败（网络/超时/5xx）计入失败窗口；HTTP 4xx 为配置
-               错误不熔断（每次都会快速兜底提示），避免误伤整轮评分 */
-            if (isServiceUnavailableError(error) && !llmCircuitOpen && recordOutcome(false)) {
-              llmCircuitOpen = true
-              probeError('[Probe-LLM] Failure circuit opened:', {
-                window: CIRCUIT_WINDOW,
-                failRate: CIRCUIT_FAIL_RATE,
-                remaining: leadsForScoring.length - completedCount,
-              })
-              emitStage(_event.sender, 'scoring', 'AI 评估服务持续不可达，剩余线索已降级为基础评分')
-            }
-            const fallbackLead = applySchemaDefaults({
-              ...candidate,
-              scoreSource: 'deterministic',
-              matchReasons: ['评估失败，已保留基础信息'],
-              riskFlags: ['官网访问超时或 AI 评估失败'],
-            })
-            cleanedResults[index] = fallbackLead
-            completedCount += 1
-            probeLog('[Probe-LLM] Candidate fallback emitted:', {
-              index,
-              company: candidate.company,
-              message: error instanceof Error ? error.message : String(error || ''),
-            })
-            emitLeadScored(_event.sender, fallbackLead, completedCount, leadsForScoring.length)
-          }
-        })
-
-        if (cleanedResults.length > 0) {
-          emitStage(_event.sender, 'enriching', '正在补全官网与商业信号...')
-          const baseResults = cleanedResults.filter(Boolean)
-          const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
-          await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
-            if (myJobId !== activeJobIdFor()) return
-            /* 性能/成本平衡：仅对高分线索（≥60，会进入 Agent 管道）做 LLM 深探；
-               低分线索只做官网抓取（邮箱/电话提取独立于 LLM，仍有价值）。
-               熔断时同样跳过 LLM 深探但保留官网抓取。 */
-            const highValue = typeof item.matchScore === 'number' && item.matchScore >= 60
-            const skipLlmProbe = llmCircuitOpen || !highValue
-            try {
-              const enriched = await withTimeoutGuard(
-                enrichLeadWithDeepProbe({
-                  candidate: item,
-                  llmEndpoint,
-                  llmKey,
-                  model: userConfig?.selectedModel || 'gpt-3.5-turbo',
-                  timeoutMs: llmTimeoutMs,
-                  keyword: scoringKeyword,
-                  country,
-                  googleKey,
-                  icpProfile: userConfig?.icpProfile || undefined,
-                  skipLlmProbe,
-                }),
-                /* 外层守卫必须 ≥ 内部最坏耗时（官网抓取 15s + LLM 深探 20s = 35s），
-                   否则高分线索的深探总是被外层守卫砍掉，表现为大量
-                   "官网访问超时或 AI 评估失败"（此前 llmTimeoutMs 恒 60s 掩盖了此问题）。 */
-                llmTimeoutMs + WEBSITE_PROBE_TIMEOUT_MS,
-                `Enrich lead ${item.company || item.website || index}`,
-              )
-              enrichedResults[index] = applySchemaDefaults(enriched)
+              emitLeadScored(_event.sender, nextLead, completedCount, tScore.length)
             } catch (error) {
-              probeLog('[Probe-Fetch] Enrichment fallback triggered:', {
+              probeLlmCrash(error)
+              probeError(
+                '[Probe-LLM-Error] Candidate:',
+                candidate.company,
+                'Error:',
+                error instanceof Error ? error.message : String(error || ''),
+                error instanceof Error ? error.stack : '',
+              )
+              probeLog('[Probe-LLM-Error-Ctx] Cache key:', scoreCacheKey)
+              /* 仅服务不可达类失败（网络/超时/5xx）计入失败窗口；HTTP 4xx 为配置
+               错误不熔断（每次都会快速兜底提示），避免误伤整轮评分 */
+              if (isServiceUnavailableError(error) && !llmCircuitOpen && recordOutcome(false)) {
+                llmCircuitOpen = true
+                probeError('[Probe-LLM] Failure circuit opened:', {
+                  window: CIRCUIT_WINDOW,
+                  failRate: CIRCUIT_FAIL_RATE,
+                  remaining: tScore.length - completedCount,
+                })
+                emitStage(_event.sender, 'scoring', 'AI 评估服务持续不可达，剩余线索已降级为基础评分')
+              }
+              const fallbackLead = applySchemaDefaults({
+                ...candidate,
+                scoreSource: 'deterministic',
+                matchReasons: ['评估失败，已保留基础信息'],
+                riskFlags: ['官网访问超时或 AI 评估失败'],
+              })
+              cleanedResults[index] = fallbackLead
+              completedCount += 1
+              probeLog('[Probe-LLM] Candidate fallback emitted:', {
                 index,
-                company: item.company,
+                company: candidate.company,
                 message: error instanceof Error ? error.message : String(error || ''),
               })
-              enrichedResults[index] = applySchemaDefaults({
-                ...baseResults[index],
-                riskFlags: Array.from(
-                  new Set([...(baseResults[index].riskFlags || []), '官网访问超时或 AI 评估失败']),
-                ).slice(0, 1),
-              })
+              emitLeadScored(_event.sender, fallbackLead, completedCount, tScore.length)
             }
           })
-          const scoredResults = enrichedResults.map((item, index) => {
-            const base = baseResults[index]
-            const result = item || applySchemaDefaults(base)
-            /* P1-1：富化重建时保留评分来源标识（丢失则回退确定性） */
-            return { ...result, scoreSource: result.scoreSource || base?.scoreSource || 'deterministic' }
-          })
-          const scoredByKey = new Map(
-            scoredResults.map((item) => [
-              extractDomainFromUrl(item.website) || `${item.company.toLowerCase()}|${item.address.toLowerCase()}`,
-              item,
-            ]),
-          )
-          const finalResults = targetedLeads.map((item) => {
-            const scored = scoredByKey.get(
-              extractDomainFromUrl(item.website) ||
-                `${String(item.company || '').toLowerCase()}|${String(item.address || '').toLowerCase()}`,
+
+          if (cleanedResults.length > 0) {
+            emitStage(_event.sender, 'enriching', '正在补全官网与商业信号...')
+            const baseResults = cleanedResults.filter(Boolean)
+            const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
+            await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
+              if (myJobId !== activeJobIdFor()) return
+              /* 性能/成本平衡：仅对高分线索（≥60，会进入 Agent 管道）做 LLM 深探；
+               低分线索只做官网抓取（邮箱/电话提取独立于 LLM，仍有价值）。
+               熔断时同样跳过 LLM 深探但保留官网抓取。 */
+              const highValue = typeof item.matchScore === 'number' && item.matchScore >= 60
+              const skipLlmProbe = llmCircuitOpen || !highValue
+              try {
+                const enriched = await withTimeoutGuard(
+                  enrichLeadWithDeepProbe({
+                    candidate: item,
+                    llmEndpoint,
+                    llmKey,
+                    model: userConfig?.selectedModel || 'gpt-3.5-turbo',
+                    timeoutMs: llmTimeoutMs,
+                    keyword: scoringKeyword,
+                    country,
+                    googleKey,
+                    icpProfile: userConfig?.icpProfile || undefined,
+                    skipLlmProbe,
+                  }),
+                  /* 外层守卫必须 ≥ 内部最坏耗时（官网抓取 15s + LLM 深探 20s = 35s），
+                   否则高分线索的深探总是被外层守卫砍掉，表现为大量
+                   "官网访问超时或 AI 评估失败"（此前 llmTimeoutMs 恒 60s 掩盖了此问题）。 */
+                  llmTimeoutMs + WEBSITE_PROBE_TIMEOUT_MS,
+                  `Enrich lead ${item.company || item.website || index}`,
+                )
+                enrichedResults[index] = applySchemaDefaults(enriched)
+              } catch (error) {
+                probeLog('[Probe-Fetch] Enrichment fallback triggered:', {
+                  index,
+                  company: item.company,
+                  message: error instanceof Error ? error.message : String(error || ''),
+                })
+                enrichedResults[index] = applySchemaDefaults({
+                  ...baseResults[index],
+                  riskFlags: Array.from(
+                    new Set([...(baseResults[index].riskFlags || []), '官网访问超时或 AI 评估失败']),
+                  ).slice(0, 1),
+                })
+              }
+            })
+            const scoredResults = enrichedResults.map((item, index) => {
+              const base = baseResults[index]
+              const result = item || applySchemaDefaults(base)
+              /* P1-1：富化重建时保留评分来源标识（丢失则回退确定性） */
+              return { ...result, scoreSource: result.scoreSource || base?.scoreSource || 'deterministic' }
+            })
+            const scoredByKey = new Map(
+              scoredResults.map((item) => [
+                extractDomainFromUrl(item.website) || `${item.company.toLowerCase()}|${item.address.toLowerCase()}`,
+                item,
+              ]),
             )
-            // Preserve the stable upstream id so the pipeline leadKey stays correlated
-            // with the id already emitted to the frontend via emitBasicResults.
-            /* P1-1：未经 LLM 评分的尾部线索显式标记为确定性评分 */
-            return scored
-              ? { ...scored, id: item.id || scored.id }
-              : applySchemaDefaults({ ...item, scoreSource: 'deterministic' })
-          })
-          emitStage(_event.sender, 'complete', '分析完成，线索已更新')
-          emitStreamComplete(_event.sender)
-          // Pipeline: STAGE enriched leads for human review (never auto-send)
-          withPipelineIsolation(async (runId) => {
-            const pipelineQueue = buildAgentTaskQueue(finalResults)
-            stageAgentsFromPipeline(pipelineQueue, _event.sender, store, runId)
-          })
-          return { success: true, data: { results: finalResults.slice(0, SEARCH_TARGETED_LEAD_LIMIT) || [] } }
+            const finalResults = tFinal.map((item) => {
+              const scored = scoredByKey.get(
+                extractDomainFromUrl(item.website) ||
+                  `${String(item.company || '').toLowerCase()}|${String(item.address || '').toLowerCase()}`,
+              )
+              // Preserve the stable upstream id so the pipeline leadKey stays correlated
+              // with the id already emitted to the frontend via emitBasicResults.
+              /* P1-1：未经 LLM 评分的尾部线索显式标记为确定性评分 */
+              return scored
+                ? { ...scored, id: item.id || scored.id }
+                : applySchemaDefaults({ ...item, scoreSource: 'deterministic' })
+            })
+            return finalResults.slice(0, SEARCH_TARGETED_LEAD_LIMIT) || []
+          }
+          /* 本轮评分为空（全部兜底失败）：返回确定性转换的原候选 */
+          return tFinal
+            .slice(0, SEARCH_TARGETED_LEAD_LIMIT)
+            .map((item) => applySchemaDefaults({ ...item, scoreSource: 'deterministic' }))
         }
 
+        /* ── 渐进式双波执行 ──
+           第一波：对主源（SerpApi）线索评分并展示（前端已通过第一波 emitBasicResults 看到列表）。
+           第二波：等待 AnySearch/Provider 深度穿透到货，对慢源新增线索追评分，
+           并把两波结果合并后统一 emitBasicResults 全量、投放 Agent 一次（防重复）。 */
+        const firstPass = await executeScoring(leadsForScoring, targetedLeads)
+        /* 渐进式语义澄清：首屏列表已在 emitStreamStart 后由 emitBasicResults(targetedLeads)
+           发出（matchScore 剥离=「待评估」），主源 AI 评分通过 emitLeadScored 逐条流式
+           回填（前端 onSearchLeadScored 按 leadKey/website/company 合并、保留已到分数）。
+           此处不应再发 emitBasicResults——前端 onSearchBasicResults 是全量替换，会冲掉
+           emitLeadScored 已回填的 matchScore。仅在慢源追评合并后发一次全量（preserveScore
+           保留 AI 分），用于把慢源新增线索加入列表。 */
+        /* 慢源等待设置超时上限：主源评分完成后，给深度穿透至多 120 秒补位。
+           到时未到则用已到结果收尾，保证 complete 有界、不无限等待。
+           测试可通过 KONE_LATE_SOURCE_TIMEOUT_MS 环境变量缩短（如 100ms），
+           避免 provider mock 永不 settle 导致单测挂 120s。 */
+        const LATE_SOURCE_TIMEOUT_MS = Number(process.env.KONE_LATE_SOURCE_TIMEOUT_MS) || 120_000
+        /* P0-8 修复：主源先完成时必须 clearTimeout，否则会留下一个悬空 120s 定时器
+           （长驻主进程定时器累积会推迟事件循环退出并掩盖真实句柄泄漏）。 */
+        let lateSourceTimer: NodeJS.Timeout | null = null
+        const wave2 = await Promise.race([
+          lateSourcesPromise,
+          new Promise<{ lateOrganic: any[]; lateLocal: any[] }>((resolve) => {
+            lateSourceTimer = setTimeout(() => resolve({ lateOrganic: [], lateLocal: [] }), LATE_SOURCE_TIMEOUT_MS)
+          }),
+        ]).finally(() => {
+          if (lateSourceTimer) clearTimeout(lateSourceTimer)
+          lateSourceTimer = null
+        })
+        const mergedFinal = [...firstPass]
+        /* 标记波次：来自慢源的新线索（去重主源后）以确定性起步，等待追评 */
+        const wave1Keys = new Set(
+          targetedLeads.map(
+            (item) =>
+              extractDomainFromUrl(item.website) ||
+              `${String(item.company || '').toLowerCase()}|${String(item.address || '').toLowerCase()}`,
+          ),
+        )
+        if (wave2.lateOrganic.length > 0 || wave2.lateLocal.length > 0) {
+          const lateCandidates = [...wave2.lateOrganic, ...wave2.lateLocal]
+          const lateLeads = lateCandidates.map((item: any) =>
+            applySchemaDefaults({
+              company: item.company,
+              website: item.website,
+              phone: item.phone,
+              address: item.address,
+              contact: item.contact,
+              contactTitle: item.contactTitle,
+              email: item.email,
+              source: item.source,
+              reason: item.reason,
+              snippet: item.snippet,
+              dataSourceType: item.dataSourceType || item.source,
+              decisionMakers: item.decisionMakers,
+              customsData: item.customsData,
+              exhibitionFootprints: item.exhibitionFootprints,
+              agentStatus: item.agentStatus,
+            }),
+          )
+          const newLate = lateLeads.filter((item: SearchExecuteResult) => {
+            const key =
+              extractDomainFromUrl(item.website) ||
+              `${String(item.company || '').toLowerCase()}|${String(item.address || '').toLowerCase()}`
+            if (!key || wave1Keys.has(key)) return false
+            /* 慢源候选同样执行合规预筛：垃圾线索 + 相关度（与第一波观测口径一致） */
+            if (isTrashLead(item)) return false
+            const relevance = computeScoutRelevance(item, scoringKeyword, {
+              priorityWebsite: Boolean(filterOptions?.priorityWebsite),
+              b2bRoleOnly: Boolean(filterOptions?.b2bRoleOnly),
+              localDomainOnly: Boolean(filterOptions?.localDomainOnly),
+              countryTlds:
+                COUNTRY_TLD_MAP[
+                  String(country || '')
+                    .trim()
+                    .toLowerCase()
+                ] || [],
+            })
+            return relevance.keep
+          })
+          if (newLate.length > 0) {
+            if (myJobId === activeJobIdFor()) {
+              emitStage(_event.sender, 'scoring', `慢源深度穿透新增 ${newLate.length} 条线索，正在追评...`)
+            }
+            const slowScored = await executeScoring(newLate.slice(0, SEARCH_LLM_SCORE_LIMIT), newLate)
+            mergedFinal.push(...slowScored)
+          }
+        }
+        /* 两波合并去重（按域名）后统一投放 */
+        const deduped = new Map<string, SearchExecuteResult>()
+        for (const item of mergedFinal) {
+          const key = extractDomainFromUrl(item.website) || `${String(item.company || '').toLowerCase()}`
+          if (key && !deduped.has(key)) deduped.set(key, item)
+        }
+        const finalResults = Array.from(deduped.values()).slice(0, SEARCH_TARGETED_LEAD_LIMIT)
+        /* preserveScore=true：finalResults 已含两波 AI 评分（emitLeadScored 也已流式
+           回填），全量替换时保留 matchScore，避免冲掉已评分状态导致「未分析完成」假象。 */
+        emitBasicResults(_event.sender, finalResults, true)
         emitStage(_event.sender, 'complete', '分析完成，线索已更新')
         emitStreamComplete(_event.sender)
-        return { success: true, data: { results: [] } }
+        // Pipeline: 合并后统一 STAGE（一次投放，避免第二波重复 staging）
+        // P0-8 修复：补 .catch，避免管道暂存异常升级为 unhandledRejection。
+        void withPipelineIsolation(async (runId) => {
+          const pipelineQueue = buildAgentTaskQueue(finalResults)
+          stageAgentsFromPipeline(pipelineQueue, _event.sender, store, runId)
+        }).catch((err) => {
+          probeLog('pipeline_stage_failed', err instanceof Error ? err.message : String(err))
+        })
+        return { success: true, data: { results: finalResults } }
       } catch (error: any) {
         probeLog('[Probe-IPC] Search execute catch triggered, emitting stream:error + stream:complete', {
           message: error?.message || 'Search execute failed',

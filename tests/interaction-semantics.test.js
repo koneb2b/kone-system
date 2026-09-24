@@ -41,7 +41,19 @@ Module._load = function mockLoad(request, parent, isMain) {
         ipcMainArg.handle(channel, async (event, ...args) => handler(event, ...args))
       },
       createLicenseService() {
-        return { licenseGuard: { getStoredClaims() { return { status: 'active', expiresAt: Date.now() + 60_000, features: ['analysis_advanced'], licenseKey: 'KONE-TEST', plan: 'basic' } } } }
+        return {
+          licenseGuard: {
+            getStoredClaims() {
+              return {
+                status: 'active',
+                expiresAt: Date.now() + 60_000,
+                features: ['analysis_advanced'],
+                licenseKey: 'KONE-TEST',
+                plan: 'basic',
+              }
+            },
+          },
+        }
       },
     }
   }
@@ -138,7 +150,12 @@ test('analysis generate returns typed invalid_scenario failure in packaged runti
     'system.machineId': 'analysis-prod',
   })
 
-  global.fetch = async () => ({ ok: true, async json() { return {} } })
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {}
+    },
+  })
 
   registerSearchHandlers(ipcMain, store)
   const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.ANALYSIS_GENERATE)(createEventMock(), {

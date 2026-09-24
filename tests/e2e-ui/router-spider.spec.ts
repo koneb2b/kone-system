@@ -87,7 +87,7 @@ test('router spider smoke: traverses 7 core modules in real Electron without whi
   const { child, logs } = startElectronDevStack()
   const consoleMessages = []
   let browser = null
-  let page = null
+  let page
 
   try {
     const debugReady = await waitForDebugEndpoint(logs)
@@ -128,7 +128,14 @@ test('router spider smoke: traverses 7 core modules in real Electron without whi
           matched: `${matched.matched.type}:${matched.matched.value}`,
         })
       } catch (error) {
-        const artifacts = await collectFailureArtifacts(page, module.label, 'electron-router-spider-failure', error, consoleMessages, logs)
+        const artifacts = await collectFailureArtifacts(
+          page,
+          module.label,
+          'electron-router-spider-failure',
+          error,
+          consoleMessages,
+          logs,
+        )
         results.push({
           module: module.label,
           navId: module.id,
@@ -141,13 +148,25 @@ test('router spider smoke: traverses 7 core modules in real Electron without whi
 
     fs.mkdirSync(ARTIFACT_DIR, { recursive: true })
     const summaryPath = path.join(ARTIFACT_DIR, 'router-spider-summary.txt')
-    fs.writeFileSync(summaryPath, JSON.stringify({
-      electronBridgeState,
-      modules: results,
-    }, null, 2), 'utf8')
+    fs.writeFileSync(
+      summaryPath,
+      JSON.stringify(
+        {
+          electronBridgeState,
+          modules: results,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
 
     const failed = results.filter((item) => item.status === 'failed')
-    assert.equal(failed.length, 0, `Router spider failed on ${failed.length} module(s): ${failed.map((item) => `${item.module}: ${item.error}`).join(' | ')}`)
+    assert.equal(
+      failed.length,
+      0,
+      `Router spider failed on ${failed.length} module(s): ${failed.map((item) => `${item.module}: ${item.error}`).join(' | ')}`,
+    )
   } finally {
     if (browser) {
       await browser.close().catch(() => undefined)

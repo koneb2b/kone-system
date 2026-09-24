@@ -24,47 +24,50 @@ const mapperModule = transpileTypeScriptModule(mapperPath, {
 })
 
 test('V1.3 lead mapper preserves multi-source intelligence fields', () => {
-  const mapped = mapperModule.mapSearchResultToLeadItem({
-    id: 'not-a-number',
-    company: 'Tokyo Battery Trading',
-    website: 'https://tokyobattery.example',
-    contact: 'Aiko Tanaka',
-    contactTitle: 'Procurement Director',
-    email: 'aiko@example.test',
-    phone: '+81-00-0000-0000',
-    address: 'Tokyo, Japan',
-    country: 'Japan',
-    source: 'Google Organic',
-    matchScore: 82,
-    fallbackStatus: 'social_blind_score',
-    dataSourceType: 'google_organic',
-    exhibitionFootprints: ['Battery Expo 2026'],
-    customsData: {
-      annualImportVolume: '120 shipments',
-      topSuppliers: ['Supplier A'],
-    },
-    decisionMakers: [
-      {
-        name: 'Aiko Tanaka',
-        title: 'Procurement Director',
-        email: 'aiko@example.test',
-        phone: '+81-00-0000-0000',
-        linkedinUrl: 'https://linkedin.com/in/aikotanaka',
-        source: 'public profile',
-        confidenceScore: 92,
+  const mapped = mapperModule.mapSearchResultToLeadItem(
+    {
+      id: 'not-a-number',
+      company: 'Tokyo Battery Trading',
+      website: 'https://tokyobattery.example',
+      contact: 'Aiko Tanaka',
+      contactTitle: 'Procurement Director',
+      email: 'aiko@example.test',
+      phone: '+81-00-0000-0000',
+      address: 'Tokyo, Japan',
+      country: 'Japan',
+      source: 'Google Organic',
+      matchScore: 82,
+      fallbackStatus: 'social_blind_score',
+      dataSourceType: 'google_organic',
+      exhibitionFootprints: ['Battery Expo 2026'],
+      customsData: {
+        annualImportVolume: '120 shipments',
+        topSuppliers: ['Supplier A'],
       },
-    ],
-    agentStatus: {
-      whatsappSent: true,
-      whatsappStatus: 'delivered',
-      linkedinContacted: false,
-      emailSequenceStage: 1,
+      decisionMakers: [
+        {
+          name: 'Aiko Tanaka',
+          title: 'Procurement Director',
+          email: 'aiko@example.test',
+          phone: '+81-00-0000-0000',
+          linkedinUrl: 'https://linkedin.com/in/aikotanaka',
+          source: 'public profile',
+          confidenceScore: 92,
+        },
+      ],
+      agentStatus: {
+        whatsappSent: true,
+        whatsappStatus: 'delivered',
+        linkedinContacted: false,
+        emailSequenceStage: 1,
+      },
     },
-  }, {
-    countryCode: 'JP',
-    industry: 'Industrial Batteries',
-    addedDate: '2026-05-26',
-  })
+    {
+      countryCode: 'JP',
+      industry: 'Industrial Batteries',
+      addedDate: '2026-05-26',
+    },
+  )
 
   assert.equal(typeof mapped.id, 'number')
   assert.equal(mapped.company, 'Tokyo Battery Trading')

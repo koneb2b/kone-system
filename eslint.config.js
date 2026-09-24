@@ -70,6 +70,11 @@ module.exports = tseslint.config(
   },
 
   // tests/ overrides — node:test
+  //
+  // 说明：测试用例里会直接用到 Web/Node 全局对象（Response、URL、document …），
+  // 原先未在此声明，导致 lint 一旦被真正执行就会误报 `no-undef`。
+  // 历史上 `npm run lint` 的 glob 被引号包裹而在 Windows 下永不匹配，
+  // 因此这些误报长期被掩盖。
   {
     files: ['tests/**/*.{js,ts}'],
     languageOptions: {
@@ -80,11 +85,47 @@ module.exports = tseslint.config(
         require: 'readonly',
         module: 'readonly',
         exports: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        Headers: 'readonly',
+        /* 注意：不要在此声明 URL / URLSearchParams —— 多个测试文件会
+           `const { URL } = require('node:url')`，声明为全局会触发 no-redeclare。
+           需要 URL 的用例请显式从 node:url 导入。 */
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        Blob: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        structuredClone: 'readonly',
+        queueMicrotask: 'readonly',
       },
     },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
       'no-console': 'off',
+    },
+  },
+
+  // tests/e2e-ui — 在浏览器上下文（Playwright/CDP）中执行，需要 DOM 全局
+  {
+    files: ['tests/e2e-ui/**/*.{js,ts}'],
+    languageOptions: {
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        navigator: 'readonly',
+        location: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        HTMLElement: 'readonly',
+        Node: 'readonly',
+        Event: 'readonly',
+        CustomEvent: 'readonly',
+        MutationObserver: 'readonly',
+        getComputedStyle: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+      },
     },
   },
 )

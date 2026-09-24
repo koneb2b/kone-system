@@ -14,6 +14,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as crypto from 'crypto'
 import { app } from './electron-bridge'
+import { getActiveConfigStore } from './config-service'
 
 const BACKUP_DIR = 'backups'
 const BACKUP_PREFIX = 'backup-'
@@ -56,7 +57,8 @@ function getBackupDir(): string {
 }
 
 function computeChecksum(data: string): string {
-  return crypto.createHash('md5').update(data, 'utf-8').digest('hex')
+  // DATA-14 修复：MD5 → SHA-256，提升完整性证明强度
+  return crypto.createHash('sha256').update(data, 'utf-8').digest('hex')
 }
 
 function getSourceFiles(): Record<string, string> {
@@ -163,6 +165,17 @@ function rotateBackups(): void {
  */
 export function triggerBackup(): BackupResult {
   try {
+    /* P0-5：备份直接读磁盘上的配置文件，必须先强制刷盘，
+       否则防抖窗口内尚未写盘的变更不会被纳入本次备份。 */
+    try {
+      getActiveConfigStore()?.flushSync?.()
+    } catch (flushError) {
+      console.warn(
+        '[Backup] Pre-backup flush failed:',
+        flushError instanceof Error ? flushError.message : String(flushError),
+      )
+    }
+
     const sourceFiles = getSourceFiles()
     if (Object.keys(sourceFiles).length === 0) {
       return { success: false, error: 'No source files found to back up' }

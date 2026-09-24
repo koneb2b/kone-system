@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, session } from './electron-bridge'
+import { app, BrowserWindow, screen, session, shell } from './electron-bridge'
 import path from 'path'
 import fs from 'fs'
 
@@ -16,6 +16,21 @@ const getWindowIconPath = () => {
 // preload 编译产物固定在 dist-electron/preload/index.js；
 // 本文件编译后位于 dist-electron/electron/services/，向上两级即达。
 const getPreloadPath = () => path.join(__dirname, '..', '..', 'preload', 'index.js')
+
+/**
+ * P0-7 修复：`session.defaultSession.webRequest.onBeforeSendHeaders` 是**追加**语义，
+ * 原先在每次 createMainWindow() 内注册。窗口重建（macOS activate / 异常重开）会
+ * 逐次累积同一监听器。此处提升为模块级一次性安装，并保留幂等标志。
+ */
+let userAgentHeaderInstalled = false
+const installUserAgentHeader = () => {
+  if (userAgentHeaderInstalled) return
+  userAgentHeaderInstalled = true
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    details.requestHeaders['User-Agent'] = 'Kone-AI/1.0'
+    callback({ requestHeaders: details.requestHeaders })
+  })
+}
 
 export const createMainWindow = async () => {
   const isDev = !app.isPackaged
@@ -60,9 +75,25 @@ export const createMainWindow = async () => {
     console.error(' [Window] Renderer process gone:', details)
   })
 
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    details.requestHeaders['User-Agent'] = 'Kone-AI/1.0'
-    callback({ requestHeaders: details.requestHeaders })
+  // P0-7 修复：一次性安装，窗口重建不再重复注册（原实现每次调用都会追加监听器）
+  installUserAgentHeader()
+
+  // EL-01 修复：导航安全——默认拒绝新窗口，仅允许 https 外链经外部浏览器打开
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    if (details.url.startsWith('https://')) {
+      shell.openExternal(details.url)
+    }
+    return { action: 'deny' }
+  })
+
+  // EL-01 修复：阻止渲染进程导航到非本地 origin（防 XSS 链接劫持）
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const isLocal = isDev
+      ? url.startsWith('http://127.0.0.1:5173') || url.startsWith('http://localhost:5173')
+      : url.startsWith('file://')
+    if (!isLocal) {
+      event.preventDefault()
+    }
   })
 
   if (isDev) {

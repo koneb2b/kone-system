@@ -1,3 +1,5 @@
+/* 缩短慢源 race 超时：provider mock 永不 settle，避免单测挂 120s 等 race 兜底 */
+process.env.KONE_LATE_SOURCE_TIMEOUT_MS = '100'
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')

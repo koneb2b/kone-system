@@ -1,5 +1,11 @@
 import { session } from './electron-bridge'
 import { IPC_CHANNELS } from '../ipc/channels'
+import { registerIpc, registry } from '../ipc/registry'
+import {
+  accountConnectContract,
+  accountDisconnectContract,
+  accountGetListContract,
+} from '../ipc/contracts/account.contract'
 import { ConfigStore } from './config-service'
 import { createLicenseService } from './license-service'
 
@@ -192,71 +198,70 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
   let rollcallSender: Electron.WebContents | null = null
 
   /* ── ACCOUNT CONNECT ── */
-  ipcMain.handle(
-    IPC_CHANNELS.ACCOUNT.CONNECT,
-    async (_event, payload: { accountType: string; label: string; credentials?: Record<string, string> }) => {
-      try {
-        const accountType = String(payload?.accountType || '').trim() as AccountEntry['accountType']
+  registerIpc(IPC_CHANNELS.ACCOUNT.CONNECT, accountConnectContract, async (_event: unknown, payload: unknown) => {
+    try {
+      const p = (payload || {}) as { accountType: string; label: string; credentials?: Record<string, string> }
+      const accountType = String(p?.accountType || '').trim() as AccountEntry['accountType']
 
-        const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
-        const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
+      const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
+      const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
 
-        if (!hasTeamCollaboration) {
-          const isEmailType = accountType === 'email_smtp' || accountType === 'email_imap'
-          if (!isEmailType || !hasSearchBasic) {
-            return (
-              buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
-            )
-          }
-          const existingEmail = Array.from(accounts.values()).find(
-            (a) => a.accountType === 'email_smtp' || a.accountType === 'email_imap',
+      if (!hasTeamCollaboration) {
+        const isEmailType = accountType === 'email_smtp' || accountType === 'email_imap'
+        if (!isEmailType || !hasSearchBasic) {
+          return (
+            buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
           )
-          if (existingEmail) {
-            return { success: false, error: '基础版仅支持单个企业邮箱通道。请先断开已有邮箱账号。', code: 403 }
-          }
         }
-
-        rollcallSender = _event.sender
-        const accountId = generateAccountId()
-        const partition = getSessionPartition(accountId)
-
-        const entry: AccountEntry = {
-          accountId,
-          accountType,
-          label: String(payload.label || '').trim() || `${accountType} 账号`,
-          email: payload.credentials?.email || undefined,
-          status: 'connected',
-          connectedAt: new Date().toISOString(),
-          lastCheckedAt: new Date().toISOString(),
-          credentials: payload.credentials,
-        }
-
-        accounts.set(accountId, entry)
-        if (rollcallSender && !rollcallSender.isDestroyed()) {
-          startHealthCheckPoller(rollcallSender)
-        }
-
-        return {
-          success: true,
-          data: {
-            accountId: entry.accountId,
-            status: entry.status,
-          },
-        }
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : '沙箱创建失败',
-          code: 500,
+        const existingEmail = Array.from(accounts.values()).find(
+          (a) => a.accountType === 'email_smtp' || a.accountType === 'email_imap',
+        )
+        if (existingEmail) {
+          return { success: false, error: '基础版仅支持单个企业邮箱通道。请先断开已有邮箱账号。', code: 403 }
         }
       }
-    },
-  )
+
+      rollcallSender = (_event as Electron.IpcMainInvokeEvent).sender
+      const accountId = generateAccountId()
+      const partition = getSessionPartition(accountId)
+
+      const entry: AccountEntry = {
+        accountId,
+        accountType,
+        label: String(p.label || '').trim() || `${accountType} 账号`,
+        email: p.credentials?.email || undefined,
+        status: 'connected',
+        connectedAt: new Date().toISOString(),
+        lastCheckedAt: new Date().toISOString(),
+        credentials: p.credentials,
+      }
+
+      accounts.set(accountId, entry)
+      if (rollcallSender && !rollcallSender.isDestroyed()) {
+        startHealthCheckPoller(rollcallSender)
+      }
+
+      return {
+        success: true,
+        data: {
+          accountId: entry.accountId,
+          status: entry.status,
+        },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '沙箱创建失败',
+        code: 500,
+      }
+    }
+  })
 
   /* ── ACCOUNT DISCONNECT ── */
-  ipcMain.handle(IPC_CHANNELS.ACCOUNT.DISCONNECT, async (_event, payload: { accountId: string }) => {
+  registerIpc(IPC_CHANNELS.ACCOUNT.DISCONNECT, accountDisconnectContract, async (_event: unknown, payload: unknown) => {
     try {
-      const accountId = String(payload?.accountId || '').trim()
+      const p = (payload || {}) as { accountId: string }
+      const accountId = String(p?.accountId || '').trim()
       if (!accountId) {
         return { success: false, error: '缺少账号ID', code: 400 }
       }
@@ -297,7 +302,7 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
   })
 
   /* ── ACCOUNT GET LIST ── */
-  ipcMain.handle(IPC_CHANNELS.ACCOUNT.GET_LIST, async (_event) => {
+  registerIpc(IPC_CHANNELS.ACCOUNT.GET_LIST, accountGetListContract, async (_event: unknown) => {
     try {
       const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
       const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
@@ -308,7 +313,7 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
         )
       }
 
-      rollcallSender = _event.sender
+      rollcallSender = (_event as Electron.IpcMainInvokeEvent).sender
 
       let entries = Array.from(accounts.values())
       if (!hasTeamCollaboration) {
@@ -339,4 +344,10 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
       }
     }
   })
+
+  /* 自绑定兼容层（与 agent-service / autopilot-state-service / auth-service 同构）：
+     历史 e2e / 独立测试直接调用本函数而未显式 attach，迁移后 3 个 plain 通道需落到
+     ipcMain 才能被 getHandler 取到。attach 按 ipcMain 实例幂等，主进程末尾的 attach
+     不会重复绑定。 */
+  registry.attach(ipcMain)
 }

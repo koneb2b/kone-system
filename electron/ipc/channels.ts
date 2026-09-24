@@ -96,6 +96,38 @@ export const IPC_CHANNELS = {
   },
 } as const
 
+/**
+ * 仅推送（事件广播）通道：由主进程经 `webContents.send` 发出、渲染层监听，无 invoke handler。
+ * 列出此处作为 `assertAllRegistered()` 启动门禁的排除集——门禁只断言 invoke 通道已登记，
+ * 不要求推送通道有 handler。`verify-ipc-consistency.cjs` 的 push 检测（`PUSH_RE`）是同一事实源的
+ * 可观测校验：本集合应与扫描结果一致（11 个），若两者漂移说明有通道被误分类。
+ */
+export const PUSH_CHANNELS: readonly string[] = [
+  'autopilot-action', // SYSTEM.AUTOPILOT_ACTION
+  'account:status-update', // ACCOUNT.STATUS_UPDATE
+  'agent:status-changed', // AGENT.STATUS_CHANGED
+  'agent:lead-status-updated', // AGENT.LEAD_STATUS_UPDATED
+  'cloud:realtime-lead-event', // CLOUD.REALTIME_LEAD_EVENT
+  'search:basic-results', // SEARCH.BASIC_RESULTS
+  'search:lead-scored', // SEARCH.LEAD_SCORED
+  'search:stage', // SEARCH.STAGE
+  'search:stream-complete', // SEARCH.STREAM_COMPLETE
+  'search:stream-error', // SEARCH.STREAM_ERROR
+  'search:stream-start', // SEARCH.STREAM_START
+] as const
+
+/** 收集全部 invoke 通道字符串（排除仅推送通道），供启动门禁 `assertAllRegistered()` 使用。 */
+export function collectInvokeChannels(): string[] {
+  const all: string[] = []
+  const walk = (node: unknown): void => {
+    if (typeof node === 'string') all.push(node)
+    else if (node && typeof node === 'object') Object.values(node as Record<string, unknown>).forEach(walk)
+  }
+  walk(IPC_CHANNELS)
+  const push = new Set<string>(PUSH_CHANNELS)
+  return all.filter((c) => !push.has(c))
+}
+
 export type IpcChannelTree = typeof IPC_CHANNELS
 
 type NestedValueOf<T> = T extends string ? T : T extends Record<string, unknown> ? NestedValueOf<T[keyof T]> : never

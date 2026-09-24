@@ -2,7 +2,15 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const Module = require('node:module')
-const { createIpcMainMock, createEventMock, createStoreMock, createElectronMock, withModuleMocks, resetModule } = require('./helpers.js')
+const { URL } = require('node:url')
+const {
+  createIpcMainMock,
+  createEventMock,
+  createStoreMock,
+  createElectronMock,
+  withModuleMocks,
+  resetModule,
+} = require('./helpers.js')
 
 const originalFetch = global.fetch
 const searchServicePath = '../../dist-electron/electron/services/search-service.js'
@@ -12,7 +20,6 @@ const licenseServicePath = '../../dist-electron/electron/services/license-servic
 const channelsPath = '../../dist-electron/electron/ipc/channels.js'
 
 const loadSearchService = () => require(searchServicePath)
-
 
 test('level-2 fallback emits exact maps-keyword-fallback wording', async () => {
   const stageEvents = []
@@ -96,9 +103,15 @@ test('search handler pre-filter removes body shop and mechanic noise while retai
       if (/llm/i.test(String(key || ''))) return 'mock-llm-key'
       return ''
     },
-    setSecret() { return { exists: true, masked: '***' } },
-    checkSecret() { return { exists: true, masked: '***' } },
-    migrateSecrets() { return false },
+    setSecret() {
+      return { exists: true, masked: '***' }
+    },
+    checkSecret() {
+      return { exists: true, masked: '***' }
+    },
+    migrateSecrets() {
+      return false
+    },
   }
   const licenseServiceMock = {
     createLicenseService() {
@@ -120,18 +133,48 @@ test('search handler pre-filter removes body shop and mechanic noise while retai
         async text() {
           return JSON.stringify({
             local_results: [
-              { title: 'Downtown Body Shop', website: 'https://bodyshop.example', address: 'Tokyo', description: 'body shop and repair center' },
-              { title: 'Quick Mechanic Service', website: 'https://mechanic.example', address: 'Tokyo', description: 'mechanic and tire service' },
-              { title: 'Tokyo Battery Trading', website: 'https://tokyobattery.example', address: 'Tokyo', description: 'industrial battery dealer' },
+              {
+                title: 'Downtown Body Shop',
+                website: 'https://bodyshop.example',
+                address: 'Tokyo',
+                description: 'body shop and repair center',
+              },
+              {
+                title: 'Quick Mechanic Service',
+                website: 'https://mechanic.example',
+                address: 'Tokyo',
+                description: 'mechanic and tire service',
+              },
+              {
+                title: 'Tokyo Battery Trading',
+                website: 'https://tokyobattery.example',
+                address: 'Tokyo',
+                description: 'industrial battery dealer',
+              },
             ],
           })
         },
         async json() {
           return {
             local_results: [
-              { title: 'Downtown Body Shop', website: 'https://bodyshop.example', address: 'Tokyo', description: 'body shop and repair center' },
-              { title: 'Quick Mechanic Service', website: 'https://mechanic.example', address: 'Tokyo', description: 'mechanic and tire service' },
-              { title: 'Tokyo Battery Trading', website: 'https://tokyobattery.example', address: 'Tokyo', description: 'industrial battery dealer' },
+              {
+                title: 'Downtown Body Shop',
+                website: 'https://bodyshop.example',
+                address: 'Tokyo',
+                description: 'body shop and repair center',
+              },
+              {
+                title: 'Quick Mechanic Service',
+                website: 'https://mechanic.example',
+                address: 'Tokyo',
+                description: 'mechanic and tire service',
+              },
+              {
+                title: 'Tokyo Battery Trading',
+                website: 'https://tokyobattery.example',
+                address: 'Tokyo',
+                description: 'industrial battery dealer',
+              },
             ],
           }
         },
@@ -140,77 +183,90 @@ test('search handler pre-filter removes body shop and mechanic noise while retai
     throw new Error(`Unexpected fetch: ${target}`)
   }
 
-  await withModuleMocks({
-    electron: electronMock,
-    'electron-store': class MockStore {
-      constructor() {
-        this.values = {}
-        this.path = path.join(process.cwd(), '.tmp-business-logic-user-data', 'kone-config.json')
-      }
-      get(key) {
-        return this.values[key]
-      }
-      set(key, value) {
-        this.values[key] = value
-      }
+  await withModuleMocks(
+    {
+      electron: electronMock,
+      'electron-store': class MockStore {
+        constructor() {
+          this.values = {}
+          this.path = path.join(process.cwd(), '.tmp-business-logic-user-data', 'kone-config.json')
+        }
+        get(key) {
+          return this.values[key]
+        }
+        set(key, value) {
+          this.values[key] = value
+        }
+      },
+      [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]:
+        secretManagerMock,
+      [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`]:
+        secretManagerMock,
+      [`./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]:
+        licenseServiceMock,
     },
-    [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]: secretManagerMock,
-    [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`]: secretManagerMock,
-    [`./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]: licenseServiceMock,
-  }, async () => {
-    resetModule(searchServicePath)
-    resetModule(configServicePath)
-    resetModule(secretManagerPath)
-    resetModule(licenseServicePath)
-    resetModule(channelsPath)
-    const { registerSearchHandlers } = require(searchServicePath)
-    const { IPC_CHANNELS } = require(channelsPath)
-    const ipcMain = createIpcMainMock()
-    const store = createStoreMock({
-      user_config: {
-        providers: [
-          { id: 'google-leads', baseUrl: 'https://serpapi.com' },
-          { id: 'llm', baseUrl: 'https://mock-llm.example/v1' },
-        ],
-        selectedModel: 'gpt-4o-mini',
-        icpProfile: {
-          targetProduct: 'Industrial battery system',
-          buyerPersona: 'distributor',
-          coreAdvantage: 'stable delivery',
-          negativeIcp: '',
+    async () => {
+      resetModule(searchServicePath)
+      resetModule(configServicePath)
+      resetModule(secretManagerPath)
+      resetModule(licenseServicePath)
+      resetModule(channelsPath)
+      const { registerSearchHandlers } = require(searchServicePath)
+      const { IPC_CHANNELS } = require(channelsPath)
+      const ipcMain = createIpcMainMock()
+      const store = createStoreMock({
+        user_config: {
+          providers: [
+            { id: 'google-leads', baseUrl: 'https://serpapi.com' },
+            { id: 'llm', baseUrl: 'https://mock-llm.example/v1' },
+          ],
+          selectedModel: 'gpt-4o-mini',
+          icpProfile: {
+            targetProduct: 'Industrial battery system',
+            buyerPersona: 'distributor',
+            coreAdvantage: 'stable delivery',
+            negativeIcp: '',
+          },
         },
-      },
-    })
+      })
 
-    registerSearchHandlers(ipcMain, store)
-    const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)({
-      sender: {
-        send(channel, payload) {
-          senderEvents.push({ channel, payload })
+      registerSearchHandlers(ipcMain, store)
+      const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)(
+        {
+          sender: {
+            send(channel, payload) {
+              senderEvents.push({ channel, payload })
+            },
+          },
         },
-      },
-    }, {
-      keyword: 'Industrial battery dealer',
-      country: 'Japan',
-      city: '',
-      filterOptions: {},
-    })
+        {
+          keyword: 'Industrial battery dealer',
+          country: 'Japan',
+          city: '',
+          filterOptions: {},
+        },
+      )
 
-    assert.equal(result?.success, true)
-    assert.ok(Array.isArray(result?.data?.results))
-    const companies = result.data.results.map((item) => item.company)
-    assert.ok(companies.includes('Tokyo Battery Trading'))
-    assert.ok(!companies.includes('Downtown Body Shop'))
-    assert.ok(!companies.includes('Quick Mechanic Service'))
+      assert.equal(result?.success, true)
+      assert.ok(Array.isArray(result?.data?.results))
+      const companies = result.data.results.map((item) => item.company)
+      assert.ok(companies.includes('Tokyo Battery Trading'))
+      assert.ok(!companies.includes('Downtown Body Shop'))
+      assert.ok(!companies.includes('Quick Mechanic Service'))
 
-    const eventNames = senderEvents.map((entry) => entry.channel)
-    const completeIndex = eventNames.lastIndexOf(IPC_CHANNELS.SEARCH.STREAM_COMPLETE)
-    const enrichingIndex = senderEvents.findIndex((entry) => entry.channel === IPC_CHANNELS.SEARCH.STAGE && entry.payload?.stage === 'enriching')
-    const stageCompleteIndex = senderEvents.findIndex((entry) => entry.channel === IPC_CHANNELS.SEARCH.STAGE && entry.payload?.stage === 'complete')
-    assert.ok(enrichingIndex >= 0, 'search should emit enriching stage before final completion')
-    assert.ok(stageCompleteIndex > enrichingIndex, 'search should emit complete stage after enriching')
-    assert.ok(completeIndex > stageCompleteIndex, 'stream complete should be emitted only after stage complete')
-  })
+      const eventNames = senderEvents.map((entry) => entry.channel)
+      const completeIndex = eventNames.lastIndexOf(IPC_CHANNELS.SEARCH.STREAM_COMPLETE)
+      const enrichingIndex = senderEvents.findIndex(
+        (entry) => entry.channel === IPC_CHANNELS.SEARCH.STAGE && entry.payload?.stage === 'enriching',
+      )
+      const stageCompleteIndex = senderEvents.findIndex(
+        (entry) => entry.channel === IPC_CHANNELS.SEARCH.STAGE && entry.payload?.stage === 'complete',
+      )
+      assert.ok(enrichingIndex >= 0, 'search should emit enriching stage before final completion')
+      assert.ok(stageCompleteIndex > enrichingIndex, 'search should emit complete stage after enriching')
+      assert.ok(completeIndex > stageCompleteIndex, 'stream complete should be emitted only after stage complete')
+    },
+  )
 })
 
 test('AnySearch google_organic dataSourceType skips Maps and returns organic Scout candidates', async () => {
@@ -220,9 +276,15 @@ test('AnySearch google_organic dataSourceType skips Maps and returns organic Sco
       if (/google-leads/i.test(String(key || ''))) return 'mock-google-key'
       return ''
     },
-    setSecret() { return { exists: true, masked: '***' } },
-    checkSecret() { return { exists: true, masked: '***' } },
-    migrateSecrets() { return false },
+    setSecret() {
+      return { exists: true, masked: '***' }
+    },
+    checkSecret() {
+      return { exists: true, masked: '***' }
+    },
+    migrateSecrets() {
+      return false
+    },
   }
   const licenseServiceMock = {
     createLicenseService() {
@@ -248,15 +310,16 @@ test('AnySearch google_organic dataSourceType skips Maps and returns organic Sco
         headers: { get: () => 'application/json' },
         async text() {
           return JSON.stringify({
-            organic_results: start === '0'
-              ? [
-                {
-                  title: 'Tokyo Industrial Battery Distributor',
-                  link: 'https://tokyo-industrial-battery.example',
-                  snippet: 'Industrial battery distributor and wholesale supplier in Japan',
-                },
-              ]
-              : [],
+            organic_results:
+              start === '0'
+                ? [
+                    {
+                      title: 'Tokyo Industrial Battery Distributor',
+                      link: 'https://tokyo-industrial-battery.example',
+                      snippet: 'Industrial battery distributor and wholesale supplier in Japan',
+                    },
+                  ]
+                : [],
           })
         },
       }
@@ -264,66 +327,73 @@ test('AnySearch google_organic dataSourceType skips Maps and returns organic Sco
     throw new Error(`Unexpected fetch: ${target}`)
   }
 
-  await withModuleMocks({
-    electron: electronMock,
-    'electron-store': class MockStore {
-      constructor() {
-        this.values = {}
-        this.path = path.join(process.cwd(), '.tmp-business-logic-user-data', 'kone-config.json')
-      }
-      get(key) {
-        return this.values[key]
-      }
-      set(key, value) {
-        this.values[key] = value
-      }
+  await withModuleMocks(
+    {
+      electron: electronMock,
+      'electron-store': class MockStore {
+        constructor() {
+          this.values = {}
+          this.path = path.join(process.cwd(), '.tmp-business-logic-user-data', 'kone-config.json')
+        }
+        get(key) {
+          return this.values[key]
+        }
+        set(key, value) {
+          this.values[key] = value
+        }
+      },
+      [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]:
+        secretManagerMock,
+      [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`]:
+        secretManagerMock,
+      [`./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]:
+        licenseServiceMock,
     },
-    [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]: secretManagerMock,
-    [`./secret-manager::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'config-service.js')}`]: secretManagerMock,
-    [`./license-service::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'search-service.js')}`]: licenseServiceMock,
-  }, async () => {
-    resetModule(searchServicePath)
-    resetModule(configServicePath)
-    resetModule(secretManagerPath)
-    resetModule(licenseServicePath)
-    resetModule(channelsPath)
-    const { registerSearchHandlers } = require(searchServicePath)
-    const { IPC_CHANNELS } = require(channelsPath)
-    const ipcMain = createIpcMainMock()
-    const store = createStoreMock({
-      user_config: {
-        providers: [
-          { id: 'google-leads', baseUrl: 'https://serpapi.com' },
-        ],
-        icpProfile: {
-          targetProduct: 'Industrial battery system',
-          buyerPersona: 'distributor',
-          coreAdvantage: 'stable delivery',
-          negativeIcp: '',
+    async () => {
+      resetModule(searchServicePath)
+      resetModule(configServicePath)
+      resetModule(secretManagerPath)
+      resetModule(licenseServicePath)
+      resetModule(channelsPath)
+      const { registerSearchHandlers } = require(searchServicePath)
+      const { IPC_CHANNELS } = require(channelsPath)
+      const ipcMain = createIpcMainMock()
+      const store = createStoreMock({
+        user_config: {
+          providers: [{ id: 'google-leads', baseUrl: 'https://serpapi.com' }],
+          icpProfile: {
+            targetProduct: 'Industrial battery system',
+            buyerPersona: 'distributor',
+            coreAdvantage: 'stable delivery',
+            negativeIcp: '',
+          },
         },
-      },
-    })
+      })
 
-    registerSearchHandlers(ipcMain, store)
-    const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)({
-      sender: {
-        send(channel, payload) {
-          senderEvents.push({ channel, payload })
+      registerSearchHandlers(ipcMain, store)
+      const result = await ipcMain.getHandler(IPC_CHANNELS.SEARCH.EXECUTE)(
+        {
+          sender: {
+            send(channel, payload) {
+              senderEvents.push({ channel, payload })
+            },
+          },
         },
-      },
-    }, {
-      keyword: 'Industrial battery distributor',
-      country: 'Japan',
-      city: 'Tokyo',
-      dataSourceType: 'google_organic',
-      filterOptions: {},
-    })
+        {
+          keyword: 'Industrial battery distributor',
+          country: 'Japan',
+          city: 'Tokyo',
+          dataSourceType: 'google_organic',
+          filterOptions: {},
+        },
+      )
 
-    assert.equal(result?.success, true)
-    assert.deepEqual([...new Set(requestedEngines)], ['google'])
-    assert.ok(result.data.results.some((item) => item.source === 'Google Organic'))
-    assert.ok(senderEvents.some((entry) => entry.channel === IPC_CHANNELS.SEARCH.STREAM_COMPLETE))
-  })
+      assert.equal(result?.success, true)
+      assert.deepEqual([...new Set(requestedEngines)], ['google'])
+      assert.ok(result.data.results.some((item) => item.source === 'Google Organic'))
+      assert.ok(senderEvents.some((entry) => entry.channel === IPC_CHANNELS.SEARCH.STREAM_COMPLETE))
+    },
+  )
 })
 
 test.after(() => {
