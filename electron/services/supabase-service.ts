@@ -13,6 +13,7 @@ import { IPC_CHANNELS } from '../ipc/channels'
 import { registerSecureFeatureIpc } from './license-service'
 import { getPhysicalMachineId } from './license-service'
 import { extractDomain } from '../utils/domain'
+import { evaluateCloudSyncGate } from '../utils/cloud-sync-gate'
 import type { ConfigStore } from './config-service'
 import * as crypto from 'crypto'
 
@@ -171,9 +172,11 @@ const syncLeadToCloud = async (
   lead: Record<string, unknown>,
   force = false,
 ): Promise<{ synced: boolean; reason?: string }> => {
-  const score = Math.round(Number(lead.matchScore || lead.score || 0))
-  if (!force && score < GOLD_FILTER_MIN_SCORE) {
-    return { synced: false, reason: `评分 ${score} 低于上云阈值 ${GOLD_FILTER_MIN_SCORE}` }
+  /* §L157 上云 Gold Filter（宪法）：合格 = 评分达阈值（或人工 force）**且 email 非空**。
+     此前只校验评分与域名、漏了 email，会把无邮箱线索 bulk-sync 上云。 */
+  const gate = evaluateCloudSyncGate(lead, GOLD_FILTER_MIN_SCORE, force)
+  if (!gate.allowed) {
+    return { synced: false, reason: gate.reason }
   }
   const client = getClient(store)
   const machineId = getPhysicalMachineId(store)

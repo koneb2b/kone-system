@@ -451,6 +451,31 @@ lastVerifiedAt: 2026-09-22
 | **同时核查合规项** | §L143 展会脚印并集去重 ✅、§L144-145 排序法典（`addedDate` → `matchScore` 降序 `-1` 兜底）✅、归一法典（`normalizeLeadStatus`）✅、`sortByScoreThenOriginalOrder` 的 `\|\| 0` **无害**（已有 `typeof === 'number'` 守卫）。 |
 | **验证** | `test:unit` → **288 / 288**（+1）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过 |
 
+### 数据主权修复 · 上云 Gold Filter 漏校验 `email`（§L157 宪法红线，P0）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | `kone-PRD` §L157「上云 Payload 严苛裁剪 (Gold Filter)」明文：「**只有 `email` 非空的合格黄金线索才放行单向交接，绝不允许 bulk-sync 未经筛选的原始垃圾包上云**」。**但实现**：`syncLeadToCloud` 的门槛是 `score >= GOLD_FILTER_MIN_SCORE(80)` + `payload.domain` 存在，**完全未校验 `email`** → 无邮箱线索也会被同步上云。 |
+| **用户/合规影响** | ① 云端用途是多轮 N8N **邮件营销**，无邮箱线索不构成可执行资产（白白占用云端配额）；② 违背 PRD 的"严苛裁剪 / 防 bulk-sync 垃圾包上云"的数据主权意图。 |
+| **修复** | 抽出**零依赖纯函数** `evaluateCloudSyncGate`（`electron/utils/cloud-sync-gate.ts`）：合格 = 评分达阈值（或人工 `force` 覆盖）**且 `email` 非空**（`force` 亦不豁免——云端交接用途即邮件营销）。`syncLeadToCloud` 改用它做统一门槛。 |
+| **回归防护** | 新增 `tests/business-logic/cloud-sync-gate.business.test.js`（6 条）：无邮箱拒 / 空白字符视为缺失 / 达标+有邮箱放行 / 低分拒 / `force` 覆盖评分但不豁免邮箱 / `score` 字段回退 |
+| **验证** | `test:unit` → **294 / 294**（+6）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过 |
+
+### 宪法条款核查（第三轮，§L104/§L109/§L110/§L143-145 全合规）
+
+| 条款 | 结论 |
+|---|---|
+| §L104 前端刚性截断与分页 | ✅ `SEARCH_PAGE_SIZE = 30`；`use-search-engine.ts:570-572` 实现**首页↔末页双向环绕**（`<1 → totalPages`、`>totalPages → 1`） |
+| §L109 Provider 失败降级 | ✅ `provider-registry.executeAll` 用 `Promise.allSettled` + 每 Provider `.catch()` → 失败降级为 `{ results: [], error }`，**不中断主搜索** |
+| §L110 统一归一化 / 保留 `dataSourceType` | ✅ Provider 设 `source`，两条结果路径（`search-service.ts:1746` / `2334`）均映射 `dataSourceType: item.source` |
+| §L143 展会脚印并集去重 | ✅ `Array.from(new Set([...existing, ...incoming]))` |
+| §L144-145 排序法典 / 归一法典 | ✅ `addedDate` 降序 → `matchScore` 降序（未评分 `-1` 兜底）；`normalizeLeadStatus` 已用 |
+| §L149 并发红线 = 2 | ✅ `SEARCH_LLM_CONCURRENCY = 2` / `SEARCH_ENRICH_CONCURRENCY = 2`（`SEARCH_FANOUT_CONCURRENCY = 3` 属**独立并发域**，P1-2 已文档化） |
+| §L152 3000 字截断 | ✅ `MAX_WEBSITE_TEXT_FOR_LLM = 3000` 已在 `trimWebsiteTextForLlm` 强制 |
+| §L153 PDF 本地生成 | ✅ `export-service.ts:309` 用 `webContents.printToPDF`（本地重计算，不上云） |
+
+> **核查方法论**：本轮 3 次"疑似缺陷"中，**2 次经取证后确认为合规并收回**（§L110 字段名误读、`sortByScoreThenOriginalOrder` 的 `|| 0` 无害）——**结论必须逐条验证，不能凭 grep 片段下判断**。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
