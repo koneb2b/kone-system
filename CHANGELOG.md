@@ -274,6 +274,21 @@ lastVerifiedAt: 2026-09-22
 
 > **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` 0 error（251 warning，与 P3 基线持平——迁移引入的 `OMNI_CONTROL_TERMS` 未使用告警已同步清除）。
 
+### 架构重构 · O1 拆分 `search-service.ts`（P5：评分基元与提示词外提）
+
+| 项 | 变更 | 验证 |
+|---|---|---|
+| **P5 评分外提** | 新建 `electron/services/search/scoring.ts`（185 行）：`computeIcpMatchScore`（Stage-1 40/30/20/10 预筛分）+ `normalizeOpportunityScore`（Stage-2 机会分）+ `applySchemaDefaults`（白名单序列化）+ `mapHttpError` + 评分提示词（`buildSearchScoringSystemPrompt`/`buildUniversalIcpPrompt`/`buildSearchScoringPrompt`） | `npm run typecheck` 0 error |
+| **共享类型外提** | 新建 `electron/services/search/types.ts`（58 行）：本地 `SearchExecuteResult` + `OpportunityScore`。**根因**：`SearchExecuteResult` 是 search-service 的**本地镜像类型**（`id: string`、含 `reason?`），与 `src/shared/ipc-contracts.ts` 同名类型**不同**（后者 `id?: string`、无 `reason`）——子模块无法直接复用 ipc 版，故外提为 search 域共享类型 | 编译 0 error |
+| 公开导出面保留 | `export { buildSearchScoringPrompt, computeIcpMatchScore, normalizeOpportunityScore, type OpportunityScore }`（原导出符号，测试经编译产物访问不受影响） | `test:unit` 266/266 |
+| 死代码顺带清理 | `buildSearchScoringSystemPrompt` 原为 search-service 内**未被调用**的函数（lint 既存告警），外提至 scoring.ts 为导出后告警消除 | `npm run lint` 251 → **250**（−1） |
+| 导入收敛 | 迁移后清理 search-service 中 3 处未使用导入（`clampInt` / `CustomsData` / `AgentStatus`） | 同上 |
+| 结果 | `search-service.ts` 3311 → **3107 行**（累计 P1–P5：3873 → 3107，**−766 行**） | — |
+
+> **批量验证**：`npm run build:electron:dev` 0 error；`npm run typecheck` 0 error；`npm run test:unit` → **266 tests / 266 pass / 0 fail**；`npm run verify:consistency` 双绿；`npm run format` 通过；`npm run lint` **0 error（250 warning，较基线 −1）**。
+
+> **新发现 O14（架构债）**：`SearchExecuteResult` 存在**两份定义**（`src/shared/ipc-contracts.ts` 与 search-service 本地镜像），字段不一致（`id` 可选性、`reason` 有无）。P1-3 注释要求二者对齐，但仍是两处维护——应统一为单一 SSOT（ipc-contracts），属后续独立重构项。本轮仅无损外提，未改变类型语义。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

@@ -1,0 +1,185 @@
+/**
+ * search/scoring.ts — ICP 评分与评分提示词
+ *
+ * O1 拆分（P5）：从 `search-service.ts` 抽出的评分基元与提示词构造。
+ * 覆盖 Stage-1 确定性 40/30/20/10 预筛分（`computeIcpMatchScore`）、
+ * Stage-2 结构化机会分（`OpportunityScore` / `normalizeOpportunityScore`）、
+ * 白名单序列化（`applySchemaDefaults`）与评分提示词。
+ * 纯函数，无 Electron/网络依赖，可独立定向单测。
+ */
+
+import * as crypto from 'crypto'
+import { matchesProductTerm } from './scout'
+import { clampInt, extractDomainFromUrl, mergePromptParts } from './text-utils'
+import type { OpportunityScore, SearchExecuteResult } from './types'
+
+export const computeIcpMatchScore = (candidate: Partial<SearchExecuteResult>, coreProductTerms: string[]): number => {
+  let score = 0
+  const domain = extractDomainFromUrl(candidate.website)
+  const hasWebsite = Boolean(domain)
+  score += hasWebsite ? 40 : 10
+  const text =
+    `${candidate.company || ''} ${candidate.snippet || ''} ${candidate.reason || ''} ${(candidate.matchReasons || []).join(' ')}`.toLowerCase()
+  const productMatch = coreProductTerms.some((term) => matchesProductTerm(text, term))
+  score += productMatch ? 30 : 0
+  const b2bSignals = ['wholesale', 'distribute', 'import', 'b2b', 'shop', 'dealer', 'supplier', 'manufacturer']
+  const b2bHits = b2bSignals.filter((signal) => text.includes(signal))
+  if (b2bHits.length >= 3) score += 20
+  else if (b2bHits.length >= 1) score += 10
+  const hasContact = Boolean(candidate.contact || candidate.email || candidate.phone)
+  score += hasContact ? 10 : 0
+  return Math.min(100, Math.max(0, score))
+}
+
+/* P2-3 Stage-2 机会分模型（kone-PRD §0.5.1）：ICP Fit 55 + Intent(Why-Now) 35 +
+   Evidence 10 − Risk Penalty(0-20)。钳制各维度并按公式重算 finalScore；
+   输入缺失/非法 → undefined（诚实缺省，不臆造）。纯函数，导出供测试。
+   `OpportunityScore` 类型见 ./types（P5 外提，避免子模块反向依赖）。 */
+export const normalizeOpportunityScore = (raw: unknown): OpportunityScore | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const obj = raw as Record<string, unknown>
+  const hasAnyField = ['icpFit', 'intent', 'evidence', 'riskPenalty', 'finalScore'].some((k) => obj[k] !== undefined)
+  if (!hasAnyField) return undefined
+  const icpFit = clampInt(obj.icpFit, 0, 55)
+  const intent = clampInt(obj.intent, 0, 35)
+  const evidence = clampInt(obj.evidence, 0, 10)
+  const riskPenalty = clampInt(obj.riskPenalty, 0, 20)
+  const finalScore = Math.max(0, Math.min(100, icpFit + intent + evidence - riskPenalty))
+  return { icpFit, intent, evidence, riskPenalty, finalScore }
+}
+
+export const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchExecuteResult => ({
+  id: String(item.id || crypto.randomUUID()),
+  company: String(item.company || '').trim(),
+  website: String(item.website || '').trim(),
+  contact: item.contact ? String(item.contact).trim() : '',
+  contactTitle: item.contactTitle ? String(item.contactTitle).trim() : '',
+  email: item.email ? String(item.email).trim() : '',
+  phone: String(item.phone || '').trim(),
+  address: String(item.address || '').trim(),
+  isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : (item.isB2B ?? undefined),
+  source: String(item.source || '').trim() || 'Google Maps',
+  reason: item.reason ? String(item.reason).trim() : '',
+  matchReasons: Array.isArray(item.matchReasons)
+    ? item.matchReasons
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+        .slice(0, 2)
+    : [],
+  riskFlags: Array.isArray(item.riskFlags)
+    ? item.riskFlags
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+        .slice(0, 1)
+    : [],
+  matchScore: Number.isFinite(Number(item.matchScore))
+    ? Math.max(0, Math.min(100, Number(item.matchScore)))
+    : undefined,
+  snippet: item.snippet ? String(item.snippet).trim() : undefined,
+  fallbackStatus: item.fallbackStatus === 'social_blind_score' ? 'social_blind_score' : undefined,
+  /* P1-3：以下五个字段此前在序列化时被丢弃，导致前端"跟进建议/推断角色"永久空白
+     （src/hooks/use-search-engine.ts:552-559 与 search-result-card.tsx:175-184 依赖它们） */
+  inferredRole: item.inferredRole ? String(item.inferredRole).trim() : undefined,
+  salesStrategy: item.salesStrategy ? String(item.salesStrategy).trim() : undefined,
+  country: item.country ? String(item.country).trim() : undefined,
+  city: item.city ? String(item.city).trim() : undefined,
+  status: item.status === 'contacting' || item.status === 'replied' || item.status === 'archived' ? item.status : 'new',
+  /* P1-1 置信标识：评分来源（ai=LLM 评分 / deterministic=确定性 40/30/20/10 预筛分） */
+  scoreSource: item.scoreSource === 'ai' ? 'ai' : item.scoreSource === 'deterministic' ? 'deterministic' : undefined,
+  /* P2-3 结构化机会分透传（白名单序列化，非法输入在此归一/剔除） */
+  opportunityScore: normalizeOpportunityScore(item.opportunityScore),
+  dataSourceType: item.dataSourceType || 'google_maps',
+  dataSourceNote: item.dataSourceNote ? String(item.dataSourceNote).trim() : undefined,
+  exhibitionFootprints: Array.isArray(item.exhibitionFootprints) ? item.exhibitionFootprints : [],
+  customsData:
+    item.customsData &&
+    typeof item.customsData === 'object' &&
+    Object.keys(item.customsData as Record<string, unknown>).length > 0
+      ? item.customsData
+      : {},
+  decisionMakers: Array.isArray(item.decisionMakers) ? item.decisionMakers : [],
+  agentStatus:
+    item.agentStatus &&
+    typeof item.agentStatus === 'object' &&
+    Object.keys(item.agentStatus as Record<string, unknown>).length > 0
+      ? item.agentStatus
+      : { whatsappSent: false, linkedinContacted: false, emailSequenceStage: 0 as const },
+})
+
+export const mapHttpError = (status: number, provider: string) => {
+  if (status === 401 || status === 403) return `${provider} API 密钥无效或未授权，请检查设置`
+  if (status === 429) return `${provider} API 调用额度已耗尽，请前往平台充值`
+  if (status >= 500) return `${provider} 服务暂时拥堵，请稍后重试`
+  return `${provider} HTTP ${status}`
+}
+
+export const buildSearchScoringSystemPrompt = () =>
+  mergePromptParts(
+    'You are a B2B lead ',
+    'scoring analyst. ',
+    'Score ALL candidates against the ICP. ',
+    'DO NOT filter or remove any item. ',
+    'If irrelevant, assign low score (0-20). ',
+    'Return ALL items in valid JSON array with fields: ',
+    'company, website, address, matchScore, matchReasons, riskFlags. ',
+    'matchReasons must contain 1-2 short specific reasons why the lead fits the ICP. ',
+    'riskFlags must contain exactly 1 short risk flag explaining why the lead might not be ideal, such as retail-focused, weak website, unclear B2B intent, or low procurement signal. ',
+    'NEVER return empty if candidates > 0. ',
+    'NEVER filter data.',
+  )
+
+export const buildUniversalIcpPrompt = (userConfig?: {
+  icpProfile?: {
+    targetProduct?: string
+    buyerPersona?: string
+    coreAdvantage?: string
+    negativeIcp?: string
+  }
+}) => {
+  const icpProfile = userConfig?.icpProfile || {}
+  const targetProduct = String(icpProfile.targetProduct || '').trim() || '未提供'
+  const buyerPersona = String(icpProfile.buyerPersona || '').trim() || '未提供'
+  const coreAdvantage = String(icpProfile.coreAdvantage || '').trim() || '未提供'
+  const negativeIcp = String(icpProfile.negativeIcp || '').trim() || '未提供'
+
+  return mergePromptParts(
+    'You are a senior B2B key account manager with 15 years of experience in global industrial sales. ',
+    'Score every candidate against the ICP and return ONLY valid JSON. ',
+    'You must output ONLY valid JSON. No explanations, no markdown tags. Strictly match the schema. ',
+    /* P2-3 Stage-2 机会分模型（kone-PRD §0.5.1）：ICP Fit 55 + Intent(Why-Now) 35 + Evidence 10 − Risk Penalty 0-20。
+       与 Stage-1 确定性 40/30/20/10 是分层关系，互不替代。 */
+    'Evaluate with 4 dimensions: business synergy, role match, advantage resonance, and company strength. ',
+    'Then derive a structured opportunityScore: icpFit (0-55: product application fit, distributor/importer/OEM positioning, regional coverage, purchasing capacity), intent (0-35: Why-Now buying signals such as RFQ/tender/new line/certification/expansion — 0 when no verifiable signal), evidence (0-10: strength of the cited evidence), riskPenalty (0-20: generic-email-only or info@ contact +5~10, no identified decision maker +5, minimal website +5). ',
+    'finalScore = icpFit + intent + evidence − riskPenalty, clamped to 0-100. ',
+    'If a candidate clearly matches the Negative ICP, set icpFit to 0 immediately and keep finalScore very low. ',
+    `Target product: ${targetProduct}. `,
+    `Preferred buyer role: ${buyerPersona}. `,
+    `Core advantage: ${coreAdvantage}. `,
+    `Negative ICP: ${negativeIcp}. `,
+    'Do not remove any item. Return a top-level JSON object with key "results". ',
+    'Each item must contain: company, website, address, totalScore, opportunityScore, inferredRole, matchReason, salesStrategy, riskFlags, isB2B. ',
+    'totalScore must equal opportunityScore.finalScore (number 0-100). opportunityScore must be an object {icpFit, intent, evidence, riskPenalty, finalScore} of integers. ',
+    'inferredRole must be a short inferred buying/company role. ',
+    'matchReason must be one short conclusion. salesStrategy must be one short follow-up suggestion tied to the core advantage. ',
+    'riskFlags must contain exactly 1 short risk flag. isB2B must be boolean. ',
+    'Never invent contact names, emails, or phone numbers. Never output markdown or explanations outside JSON.',
+  )
+}
+
+export const buildSearchScoringPrompt = (payload: {
+  keyword: string
+  icpProfile?: { targetProduct?: string; buyerPersona?: string; coreAdvantage?: string; negativeIcp?: string }
+  candidates: Array<{ company: string; website: string; snippet?: string; reason?: string }>
+}) => ({
+  system: buildUniversalIcpPrompt({ icpProfile: payload.icpProfile }),
+  user: JSON.stringify({
+    keyword: payload.keyword,
+    icpProfile: {
+      targetProduct: payload.icpProfile?.targetProduct || '',
+      buyerPersona: payload.icpProfile?.buyerPersona || '',
+      coreAdvantage: payload.icpProfile?.coreAdvantage || '',
+      negativeIcp: payload.icpProfile?.negativeIcp || '',
+    },
+    candidates: payload.candidates,
+  }),
+})
