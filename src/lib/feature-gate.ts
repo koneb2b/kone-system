@@ -87,15 +87,14 @@ const FEATURE_ALIASES: Record<string, string[]> = {
   search: ['search_basic'],
   analysis: ['analysis_basic'],
   export: ['lead_export'],
-  basic: [
-    'search_basic',
-    'search_deep',
-    'analysis_basic',
-    'analysis_advanced',
-    'lead_export',
-    'export_full',
-    'local_autopilot',
-  ],
+  /* 试用版能力集（对齐 README「版本能力对照」试用列 + kone-PRD §5.1.2 套餐边界）：
+     仅本地搜索与 ICP 评分（受 10 条/次、15 秒间隔限制）、本地 CSV 导出（限 100 行）。
+     **不得**含 search_deep / analysis_basic / analysis_advanced / export_full——否则
+     `getSearchLimit`/`getExportLimit` 的试用限额分支永不触发，试用用户将获得与付费版
+     等同的完整能力（商业泄漏）。 */
+  trial: ['search_basic', 'lead_export', 'local_autopilot'],
+  /* basic = 付费基础版：解除搜索限额、开放 AI 分析；仍无完整导出与云端能力 */
+  basic: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'local_autopilot'],
   premium: [
     'search_basic',
     'search_deep',
@@ -148,7 +147,9 @@ const normalizeFeatureSet = (features: string[] = [], plan?: string) => {
     FEATURE_ALIASES.basic.forEach((alias) => normalized.add(alias))
   } else if (normalizedPlan === 'trial') {
     normalized.add('trial')
-    FEATURE_ALIASES.basic.forEach((alias) => normalized.add(alias))
+    /* 修复：此前误用 FEATURE_ALIASES.basic（实为"全部本地能力"），使试用获得 search_deep /
+       analysis_* / export_full，导致试用限额与 AI 分析门禁全部失效（商业泄漏）。 */
+    FEATURE_ALIASES.trial.forEach((alias) => normalized.add(alias))
   }
 
   return normalized
@@ -183,7 +184,11 @@ const derivePlan = (featureSet: Set<string>, claimedPlan?: string): LicensePlan 
 
 const canAccessFeature = (featureSet: Set<string>, feature: FeatureKey | string) => featureSet.has(feature)
 
-const toFeatureGateState = (license: LicenseStatusLike | null | undefined): FeatureGateState => {
+/**
+ * 纯函数：由授权状态推导 feature gate 状态（含各套餐的搜索/导出限额）。
+ * 导出供单测直接验证套餐边界（`tests/business-logic/feature-gate-tier.business.test.js`）。
+ */
+export const toFeatureGateState = (license: LicenseStatusLike | null | undefined): FeatureGateState => {
   const featureSet = normalizeFeatureSet(license?.features || [], license?.plan)
   const plan = derivePlan(featureSet, license?.plan)
   const isEnterprise = plan === 'enterprise' || featureSet.has('enterprise')

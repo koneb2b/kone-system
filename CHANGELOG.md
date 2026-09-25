@@ -490,6 +490,18 @@ lastVerifiedAt: 2026-09-22
 >
 > **方法论自纠**：本轮测试初版 4 条期望值写错（误以为 `'distributor'` 命中信号词 `'distribute'`——实为 `'distribut'+'o'` vs `'e'`，**不命中**）。**先调试实测、再校正测试**，未误改实现。
 
+### 商业泄漏修复 · 试用版实际获得付费版完整能力（套餐边界失效，P0）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | ① `src/lib/feature-gate.ts` 的 `FEATURE_ALIASES.basic` 实为"**全部本地能力**"（含 `search_deep`/`analysis_basic`/`analysis_advanced`/`export_full`），而 `normalizeFeatureSet` 的 **trial 分支直接套用它**；② `electron/services/license-service.ts` 的 `TRIAL_FEATURES` 亦误含 `search_deep`/`analysis_*`/`export_full`。 |
+| **用户/商业影响** | **试用用户实际获得与付费版等同的完整能力**：<br>• `getSearchLimit()` 的试用分支（`cooldownMs 15000 / maxResults 10`）**永不触发** → 试用可搜 **100 条、无冷却**<br>• `analysis-drawer.tsx:151`（AI 深度分析）与 `leads-management.tsx:545`（AI 撰写邮件）门禁**失效** → 试用可用<br>• `getExportLimit()` 的 `maxRows 100` 分支**永不触发** → 试用可**完整导出**<br>与 README「版本能力对照」试用列（10 条/次·15 秒、AI 分析不开放、导出限 100 行）**全面相悖** |
+| **修复** | ① `feature-gate.ts` 新增 `FEATURE_ALIASES.trial`（仅 `search_basic`/`lead_export`/`local_autopilot`），trial 分支改用它；② `basic` 别名集移除 `export_full`（README：基础版"超 100 行需完整导出权限"）；③ `license-service.ts` 的 `TRIAL_FEATURES` 对齐为三项；④ 导出 `toFeatureGateState` 纯函数供行为级单测。 |
+| **回归防护** | 新增 `tests/business-logic/feature-gate-tier.business.test.js`（7 条）：试用搜索限额 10/15000/不开深度分析、试用导出限 100 行、试用不得访问 `search_deep`/`analysis_*`/`export_full`、基础版解除限额但无完整导出、高级版完整导出、**两处源码守护**（`TRIAL_FEATURES` 与 trial 分支） |
+| **验证** | `test:unit` → **311 / 311**（+7）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过 |
+
+> **说明**：修复严格对齐 README「版本能力对照」试用列与 `kone-PRD §5.1.2` 套餐边界；**未改动付费版（basic/premium/enterprise）能力**，仅收回试用越权。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
