@@ -541,6 +541,17 @@ lastVerifiedAt: 2026-09-22
 
 > **意义**：缺陷 #2 的修复此前只改了**代码**；本轮补齐**规范侧**，使三态法典在 PRD / ARCH-STANDARDS / GLOSSARY **三处口径一致**，防止后续再次被合并。
 
+### 文档链核验 · 修正 `system-blueprint` 的 Provider 路由表述（与 Provider SSOT 冲突）
+
+| 项 | 内容 |
+|---|---|
+| **核验范围** | 文档链剩余部分：`PROJECT-PRD.md`、`.opencode/agents/{ui,ipc,system-blueprint,build}-agent.md`、`V1.2-商业版交付与运维手册.md` |
+| **发现冲突（已修正）** | `.opencode/agents/system-blueprint.md:237` 称 `customs_shipment` / `trade_show` / `linkedin_search` / `facebook_search` "**are routed through AnySearch when implemented**"。**与 `PROVIDER-CAPABILITY.md`（Provider 唯一事实源）及代码注册表相悖**：这四者是**独立 SerpApi Provider 且均已实现**；**仅 `yellow_pages` 已弃用并由 AnySearch 路由**。 |
+| **修正** | 改为准确表述（四个独立 SerpApi Provider + 仅 `yellow_pages` 弃用），并**显式指向 `PROVIDER-CAPABILITY.md` 为唯一事实源、要求不在本蓝图复述路由**。 |
+| **反证（同文件）** | 同文件 `:229` 关于熔断的表述"After **3** consecutive failures … opens for 60 seconds"**与宪法一致**——**反证本轮熔断 off-by-one 修复方向正确**（蓝图与 PRD 皆要求 3，代码原为 4）。 |
+| **交叉印证（重要）** | `.opencode/agents/ipc-agent.md:20` 明确 "`agents:list` gating: **Trial → upgrade surface only**"——**PRD §6.0 / AGENTS.md / ipc-agent 蓝图 / 代码实现 四方一致**，进一步印证 `README` 的"试用限额（每日 3 条）"是**唯一口径偏差**（待决项） |
+| **验证** | `verify:consistency` 双绿（**文档交叉引用 106 → 110 处**）；`typecheck` 0 error；`format` 通过 |
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

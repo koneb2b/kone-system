@@ -234,7 +234,8 @@ AnySearch belongs to the Scout acquisition layer. It may select a source strateg
 
 Current verified boundary:
 - `google_organic` can run as an Organic-only acquisition path.
-- `customs_shipment`, `trade_show`, `yellow_pages`, `linkedin_search`, `facebook_search` are routed through AnySearch when implemented
+- `customs_shipment`, `trade_show`, `linkedin_search` and `facebook_search` are **independent SerpApi-backed providers** (site-scoped public-web approximation for customs/trade-show; `engine=linkedin`; `site:facebook.com`) — all four are already implemented and registered separately. **Only `yellow_pages` is deprecated** and its capability is routed through AnySearch.
+- Authoritative provider capability and public wording: `PROVIDER-CAPABILITY.md` (single source of truth). Do not restate provider routing here.
 - Source expansion must not bypass stream completion, Fail-Closed authorization, pre-filtering, or low-spec performance constraints.
 - Country-constrained search expands into English plus official local-language product variants. Localized search is additive and may double provider calls, but it must not increase Brain concurrency.
 - Provider results must enter the same normalized Scout shape with `dataSourceType`; providers do not write renderer state or persist leads directly.
