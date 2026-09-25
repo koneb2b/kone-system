@@ -103,10 +103,11 @@ Forbidden:
    - basic candidate data arrives first
    - LLM-derived `matchScore`, `matchReasons`, `riskFlags`, `inferredRole`, and `salesStrategy` arrive later
 2. The renderer must show real candidate results before AI scoring completes.
-3. `matchScore` is semantically tri-state in practice:
-   - `undefined`: not yet scored or no valid score
+3. `matchScore` is semantically tri-state — **authoritative definition is `kone-PRD.md` §2.4 (V1.2 invariant red line)**; this section must not redefine it:
+   - `undefined`: not yet scored (Scout skeleton state)
    - numeric: valid scored result
-   - invalid non-number values must be ignored during merge and math
+   - `null`: upstream-invalid marker — a **distinct third state**, never collapsed into `undefined`
+   - No mapping layer may silently coerce `undefined`/`null` to `0`: `0` means "assessed and very poor", which is commercially different from "not yet assessed". (Historical drift: `applySchemaDefaults` coerced `null`/`''` to `0`; fixed 2026-09-25.)
 4. Any score-derived computation must explicitly filter non-numeric values before calculating percentages, rankings, averages, or badges.
 5. Never coerce unscored records to fake zero if that changes product meaning.
 6. Scout pre-filtering is a mandatory step before Brain scoring, not an optional optimization.

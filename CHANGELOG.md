@@ -529,6 +529,18 @@ lastVerifiedAt: 2026-09-22
 
 > **待决项（未擅自改）**：`ARCH-STANDARDS §7.2` / `kone-PRD §5.1.2` 对 Trial 能力边界的措辞与 README 试用列存在歧义（README 明确"AI 分析不开放"，两份规范未明确排除）→ 建议治理层澄清。
 
+### 治理 SSOT 核验 + `matchScore` 三态法典跨文档对齐
+
+| 项 | 内容 |
+|---|---|
+| **核验范围** | `STATE-MACHINES.md`（§2 归一化映射 / §3 AgentStatus / §8 禁止写法 6 条）、`FIELD-DICTIONARY.md`（§9 日频默认值 / §10 stage 枚举）、`GLOSSARY.md` → **均与实现一致**（§2 归一化逐项吻合；§8 六条禁止写法无一违反；`SearchStagePayload.stage` 9 值逐一吻合） |
+| **发现文档冲突（已对齐）** | `ARCH-STANDARDS.md §5 item 3` 把 `null` 并入 `undefined`（"not yet scored **or no valid score**"），与 `kone-PRD.md §2.4`（**全局唯一权威源**，明定 `null` = 上游判定无效值的**独立第三态**）**冲突**。GLOSSARY §38 沿用了前者。 |
+| **根因关联** | 这正是本会话缺陷 #2（`applySchemaDefaults` 把 `null`/`''` 静默转 `0`）的**文档侧根源**——规范自身对 `null` 的表述不清晰，导致实现层合并。 |
+| **处置** | 按 AGENTS.md「kone-PRD 为全局唯一权威需求主源头」**规范回写**：① `ARCH-STANDARDS §5.3` 改为**指针引用 PRD §2.4 且不再自行定义**，并补记历史漂移；② `GLOSSARY §38` 订正为三态（含 `null` 独立态），并标注原误引 `ARCH-STANDARDS.md §5.3`（该章节为条目引用、当时表述与法典冲突）。 |
+| **验证** | `verify:consistency` 双绿（**文档交叉引用 106 处**，较此前 101 处增加）；`typecheck` 0 error；`format` 通过；`test:unit` 312/312 |
+
+> **意义**：缺陷 #2 的修复此前只改了**代码**；本轮补齐**规范侧**，使三态法典在 PRD / ARCH-STANDARDS / GLOSSARY **三处口径一致**，防止后续再次被合并。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
