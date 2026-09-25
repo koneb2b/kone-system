@@ -552,6 +552,19 @@ lastVerifiedAt: 2026-09-22
 | **交叉印证（重要）** | `.opencode/agents/ipc-agent.md:20` 明确 "`agents:list` gating: **Trial → upgrade surface only**"——**PRD §6.0 / AGENTS.md / ipc-agent 蓝图 / 代码实现 四方一致**，进一步印证 `README` 的"试用限额（每日 3 条）"是**唯一口径偏差**（待决项） |
 | **验证** | `verify:consistency` 双绿（**文档交叉引用 106 → 110 处**）；`typecheck` 0 error；`format` 通过 |
 
+### 授权绕过修复 · 试用版可绕过渲染层熔断直连 IPC 启动智能体（P0 安全）
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | `AGENT.CONTROL` 在主进程经 `registerSecureFeatureIpc(..., **'local_autopilot'**, ...)` 门禁（`agent-service.ts:1261-1266`），而 **`TRIAL_FEATURES` 竟包含 `local_autopilot`** → **Trial 授权可通过主进程门禁**，调用 IPC 直接启动智能体，**绕过渲染层 `agents-panel` 的升级墙**。 |
+| **违反条款** | `.opencode/agents/ipc-agent.md:13`「Trial/Basic/Premium separation **必须在主进程强制，绝不信任渲染层门禁**」；`AGENTS.md`「必须强制实施 License 级别前置拦截」；`kone-PRD §6.0`「Trial 仅展示升级引导」。 |
+| **性质** | **渲染层门禁 ≠ 授权**——主进程未拦截即为**授权绕过**（安全/商业双重风险）。 |
+| **修复** | ① `license-service.ts` 的 `TRIAL_FEATURES` 移除 `local_autopilot`（→ `['search_basic', 'lead_export']`）；② `feature-gate.ts` 的 `FEATURE_ALIASES.trial` 同步移除。 |
+| **回归防护** | `tests/business-logic/feature-gate-tier.business.test.js`：新增断言「试用不得访问 `local_autopilot`」+ 源码守护清单加入 `local_autopilot` |
+| **连带修正（对客口径）** | `README.md` 版本对照表原写「AI 销售团队智能体｜**试用限额（每日 3 条）**」——与 **PRD §6.0 / AGENTS.md / ipc-agent 蓝图 / 代码实现 四方一致结论**（Trial 熔断）不符，**属对客不实描述**。已订正为「**不开放（升级解锁）**」，并补「试用版边界」说明段。 |
+| **规范澄清** | `ARCH-STANDARDS §7.2` 原句 "Trial is temporary access to Basic-local capabilities only" 易被读作"完整 Basic 能力"，已澄清为**限时限量体验**（搜索/导出受限、AI 分析锁定、智能体面板仅升级引导），并注明依据 `kone-PRD §6.0`。 |
+| **验证** | `test:unit` **312/312**；`typecheck` 0 error；`verify:consistency` 双绿（文档交叉引用 **116 处**）；`lint` 0 error；`format` 通过 |
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

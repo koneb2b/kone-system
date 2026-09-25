@@ -92,7 +92,7 @@ const FEATURE_ALIASES: Record<string, string[]> = {
      **不得**含 search_deep / analysis_basic / analysis_advanced / export_full——否则
      `getSearchLimit`/`getExportLimit` 的试用限额分支永不触发，试用用户将获得与付费版
      等同的完整能力（商业泄漏）。 */
-  trial: ['search_basic', 'lead_export', 'local_autopilot'],
+  trial: ['search_basic', 'lead_export'],
   /* basic = 付费基础版：解除搜索限额、开放 AI 分析；仍无完整导出与云端能力 */
   basic: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'local_autopilot'],
   premium: [

@@ -140,7 +140,7 @@ Forbidden:
 
 ## 7. Commercial Architecture and Billing Isolation
 1. Kone uses `7-day Trial -> Paid Basic -> Paid Premium / Enterprise`.
-2. Trial is temporary access to Basic-local capabilities only.
+2. Trial is a **time-boxed, limited** taste of the local capability set — **not full Basic**. Search is capped (10 results / 15s cooldown), export is capped (100 rows), AI analysis/drafting is locked, and the agent panel renders an upgrade surface only (`kone-PRD.md §6.0`). The phrase "Basic-local capabilities only" means *not premium/cloud* — it does **not** grant the whole Basic feature set. (Clarified 2026-09-25; previously ambiguous and contradicted by `kone-PRD.md §6.0`, `AGENTS.md` and `.opencode/agents/ipc-agent.md`.)
 3. Basic includes the local heavy-work set:
    - complete search flow
    - ICP scoring

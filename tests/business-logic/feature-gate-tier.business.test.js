@@ -44,7 +44,7 @@ const loadGate = () => {
 }
 
 const gate = loadGate()
-const TRIAL_FEATURES = ['search_basic', 'lead_export', 'local_autopilot']
+const TRIAL_FEATURES = ['search_basic', 'lead_export']
 const active = (plan, features) => ({ status: 'active', expiresAt: Date.now() + 86400000, plan, features })
 
 test('试用版：搜索限额 10 条/次、15 秒间隔，且不开深度分析', () => {
@@ -61,9 +61,11 @@ test('试用版：导出开启但限 100 行，无完整导出', () => {
   assert.equal(limit.fullExport, false)
 })
 
-test('试用版：不得访问 search_deep / analysis_* / export_full', () => {
+test('试用版：不得访问 search_deep / analysis_* / export_full / local_autopilot', () => {
   const state = gate.toFeatureGateState(active('trial', TRIAL_FEATURES))
-  for (const feature of ['search_deep', 'analysis_basic', 'analysis_advanced', 'export_full']) {
+  /* local_autopilot 尤其关键：AGENT.CONTROL 在主进程用 requireFeature('local_autopilot') 门禁，
+     若试用持有该特性，即可绕过渲染层升级墙直连 IPC 启动智能体（违反 ipc-agent.md「主进程强制」）。 */
+  for (const feature of ['search_deep', 'analysis_basic', 'analysis_advanced', 'export_full', 'local_autopilot']) {
     assert.equal(state.canAccess(feature), false, `试用版不应可访问 ${feature}`)
   }
   assert.equal(state.canAccess('search_basic'), true)
@@ -94,8 +96,8 @@ test('源码守护：license-service 的 TRIAL_FEATURES 不得含付费专属能
   const src = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'license-service.ts'), 'utf8')
   const match = src.match(/const TRIAL_FEATURES = \[([\s\S]*?)\]/)
   assert.ok(match, '未找到 TRIAL_FEATURES 定义')
-  for (const forbidden of ['search_deep', 'analysis_basic', 'analysis_advanced', 'export_full']) {
-    assert.ok(!match[1].includes(`'${forbidden}'`), `TRIAL_FEATURES 不得含 ${forbidden}（商业泄漏）`)
+  for (const forbidden of ['search_deep', 'analysis_basic', 'analysis_advanced', 'export_full', 'local_autopilot']) {
+    assert.ok(!match[1].includes(`'${forbidden}'`), `TRIAL_FEATURES 不得含 ${forbidden}（商业泄漏/授权绕过）`)
   }
 })
 

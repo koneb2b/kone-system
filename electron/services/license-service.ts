@@ -49,11 +49,14 @@ const STANDARD_TIME_CACHE_MS = 5 * 60 * 1000
 // Date.now() on failure, so a firewalled/offline machine must NOT block the
 // activation UI for a long window. Keep this well under any UI-facing IPC budget.
 const STANDARD_TIME_FETCH_TIMEOUT_MS = 2000
-/* 试用版能力集（对齐 README「版本能力对照」试用列 + kone-PRD §5.1.2 套餐边界）：
-   仅本地搜索与 ICP 评分（受 10 条/次、15 秒间隔限制）、本地 CSV 导出（限 100 行）、低量本地智能体。
-   此前误含 search_deep / analysis_basic / analysis_advanced / export_full，使试用用户实际获得
-   与付费版等同的完整能力（商业泄漏）。**改动须同步 `src/lib/feature-gate.ts` 的 FEATURE_ALIASES.trial。** */
-const TRIAL_FEATURES = ['search_basic', 'lead_export', 'local_autopilot'] as const
+/* 试用版能力集（对齐 README「版本能力对照」试用列 + kone-PRD §6.0/§5.1.2 套餐边界）：
+   仅本地搜索与 ICP 评分（受 10 条/次、15 秒间隔限制）与本地 CSV 导出（限 100 行）。
+   - 此前误含 search_deep / analysis_basic / analysis_advanced / export_full → 试用获得完整付费能力（商业泄漏）。
+   - 亦误含 local_autopilot → `AGENT.CONTROL` 的**主进程** `requireFeature('local_autopilot')` 对 Trial 放行，
+     使 Trial 可绕过渲染层升级墙直连 IPC 启动智能体。按 `kone-PRD §6.0`「Trial 仅展示升级引导」+
+     `.opencode/agents/ipc-agent.md`「授权分层必须在**主进程**强制，绝不依赖渲染层门禁」移除。
+   **改动须同步 `src/lib/feature-gate.ts` 的 FEATURE_ALIASES.trial。** */
+const TRIAL_FEATURES = ['search_basic', 'lead_export'] as const
 
 type StoredLicenseClaims = {
   status: 'active' | 'expired'
