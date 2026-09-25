@@ -70,7 +70,9 @@ const redactUrl = (url: string): string => {
 const recordProtectedFailure = (host: string, url: string, status: number) => {
   const circuitState = getCircuitState(host)
   circuitState.consecutiveFailures += 1
-  if (circuitState.consecutiveFailures > FAILURE_THRESHOLD) {
+  /* 宪法（kone-PRD §0.3）：**连续 3 次失败即断开 60 秒**。
+     此前用 `>`（需第 4 次才打开），与权威值差 1 次——修正为 `>=`。 */
+  if (circuitState.consecutiveFailures >= FAILURE_THRESHOLD) {
     circuitState.openUntil = Date.now() + CIRCUIT_OPEN_MS
     console.warn(
       `[HTTP] Circuit opened | host=${host} | status=${status} | failures=${circuitState.consecutiveFailures} | url=${redactUrl(url)}`,

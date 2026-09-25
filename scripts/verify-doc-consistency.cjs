@@ -152,6 +152,48 @@ function checkConstitutionalConstants() {
     }
   }
 
+  /* §0.3 其余数值常量的守护（2026-09-25 补入）。
+     此前门禁仅覆盖 search/constants.ts 的 8 项，其余常量漂移只能靠人工发现——
+     实际已发生一次：HTTP 熔断阈值写成 `> 3`（第 4 次才断开），与权威值差 1 次。
+     元组：[文档锚点(须出现在 §0.3), 代码常量名, 期望值, 代码源文件, 文档中应出现的字面量] */
+  const EXTRA_CONSTANT_PAIRS = [
+    ['TRIAL_DURATION_DAYS', 'TRIAL_DURATION_DAYS', 7, 'electron/services/license-service.ts', '7'],
+    ['SEARCH_PAGE_SIZE', 'SEARCH_PAGE_SIZE', 30, 'src/hooks/use-search-engine.ts', '30'],
+    ['SEARCH_LLM_TIMEOUT_MS', 'SEARCH_LLM_TIMEOUT_MS', 20000, 'electron/services/search/constants.ts', '20s'],
+    ['WEBSITE_PROBE_TIMEOUT_MS', 'WEBSITE_PROBE_TIMEOUT_MS', 15000, 'electron/services/search/constants.ts', '15s'],
+    ['PDF 白皮书导出上限', 'TRIAL_PDF_EXPORT_LIMIT', 3, 'electron/services/export-service.ts', '3'],
+    ['HTTP 熔断', 'FAILURE_THRESHOLD', 3, 'electron/utils/http-client.ts', '连续 3 次'],
+    ['HTTP 熔断', 'CIRCUIT_OPEN_MS', 60000, 'electron/utils/http-client.ts', '60 秒'],
+  ]
+  for (const [docAnchor, codeName, expected, sourceFile, docToken] of EXTRA_CONSTANT_PAIRS) {
+    let src
+    try {
+      src = read(sourceFile)
+    } catch {
+      failures.push(`[常量] 无法读取 ${sourceFile}（守护 ${codeName}）`)
+      continue
+    }
+    const codeMatch = src.match(new RegExp(`${codeName}\\s*=\\s*([0-9_]+)`))
+    if (!codeMatch) {
+      failures.push(`[常量] ${sourceFile} 缺少常量 ${codeName}`)
+      continue
+    }
+    const codeValue = Number(codeMatch[1].replace(/_/g, ''))
+    if (codeValue !== expected) {
+      failures.push(
+        `[常量] ${codeName} 代码值为 ${codeValue}，门禁期望 ${expected}（若为有意变更，请同步 kone-PRD §0.3 与门禁）`,
+      )
+    }
+    if (!constantsBlock.includes(docAnchor)) {
+      failures.push(`[常量] kone-PRD §0.3 缺少锚点「${docAnchor}」（守护 ${codeName}）`)
+      continue
+    }
+    const rowLine = constantsBlock.split(/\r?\n/).find((l) => l.includes(docAnchor)) || ''
+    if (!rowLine.includes(docToken)) {
+      failures.push(`[常量] kone-PRD §0.3 中「${docAnchor}」未标注权威值 ${docToken}`)
+    }
+  }
+
   // 管道阈值：文档 60 ↔ 代码 60
   if (!/matchScore\s*<\s*60/.test(read('electron/services/agent-pipeline.ts'))) {
     failures.push('[常量] agent-pipeline.ts 的管道阈值不再是 matchScore >= 60')
@@ -159,7 +201,7 @@ function checkConstitutionalConstants() {
   if (!prd.includes('matchScore >= 60')) {
     failures.push('[常量] kone-PRD 未声明管道阈值 matchScore >= 60')
   }
-  notes.push(`宪法常量比对 ${CONSTANT_PAIRS.length} 项 + 管道阈值`)
+  notes.push(`宪法常量比对 ${CONSTANT_PAIRS.length} 项 + 扩展 ${EXTRA_CONSTANT_PAIRS.length} 项 + 管道阈值`)
 }
 
 // ── 4. 架构红线可查 ─────────────────────────────────────────

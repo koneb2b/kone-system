@@ -502,6 +502,19 @@ lastVerifiedAt: 2026-09-22
 
 > **说明**：修复严格对齐 README「版本能力对照」试用列与 `kone-PRD §5.1.2` 套餐边界；**未改动付费版（basic/premium/enterprise）能力**，仅收回试用越权。
 
+### 宪法常量修复 · HTTP 熔断阈值 off-by-one（§零.3）+ 门禁覆盖扩展
+
+| 项 | 内容 |
+|---|---|
+| **缺陷（有据）** | `kone-PRD §0.3` 宪法常量表明定「**HTTP 熔断：连续 3 次失败 → 断开 60 秒**」。**但实现** `electron/utils/http-client.ts:73` 用 `consecutiveFailures **>** FAILURE_THRESHOLD`——第 3 次失败时 `3 > 3` 为假，**实际第 4 次才断开**，与权威值差 1 次。 |
+| **连带问题** | 既有 `tests/circuit-breaker.test.js` **固化了错误行为**（发 4 次 429 后第 5 次才拒绝），使该偏差长期未被发现。 |
+| **修复** | ① `http-client.ts` 改为 `>=`（连续 3 次即断开）；② 更新 `circuit-breaker.test.js` 断言为"前 3 次正常、第 4 次被熔断拒绝"；③ **新增边界用例**：连续 2 次失败不得断开、第 3 次才断开，且熔断后不再发起真实请求。 |
+| **门禁覆盖扩展** | `scripts/verify-doc-consistency.cjs` 新增 `EXTRA_CONSTANT_PAIRS`（7 项，带**代码源文件 + 文档锚点 + 文档字面量**）：`TRIAL_DURATION_DAYS=7`、`SEARCH_PAGE_SIZE=30`、`SEARCH_LLM_TIMEOUT_MS=20000`、`WEBSITE_PROBE_TIMEOUT_MS=15000`、`TRIAL_PDF_EXPORT_LIMIT=3`、`FAILURE_THRESHOLD=3`、`CIRCUIT_OPEN_MS=60000`。门禁由"8 项"扩至 **"8 + 扩展 7 项 + 管道阈值"**。 |
+| **门禁自证有效** | 扩展后**立即捕获**一处锚点错误（`TRIAL_PDF_EXPORT_LIMIT` 未在 PRD §0.3 中出现，该行仅写"Trial 高价值 PDF 白皮书导出上限"）→ 修正锚点后通过。**证明门禁确实在守护**。 |
+| **验证** | `test:unit` → **312 / 312**；`typecheck` 0 error；`verify:consistency` 双绿（含扩展常量比对）；`lint` 0 error；`format` 通过 |
+
+> **动因**：本次偏差是**人工审计**才发现的——说明 §0.3 中未纳入门禁的常量存在系统性漂移风险。扩展门禁后，此类偏差将**自动暴露**。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
