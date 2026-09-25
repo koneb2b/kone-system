@@ -270,6 +270,40 @@ export function DataCenter({
     })
   }, [leads])
 
+  /* N2 需要你处理（高效跟进的行动入口）：把"阻塞态 / 待接管 / 高潜未触达"聚合为一眼可见的待办。
+     此前这些状态只在线索表逐行呈现，用户需自行翻找——跟进**引擎**完整，却缺**行动入口**。
+     数据源全部取自 store 既有字段（`status` / `agentStatus`），**不新增 IPC、不改管道**。 */
+  const attentionStats = useMemo(() => {
+    const pendingManual = leads.filter((lead) => lead.agentStatus?.emailPendingManual === true).length
+    const awaitingReply = leads.filter((lead) => getLeadStage(lead) === 'replied').length
+    const highUntouched = leads.filter(
+      (lead) => getLeadStage(lead) === 'new' && hasNumericMatchScore(lead) && lead.matchScore >= 60,
+    ).length
+    return [
+      {
+        key: 'pendingManual',
+        label: '待人工确认',
+        hint: '邮件序列已暂停，等待你确认后继续（IMAP 未配置时不盲推）',
+        count: pendingManual,
+        urgent: pendingManual > 0,
+      },
+      {
+        key: 'awaitingReply',
+        label: '待接管回复',
+        hint: '客户已回复，可用「回复教练」获取谈判风险 / 定价建议 / 回信模板',
+        count: awaitingReply,
+        urgent: awaitingReply > 0,
+      },
+      {
+        key: 'highUntouched',
+        label: '高潜未触达',
+        hint: '评分 ≥60 且尚未触达——优先跟进产出最高',
+        count: highUntouched,
+        urgent: false,
+      },
+    ]
+  }, [leads])
+
   /* 样本充分性门槛：单档"已触达"≥3 条才参与结论，避免小样本误导。 */
   const precisionInsight = useMemo(() => {
     const usable = scoreBandStats.filter((band) => band.replyRate !== null && band.contacted >= 3)
@@ -900,6 +934,37 @@ export function DataCenter({
                     </div>
                   )
                 })}
+              </div>
+            </div>
+            {/* N2 需要你处理：高效跟进的行动入口（把阻塞态/待接管/高潜未触达聚合为待办） */}
+            <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">需要你处理</h3>
+                  <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">高效跟进 · 行动入口</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-[hsl(var(--deep-blue))]"
+                  onClick={() => onLeadsNavigate?.()}
+                >
+                  前往线索池 <ArrowUpRight className="size-3.5 ml-1" />
+                </Button>
+              </div>
+              <div className="grid gap-3 p-5 md:grid-cols-3">
+                {attentionStats.map((item) => (
+                  <div
+                    key={item.key}
+                    className={`rounded-xl border px-4 py-3 ${
+                      item.urgent ? 'border-amber-200 bg-amber-50/60' : 'border-border bg-muted/30'
+                    }`}
+                  >
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">{item.label}</div>
+                    <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{item.count}</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{item.hint}</div>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">

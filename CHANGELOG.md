@@ -591,6 +591,19 @@ lastVerifiedAt: 2026-09-22
 | **工程边界（拒绝过度工程）** | **纯只读聚合**：不新增 IPC、不改评分算法、不引入依赖、不动数据管道。数据源为既有的 `matchScore` + `lead.status`。 |
 | **验证** | `typecheck` 0 error；`lint` 0 error；`format` 通过；**`vite build` 成功（exit 0）**；`test:unit` **314/314**；`verify:consistency` 双绿 |
 
+### 必要优化 N2 · 「需要你处理」行动入口（高效跟进）
+
+| 项 | 内容 |
+|---|---|
+| **为什么必要** | 跟进**引擎**完整（4 轮序列 + IMAP 检测 + 人工挂起 + 发送窗口 + 抑制），但**缺"下一步该做谁"的行动入口**——阻塞态只在线索表逐行呈现，用户需自行翻找。**高效跟进断在"行动"这一环**。 |
+| **实现** | `data-center.tsx` 在转化诊断**之前**新增**需要你处理**卡（3 格，阻塞态高亮）：<br>① **待人工确认**（`agentStatus.emailPendingManual`，序列已暂停）<br>② **待接管回复**（`status==='replied'`，可进「回复教练」）<br>③ **高潜未触达**（`status==='new'` 且 `matchScore ≥ 60`，优先跟进产出最高）<br>附「前往线索池」入口。 |
+| **工程边界（拒绝过度工程）** | **零新增 IPC、零管道改动**：数据源全部取自 store 既有字段（`status` / `agentStatus`）。**未新建视图**——复用既有 `data-center` 与 `onLeadsNavigate`。 |
+| **评估修正（诚实记录）** | 原估 N2 需"新建工作台"。**实测发现** `LeadsManagement` **已有**状态筛选器、回复教练 `nextAction` 聚合 chips、以及 `emailPendingManual` 逐行徽标 → **N2 的真实缺口仅为"汇总入口"**，故**收敛为一张汇总卡**而非新视图（避免过度工程）。 |
+| **同时复核** | 实时通道 `agent:lead-status-updated` **端到端完整**（emit → preload → `electron-api` → `leads-table:197` 订阅）✅——此前一度误判为"断头"，经精确取证后**收回**。 |
+| **验证** | `typecheck` 0 error；`lint` 0 error；`format` 通过；**`vite build` exit 0**；`test:unit` **314/314**；`verify:consistency` 双绿 |
+
+> **至此，上线前必要优化 P0（N1 + N2）全部完成。**
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。
