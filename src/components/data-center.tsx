@@ -243,6 +243,59 @@ export function DataCenter({
   const executionRate = leads.length > 0 ? executionBase / leads.length : 0
   const replyRate = executionBase > 0 ? stageCounts.replied / executionBase : 0
 
+  /* N1 精度验证（分数段 × 回复率）：回答"评分是否真能预测回复"。
+     口径与总回复率严格一致：回复率 = 已回复 / (联系中 + 已回复)，仅在"已触达"线索内计算；
+     未评分线索（无有效 matchScore）不参与——它们不属于任何分数档。 */
+  const scoreBandStats = useMemo(() => {
+    const bands = [
+      { label: '90-100', min: 90, max: 100 },
+      { label: '80-89', min: 80, max: 89 },
+      { label: '70-79', min: 70, max: 79 },
+      { label: '60-69', min: 60, max: 69 },
+      { label: '低于 60', min: Number.NEGATIVE_INFINITY, max: 59 },
+    ]
+    return bands.map((band) => {
+      const scored = leads.filter(
+        (lead) => hasNumericMatchScore(lead) && lead.matchScore >= band.min && lead.matchScore <= band.max,
+      )
+      const contacted = scored.filter((lead) => getLeadStage(lead) !== 'new').length
+      const replied = scored.filter((lead) => getLeadStage(lead) === 'replied').length
+      return {
+        label: band.label,
+        total: scored.length,
+        contacted,
+        replied,
+        replyRate: contacted > 0 ? replied / contacted : null,
+      }
+    })
+  }, [leads])
+
+  /* 样本充分性门槛：单档"已触达"≥3 条才参与结论，避免小样本误导。 */
+  const precisionInsight = useMemo(() => {
+    const usable = scoreBandStats.filter((band) => band.replyRate !== null && band.contacted >= 3)
+    if (usable.length < 2) {
+      return { tone: 'muted' as const, text: '样本不足：待更多线索进入"联系中/已回复"后即可验证评分精度。' }
+    }
+    const mean = (rows: typeof usable) =>
+      rows.length > 0 ? rows.reduce((sum, row) => sum + (row.replyRate ?? 0), 0) / rows.length : null
+    const high = mean(usable.filter((band) => band.label !== '低于 60' && band.label !== '60-69'))
+    const low = mean(usable.filter((band) => band.label === '低于 60' || band.label === '60-69'))
+    const pct = (value: number) => `${Math.round(value * 100)}%`
+    if (high === null || low === null) {
+      return { tone: 'muted' as const, text: '样本不足：需同时具备高分档与低分档的已触达线索。' }
+    }
+    if (high > low) {
+      return {
+        tone: 'good' as const,
+        text: `高分档（≥70）回复率 ${pct(high)} 高于低分档 ${pct(low)}——评分具备预测力，可放心按分数优先跟进。`,
+      }
+    }
+    return {
+      tone: 'warn' as const,
+      text: `高分档回复率 ${pct(high)} 未高于低分档 ${pct(low)}——建议校准 ICP 画像（负向 ICP / 目标角色）或收紧评分口径。`,
+    }
+  }, [scoreBandStats])
+
   const executionInsight = useMemo(() => {
     if (executionRate < 0.3) {
       return {
@@ -898,6 +951,53 @@ export function DataCenter({
                     <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">高分线索</div>
                     <div className="mt-2 text-xs text-muted-foreground">高分线索 (&gt; 80)</div>
                     <div className="mt-1 text-2xl font-semibold text-foreground tabular-nums">{highScoreCount}</div>
+                  </div>
+                </div>
+                {/* N1 评分精度验证：分数段 × 回复率 —— 让用户能判断"评分是否真准"，而非只看总回复率 */}
+                <div className="rounded-xl border border-border bg-muted/30 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">评分精度验证</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        分数段 × 回复率——验证「评分是否真能预测回复」（仅统计已触达线索）
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0 text-xs">
+                      {scoreBandStats.reduce((sum, band) => sum + band.total, 0)} 条已评分
+                    </Badge>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2">
+                    {scoreBandStats.map((band) => (
+                      <div key={band.label} className="flex items-center gap-3">
+                        <span className="w-16 shrink-0 text-xs font-medium text-foreground">{band.label}</span>
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-border/60">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${band.replyRate === null ? 0 : Math.round(band.replyRate * 100)}%`,
+                              background: 'hsl(var(--deep-blue))',
+                            }}
+                          />
+                        </div>
+                        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-foreground">
+                          {band.replyRate === null ? '--' : `${Math.round(band.replyRate * 100)}%`}
+                        </span>
+                        <span className="w-24 shrink-0 text-right text-[11px] text-slate-400">
+                          已触达 {band.contacted}/{band.total}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    className={`mt-3 text-xs leading-relaxed ${
+                      precisionInsight.tone === 'good'
+                        ? 'text-emerald-600'
+                        : precisionInsight.tone === 'warn'
+                          ? 'text-amber-600'
+                          : 'text-muted-foreground'
+                    }`}
+                  >
+                    {precisionInsight.text}
                   </div>
                 </div>
               </div>
