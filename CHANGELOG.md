@@ -515,6 +515,20 @@ lastVerifiedAt: 2026-09-22
 
 > **动因**：本次偏差是**人工审计**才发现的——说明 §0.3 中未纳入门禁的常量存在系统性漂移风险。扩展门禁后，此类偏差将**自动暴露**。
 
+### 架构红线与安全密钥核验 + 门禁补代码符合性检查
+
+| 项 | 内容 |
+|---|---|
+| **核验结论** | `ARCH-STANDARDS` §7（计费隔离）/ §9.5（Agent 真实执行边界）/ §9.6（精准度收口，抽验 10 条）/ §10（安全与密钥）**全部合规，本轮 0 功能缺陷** |
+| **§7 计费隔离** | ✅ `PREMIUM_FEATURES = [...BASIC_FEATURES, 'cloud_send', 'team_collaboration']`；11 个 CLOUD 通道经 `registerSecureFeatureIpc(..., 'cloud_send')` 拦截 → **云端能力不泄漏到 Trial/Basic** |
+| **§9.6 抽验** | ✅ 词边界产品词匹配（`scout.ts:92`）、五级邮箱验证（`email-verification.ts`）、邮件内容链 + `email_content_source`、跟进人工挂起（`followup-scheduler.ts:66` `isPlanDue` 排除 `pendingManual`）、发送窗口 09–18 + 未知时区放行、五级验证队列、多窗口隔离 |
+| **§10 安全密钥** | ✅ **设计级保证**：SECRET 通道**仅 `SET`/`CHECK`、无 `GET`** → 渲染层**永远拿不到明文密钥**；仓库仅公钥 `kone-offline-public.pem`（全仓 grep `PRIVATE KEY` → 0）；时间回拨防护；日志脱敏 `redactUrl` |
+| **门禁补齐（本轮唯一改动）** | `checkArchitectureRedlines()` 原**只校验文档是否声明红线、不校验代码是否遵守**（本会话已两次证明此类漂移真实：熔断 off-by-one、试用越权）。新增 **3 项代码符合性检查**：`provider-registry.ts` 含 `Promise.allSettled`、`SEARCH_LLM_CONCURRENCY = 2`、`MAX_WEBSITE_TEXT_FOR_LLM = 3000`。门禁输出 → **「3 项（文档）+ 3 项（代码符合性）」** |
+| **验证** | `test:unit` **312/312**；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过 |
+| **新增报告** | `KONE-V1.3-架构红线与安全密钥核验-2026-09-25.md` |
+
+> **待决项（未擅自改）**：`ARCH-STANDARDS §7.2` / `kone-PRD §5.1.2` 对 Trial 能力边界的措辞与 README 试用列存在歧义（README 明确"AI 分析不开放"，两份规范未明确排除）→ 建议治理层澄清。
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

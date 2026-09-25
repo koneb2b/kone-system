@@ -215,7 +215,30 @@ function checkArchitectureRedlines() {
   for (const [label, re] of redlines) {
     if (!re.test(arch)) failures.push(`[架构红线] ARCH-STANDARDS.md 缺少红线声明: ${label}`)
   }
-  notes.push(`架构红线 ${redlines.length} 项`)
+
+  /* 代码符合性检查（2026-09-25 补入）：此前本函数**只校验文档是否声明**红线，
+     不校验代码是否遵守——红线可能"写在纸上、代码里却违反"。以下为可机械判定的项。 */
+  const codeChecks = [
+    [
+      'Provider 隔离必须用 Promise.allSettled（单源失败不得中断主搜索）',
+      'electron/services/provider-registry.ts',
+      /Promise\.allSettled/,
+    ],
+    ['并发上限常量必须存在且为 2', 'electron/services/search/constants.ts', /SEARCH_LLM_CONCURRENCY\s*=\s*2\b/],
+    ['正文截断常量必须存在且为 3000', 'electron/services/search/constants.ts', /MAX_WEBSITE_TEXT_FOR_LLM\s*=\s*3000\b/],
+  ]
+  for (const [label, file, re] of codeChecks) {
+    let src
+    try {
+      src = read(file)
+    } catch {
+      failures.push(`[架构红线] 无法读取 ${file}（${label}）`)
+      continue
+    }
+    if (!re.test(src)) failures.push(`[架构红线] ${file} 未满足代码红线: ${label}`)
+  }
+
+  notes.push(`架构红线 ${redlines.length} 项（文档）+ ${codeChecks.length} 项（代码符合性）`)
 }
 
 // ── 5. 墓碑桩不得复活 ───────────────────────────────────────
