@@ -216,7 +216,11 @@ export const registerExportHandlers = (
     IPC_CHANNELS.FILES.EXPORT_PDF,
     store,
     licenseGuard,
-    'analysis_advanced',
+    /* 门禁为 `lead_export`（任何已授权层级均可导出 PDF），**试用由下方 `isTrial` 的 3 次配额差异化**——
+       此即 kone-PRD §零.3「Trial 高价值 PDF 白皮书导出上限 3 次（全局硬编码）| PLG 逼单卡点」。
+       此前门禁为 `analysis_advanced`（付费专属），与下方的 `isTrial` 配额代码**自相矛盾**：
+       试用永远进不来，3 次配额成为死代码。 */
+    'lead_export',
     async (
       _event,
       payload:

@@ -565,6 +565,22 @@ lastVerifiedAt: 2026-09-22
 | **规范澄清** | `ARCH-STANDARDS §7.2` 原句 "Trial is temporary access to Basic-local capabilities only" 易被读作"完整 Basic 能力"，已澄清为**限时限量体验**（搜索/导出受限、AI 分析锁定、智能体面板仅升级引导），并注明依据 `kone-PRD §6.0`。 |
 | **验证** | `test:unit` **312/312**；`typecheck` 0 error；`verify:consistency` 双绿（文档交叉引用 **116 处**）；`lint` 0 error；`format` 通过 |
 
+### 授权视角系统排查 · 修复 2 处门禁与意图自相矛盾（含上轮修复引入的回归）
+
+> **审计视角**：系统排查**全部 20 个 `registerSecureFeatureIpc` 通道**的特性键与设计意图是否一致。
+
+| # | 缺陷 | 性质 | 修复 |
+|---|---|---|---|
+| **1** | **`EXPORT_PDF` 门禁自相矛盾**：门禁为 `analysis_advanced`（付费专属），而**处理器内部（`export-service.ts:238-250`）专门实现了 `isTrial` 的 3 次配额**——即 `kone-PRD §零.3`「Trial 高价值 PDF 白皮书导出上限 **3 次**（PLG 逼单卡点）」。**门禁把试用挡在门外，使该配额成为死代码**。 | 宪法条款不可达（**含上轮修复引入的回归**：上轮移除 trial 的 `analysis_advanced` 后彻底不可达） | 门禁改为 `'lead_export'`（任何已授权层级可导出），**试用由内部 3 次配额差异化**——恢复 §零.3 的 PLG 钩子 |
+| **2** | **`API_TEST_CONNECTION` 对 LLM 要求 `analysis_basic`**：而试用版不含分析特性 → **试用用户按 README 第 1 步配置 LLM 密钥时「测试连接」必然失败**（且设置页加载时会自动测试，体验更差）。连接测试属**配置能力**，非分析能力。 | 试用主流程受阻（**上轮修复引入的回归**） | 统一收敛为 `'search_basic'`（任何已授权层级均可验证密钥） |
+| — | 其余 18 个通道特性键核查 | ✅ 合规 | `AGENT.CONTROL→local_autopilot`（上轮已修）、`AUTOMATION.VERIFY_EMAILS`/`DNS.HEALTH_CHECK`/`SEARCH.API_PROXY`/全部 `CLOUD.*`→`cloud_send`、`FILES.EXPORT_SAVE→['lead_export','export_full']`、`SEARCH.EXECUTE→search_basic`、`SEARCH.ANALYSIS_GENERATE→analysis_advanced` |
+
+**回归守护**（新增 2 条源码守护）：`EXPORT_PDF` 门禁不得为付费专属（其处理器含 `isTrial` 配额）；`API_TEST_CONNECTION` 不得要求 `analysis_*`。
+
+**验证**：`test:unit` **314/314**（+2）；`typecheck` 0 error；`verify:consistency` 双绿；`lint` 0 error；`format` 通过
+
+> **诚实说明**：本轮 2 处缺陷**均由上一轮"试用能力集收窄"修复所引入**——收窄试用权限时，**未同步检查"哪些通道依赖试用可达"**，导致试用主流程（PDF 导出 PLG 钩子、LLM 密钥测试）被误伤。**教训：收窄权限必须做"可达性回归"——凡处理器内含 `isTrial` 分支或属配置/设置类能力的通道，都必须确认试用仍可达。**
+
 ### 已知未完成（不对外宣称）
 
 - IPC 注册中心迁移：**已收官**。49/49 invoke 通道全部 registry-known（29 经 `registerIpc()` 显式迁移 + 20 处 Fail-Closed 包装器治理登记 `skipAttach`，**0 处 plain 直挂**），且 `assertAllRegistered()` 启动门禁已在 `main.ts` 启用并配套非空守卫测试（`tests/ipc-startup-gate.test.ts`）；"all IPC channel registration must go through registry" 已由**事实态**升级为**门禁强制态**（漏注册将在启动期抛错）。剩余为可选增强：`secureAnyContract` 占位合约未来可逐步替换为真实契约以启用响应校验。

@@ -101,6 +101,31 @@ test('源码守护：license-service 的 TRIAL_FEATURES 不得含付费专属能
   }
 })
 
+test('源码守护：EXPORT_PDF 门禁不得为付费专属（其处理器含 isTrial 配额，即 §零.3 的 3 次 PLG 钩子）', () => {
+  const src = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'export-service.ts'), 'utf8')
+  const pdfBlock = src.match(/EXPORT_PDF,[\s\S]{0,400}?async/)
+  assert.ok(pdfBlock, '未找到 EXPORT_PDF 注册块')
+  assert.match(pdfBlock[0], /'lead_export'/, 'EXPORT_PDF 应以 lead_export 放行（试用由内部 3 次配额差异化）')
+  assert.doesNotMatch(
+    pdfBlock[0],
+    /^\s*'analysis_advanced',\s*$/m,
+    'EXPORT_PDF 不得仅以 analysis_advanced 门禁——否则试用永远进不来，TRIAL_PDF_EXPORT_LIMIT 成为死代码',
+  )
+})
+
+test('源码守护：API_TEST_CONNECTION 属配置能力，不得要求分析类特性', () => {
+  const src = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'proxy-service.ts'), 'utf8')
+  const block = src.match(/API_TEST_CONNECTION,[\s\S]{0,600}?async/)
+  assert.ok(block, '未找到 API_TEST_CONNECTION 注册块')
+  // 只断言"特性表达式行"（注释中会说明历史误用 analysis_basic，不应误伤）
+  const featureExpr = block[0].match(/=>\s*'([a-z_]+)'/)
+  assert.ok(featureExpr, '未找到 API_TEST_CONNECTION 的特性表达式')
+  assert.ok(
+    !/^analysis_/.test(featureExpr[1]),
+    `连接测试不得要求 analysis_*（实际 ${featureExpr[1]}）——试用版不含分析特性，会导致 README 第 1 步「测试连接」失败`,
+  )
+})
+
 test('源码守护：trial 分支必须使用 FEATURE_ALIASES.trial（非 basic）', () => {
   const src = fs.readFileSync(gatePath, 'utf8')
   const trialBranch = src.match(/normalizedPlan === 'trial'[\s\S]{0,260}/)

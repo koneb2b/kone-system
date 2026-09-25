@@ -313,7 +313,10 @@ export const registerProxyHandlers = (
     IPC_CHANNELS.SEARCH.API_TEST_CONNECTION,
     store,
     licenseGuard,
-    (_event, payload: { provider?: string }) => (payload?.provider === 'llm' ? 'analysis_basic' : 'search_basic'),
+    /* 连接测试属**配置/设置**能力，非分析能力：任何已授权层级（含试用版）都应能验证密钥可用性。
+       此前 LLM 走 `analysis_basic`，而试用版不含该特性 → 试用用户按 README 第 1 步配置 LLM 密钥时
+       「测试连接」必然失败（且设置页加载时会自动测试，体验更差）。统一收敛为 `search_basic`。 */
+    (_event, _payload: { provider?: string }) => 'search_basic',
     async (_event, payload: { provider?: string; key?: string; baseUrl?: string }) => {
       try {
         const provider = payload?.provider || ''
