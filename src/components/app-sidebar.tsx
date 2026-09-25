@@ -43,9 +43,11 @@ const navItems: NavItem[] = [
 
 const premiumNavItems: NavItem[] = [
   /* P2-5：导航徽标准入对齐 dashboard 真实准入（见 dashboard-page.tsx:192-196）。
-   * accounts 经 canAccessAccountsWorkspace 对 basic/trial 开放；agents(AI 销售团队) 按
-   * README 授权矩阵对 trial/basic/premium/enterprise 全开放（仅日限额不同，由 agents-panel 强制）。
-   * 故二者不得标 premium/「高级」徽标——原先的 premium 门禁是相对 dashboard 真实门禁的
+   * accounts 经 canAccessAccountsWorkspace 对 basic/trial 开放；agents(AI 销售团队) 的**导航项**
+   * 对全部层级可见，但**内容准入由 agents-panel 强制**：`isTrialOrFree → 渲染升级墙`
+   * （kone-PRD §6.0「Trial 仅展示升级引导」/ AGENTS.md「Trial 访问 /agents 必须熔断拦截，
+   * 严禁渲染任何智能体卡片或暴露运行指标」）——故此处**不可**理解为"Trial 可直接使用智能体"。
+   * 二者不得标 premium/「高级」徽标——原先的 premium 门禁是相对 dashboard 真实门禁的
    * 过严残留，会造成「徽标说高级、实际 basic 可进」的口径不一致。真实 premium-only 仍为
    * automation 与 team-dashboard，门禁保持不变。 */
   { id: 'accounts', label: '账号管理', icon: ShieldCheck },
