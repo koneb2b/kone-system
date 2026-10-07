@@ -85,12 +85,17 @@ new → scored → pending_approval → approved → queued → sent → replied
 | `replied` | 只能由**真实回复事件**触发 | 误由 `delivered` 推导 |
 | `suppressed` | 优先级最高，覆盖投递与跟进资格 | 误当作可被重新导入解除 |
 
-## 5. 云端投递层 `OutreachStatus`（4 态 + 3 异常，目标态）
+## 5. 云端投递层 `OutreachStatus`（8 态，**已实现**；2026-10-07 同步）
 
 ```
 pending → accepted → sent → delivered
+终态：replied
 异常：bounced | complained | failed
 ```
+
+> 同步说明：本表此前记为「4 态 + 3 异常（目标态）」并标注未实现。
+> 实际 `kone-cloud/migrations/003_reply_detection.sql:43` 的 CHECK 已含 `replied`，
+> `worker.ts` 亦已实现回复终态与 `email.replied` 事件处理。**状态机 SSOT 以本节为准。**
 
 硬约束：
 - **`delivered` 不得自动映射为 `replied`。**

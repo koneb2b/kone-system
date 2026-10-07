@@ -79,7 +79,9 @@ const DEFAULT_STATE: FeatureGateState = {
   featureSet: new Set<string>(),
   plan: 'trial',
   canAccess: () => false,
-  getSearchLimit: () => ({ cooldownMs: 12000, maxResults: 10, allowDeepAnalysis: false }),
+  // 冷却时间统一（P1）：此处原为 12000，与实时分支（下方 getSearchLimit 的 15000）
+  // 及 README「版本能力对照」的 15 秒声明不一致，属孤例。统一为 15000。
+  getSearchLimit: () => ({ cooldownMs: 15000, maxResults: 10, allowDeepAnalysis: false }),
   getExportLimit: () => ({ enabled: false, maxRows: 0, fullExport: false }),
 }
 

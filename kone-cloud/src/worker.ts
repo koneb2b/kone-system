@@ -593,12 +593,35 @@ async function handleQueueOutreach(request: Request, env: Env, workspace: { id: 
   const outreachId = generateId()
   const now = nowUTC()
   const scheduledAt = body.scheduledAt ?? now
-  const idempotencyKey = `outreach_${body.leadId}_${now}`
+  const sequenceStage = body.sequenceStage ?? 0
+
+  // 幂等键修复 (P1-B)：原为 `outreach_${leadId}_${now}`，含时间戳 →
+  // 每次调用生成不同 key，UNIQUE(workspace_id, campaign_id, idempotency_key) 形同虚设，
+  // 同一 lead 可被反复入队并重复发送。
+  // 改为不含时间戳，粒度对齐唯一键：同一 (workspace, campaign='default') 内，
+  // 同一 lead 的同一序列阶段只允许一行。
+  // 注意：投递重试不依赖新插入行，而由 send_attempts / next_retry_at 在原行推进，故不受影响；
+  // 不同序列阶段（sequence_stage）仍可各自入队，符合序列投递语义。
+  const idempotencyKey = `outreach_${body.leadId}_stage${sequenceStage}`
+
+  // 幂等短路：同 key 已有记录时返回既有 id，而非撞 UNIQUE 抛 500。
+  // 与本地 outreach-sync-service 的 idempotent:true 语义对齐（不重复推送本地状态）。
+  const dup = await env.DB.prepare(
+    `SELECT id, status FROM outreach WHERE workspace_id = ? AND campaign_id = 'default' AND idempotency_key = ?`
+  ).bind(workspace.id, idempotencyKey).first<{ id: string; status: string }>()
+
+  if (dup) {
+    return jsonResponse({
+      success: true,
+      data: { id: dup.id, status: dup.status, queued: false, idempotent: true, scheduledAt },
+      requestId,
+    })
+  }
 
   await env.DB.prepare(
     `INSERT INTO outreach (id, workspace_id, lead_id, campaign_id, sequence_stage, scheduled_at, subject, body, status, provider, send_attempts, idempotency_key)
      VALUES (?, ?, ?, 'default', ?, ?, ?, ?, 'pending', 'resend', 0, ?)`
-  ).bind(outreachId, workspace.id, body.leadId, body.sequenceStage ?? 0, scheduledAt, body.subject, body.body, idempotencyKey).run()
+  ).bind(outreachId, workspace.id, body.leadId, sequenceStage, scheduledAt, body.subject, body.body, idempotencyKey).run()
 
   // Update lead status to 'queued'
   await env.DB.prepare(

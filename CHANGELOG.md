@@ -3,7 +3,7 @@ title: KONE 变更日志
 status: active
 authoritative: true
 ssotFor: [changelog]
-lastVerifiedAt: 2026-09-22
+lastVerifiedAt: 2026-10-07
 ---
 
 # KONE 变更日志 (CHANGELOG)
@@ -14,6 +14,65 @@ lastVerifiedAt: 2026-09-22
 >
 > 记录要求：任何改动状态、数据、权限、投递、事件、公开 API 或合规规则的提交，
 > 必须在此登记，并注明受影响的 SSOT。
+
+---
+
+## [1.3.15] — 2026-10-07 · 文档回写 + 门禁补强（验收标准加固）
+
+**目标**：[1.3.14] 修复 5 项 P0 后，继续清掉 P1-C（文档过期/矛盾）与 P2（功能与文档不符），
+并为"商用专业严谨验收"补上**自动化防线**——让同类缺陷在 CI 阶段即被拦截，而非依赖人工审计。
+
+### 一、补修 P1-B 漏项（[1.3.14] 遗漏）
+- `kone-cloud/src/worker.ts` outreach 幂等键原为 `outreach_${leadId}_${now}`，**含时间戳** →
+  `UNIQUE(workspace_id, campaign_id, idempotency_key)` 形同虚设，同一 lead 可被反复入队重发。
+  改为 `outreach_${leadId}_stage${sequenceStage}`（不含时间戳，粒度对齐唯一键），
+  并新增**幂等短路**：同 key 已有记录时返回既有 id（`idempotent:true`），而非撞 UNIQUE 抛 500。
+
+### 二、P2 功能与文档对齐
+- **分页**：`serpapi-maps/organic` 实为「第一页命中即停」的成本优化（代码注释已明示 `成本优化（P0）：命中即停`），
+  但 `PROVIDER-CAPABILITY.md` 宣称 "含 pagination"。**处置为改文档而非改代码**——该行为是有意设计，
+  已如实标注「分页循环已实现，默认第一页命中即停」并给出代码行号。
+- **冷却时间**：`feature-gate.ts` 兜底分支 `cooldownMs: 12000` 与实时分支（15000）
+  及 README「15 秒」声明不一致，属孤例 → 统一为 15000。
+
+### 三、P1-C 文档回写（11 处）
+
+| 文档 | 回写内容 |
+|---|---|
+| `CLOUD-COLLABORATION-DELIVERY.md` §0 | 「NO-GO」裸状态行 → 补全**已闭环 / 仍待闭环**清单 |
+| `KONE-V1.3-Cloudflare…计划-2026-09-25.md` | 加**废弃警示头**（N8N 工作量被修订版订正为 8 文件/65 处），指向修订版 |
+| `KONE-V1.3-深度审计报告…md` §五 | 「核心承诺尚未闭环」结论已过期 → 标注回写 + 原文留档 |
+| `KONE-V1.3-交付前全面梳理…md` | `packaged-smoke ✅通过` → ⚠️**未通过**；勾选框 `[x]` → `[ ]` |
+| `package.json` | 版本 `1.3.0` → `1.3.15` |
+| `CHANGELOG.md` frontmatter | `lastVerifiedAt` 2026-09-22 → 2026-10-07 |
+| `help-dialog.tsx` / `README.md` | 「Phase 1 接入后将支持脱机执行」→ 已落地 |
+| `kone项目使用说明.markdown` | 「打分 >80 分深度分析」→ ≥60（宪法管道阈值）；注明 80 仅为上云 Gold Filter |
+| `STATE-MACHINES.md` §5 | OutreachStatus「4 态 + 3 异常（目标态）」→ **8 态已实现**（含 `accepted` / `replied`） |
+| `kone-PRD.md` §四.1 | 「最大并发锁死 2」收窄为「评分 / 富化 = 2」，并明确扇出 = 3 为**独立域** |
+| `ARCH-STANDARDS.md` 红线 9 / 11 | 补**扇出豁免指针**（指向 `kone-PRD §0.3`），消除与 `SEARCH_FANOUT_CONCURRENCY = 3` 的表面矛盾 |
+
+### 四、门禁补强（治本）· 新增 `npm run verify:cloud-safety`
+
+**动机**：[1.3.14] 的 5 项 P0 **全部落在现有门禁盲区**且门禁全绿。
+根因是既有门禁只做「字面值比对 + 引用断链」，无法发现语义缺陷。补上两类结构性检查：
+
+1. **危险 SQL 谓词检查**：扫描 `kone-cloud/src` 全部 `UPDATE` / `DELETE`，要求带租户或主键谓词
+   （`workspace_id` / `lead_id` / `resend_id` / `normalized_email` / `id = ?` / `ON CONFLICT`）。
+   无谓词即**阻断** —— P0-2 这类跨租户事故可在 CI 阶段直接拦下。
+   确属全局语义的语句可用 `safe-global:` 注释显式豁免（强制写明理由）。
+2. **跨进程裸强转检查**：`cloudflare-service.ts` 禁止对跨进程响应使用 `as <Type>`，
+   必须走显式映射函数 —— P0-1 这类「字段静默变 undefined」由此可被拦截。
+
+**已做反向自测**（6 例）：P0-2 原样语句被拦截 ✅ / 修复后语句通过 ✅ / upsert 豁免 ✅ / 无谓词 DELETE 被拦截 ✅，
+确认门禁**非"永远通过"的摆设**。当前扫描 5 源文件 / 11 条写操作 / 4 个跨进程类型，全部合规。
+
+**已知局限**（诚实标注）：SQL 检查基于模板字符串 + 正则，非完整 SQL 解析器，
+对动态拼接的极端写法可能漏判；跨进程检查只覆盖已知类型白名单。
+两者定位是"拦住已知的高危模式"，不替代代码评审。
+
+### 门禁
+typecheck(src + electron) 0 error；单测 **319/319**；
+`verify:consistency` = docs + ipc + **cloud-safety** 三者全绿；lint 0 error（254 warnings 均为既有）。
 
 ---
 

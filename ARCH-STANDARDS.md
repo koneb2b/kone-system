@@ -192,9 +192,9 @@ By contrast, Premium Cloudflare automation (target state) may continue remotely 
 6. Stream failures must end with a completion signal so UI cannot deadlock.
 7. Prompt construction should keep stable system rules separate from dynamic business content to maximize cache efficiency.
 8. Advanced quality controls such as `优先官网`、`优先本土域名`、`高相关优先`、`B2B 角色优先` are contract-bound search inputs; renderer state must be passed into main process and main process must perform real Scout-stage filtering or sorting from them.
-9. Search scoring and website enrichment concurrency is a hard performance law: maximum concurrent jobs must remain fixed at `2`.
+9. Search scoring and website enrichment concurrency is a hard performance law: maximum concurrent jobs must remain fixed at `2`. (This ceiling governs **scoring and enrichment only**; search **fan-out** is a separate domain with its own ceiling `SEARCH_FANOUT_CONCURRENCY = 3` — see `kone-PRD.md §0.3`. Do not apply one domain's ceiling to the other.)
 10. Website content sent into LLM must be reduced to high-value plain text only, stripped of HTML/script/style noise, and strictly truncated to no more than `3000` characters before prompt assembly.
-11. Any implementation or commit that exceeds the `2` concurrency ceiling or the `3000`-character website-text ceiling is an architecture violation.
+11. Any implementation or commit that exceeds the `2` concurrency ceiling (scoring / enrichment domain, per item 9) or the `3000`-character website-text ceiling is an architecture violation.
 12. CPU- or memory-heavy changes that only work on high-end devices fail the architecture standard.
 13. Multi-language search may increase provider API usage by approximately `2x`, but it must not increase LLM scoring or website enrichment concurrency beyond `2`.
 14. Provider failures must be isolated with `Promise.allSettled`; a failed LinkedIn/customs/trade-show/Facebook source must not break Maps, Organic, AnySearch, or stream closure.

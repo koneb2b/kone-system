@@ -14,8 +14,8 @@
 
 | Provider | 数据源类型 | 底层实现 | 能力说明 | 配置要求 |
 |----------|-----------|---------|---------|---------|
-| SerpApiMapsProvider | `google_maps` | SerpApi `engine=google_maps` | 本地商户搜索，含 retry/timeout/pagination | SerpApi Key |
-| SerpApiOrganicProvider | `google_organic` | SerpApi `engine=google` | Organic 网页搜索，含 retry/pagination | SerpApi Key |
+| SerpApiMapsProvider | `google_maps` | SerpApi `engine=google_maps` | 本地商户搜索，含 retry/timeout；分页循环已实现，但默认「第一页命中即停」（成本优化，`serpapi-maps-provider.ts:104`） | SerpApi Key |
+| SerpApiOrganicProvider | `google_organic` | SerpApi `engine=google` | Organic 网页搜索，含 retry；分页同上（默认第一页命中即停，`serpapi-organic-provider.ts:92`） | SerpApi Key |
 | LinkedinSearchProvider | `linkedin_search` | SerpApi `engine=linkedin` | LinkedIn 公开检索 + 置信度评分归一化 | SerpApi Key |
 | CustomsShipmentProvider | `customs_shipment` | SerpApi 网页近似检索（site-scoped） | **注意**：为公开外贸/海关站点的网页近似结果，**非官方海关提单数据库直连**，仅供参考 | SerpApi Key |
 | TradeShowProvider | `trade_show` | SerpApi 网页近似检索（site-scoped） | **注意**：为展会目录站点的网页近似结果，**非官方展会名录接口**，仅供参考 | SerpApi Key |
