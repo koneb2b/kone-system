@@ -17,6 +17,66 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.0] — 2026-10-07 · Phase 2.9 · 审批 → 云端二次门禁（阶段 1+2 落地）
+
+**动机**：`AGENTS.md` 宪法第 5 条 —— *"A high score, staged Agent task or `cloud_send` feature never authorizes delivery. Approval plus server-side second-gate success is mandatory."*
+此前该宪法级约束在代码中**无实现**，属「宪法写了、代码没做」的纸面合规。
+设计方案见 `KONE-V1.3-审批与云端二次门禁设计方案-2026-10-07.md`。
+
+**关键现状修正**：`queueOutreach` 原有的 `lead.status !== 'approved' && !== 'queued'` 校验中，
+`approved` 在本地**无任何设置点**（本地 status 枚举不含该值）→ 该校验分支实为**死代码**，
+真实路径靠 `queued` 宽松放行。即"门禁看起来在把关，其实是空的"。
+
+### 阶段 1 · 云端二次门禁（已落地，提交 `4edd5b4`）
+- **补齐门禁 ⑤⑥⑦⑧⑨**（`CLOUD-COLLABORATION-DELIVERY.md §8`），顺序不可调换：
+  ⑦ 审批校验必须在 ⑤⑥ 之后（否则可用无效审批做撞单探测）、在 ⑨ 之前（否则为无效请求消耗配额）。
+  | 步 | 校验 | 错误码 |
+  |---|---|---|
+  | ⑤ | 撞单 / 保护期 | `COMPANY_CONFLICT` |
+  | ⑥ | 全局抑制（优先级最高） | `SUPPRESSED` |
+  | ⑦ | **审批记录 + 审批人 + 草稿版本** | `APPROVAL_REQUIRED` / `DRAFT_VERSION_MISMATCH` |
+  | ⑧ | 邮箱等级 + 人工例外 | `EMAIL_GRADE_INSUFFICIENT` |
+  | ⑨ | 日配额 / 熔断 | `QUOTA_EXCEEDED` / `CIRCUIT_OPEN` |
+- 草稿版本**严格相等**才放行 —— 落实规范 §6「旧批准不得授权新草稿」。
+- **新增 `POST/GET /v1/approvals`**：表只追加不更新，「哪条有效」由门禁 ⑦ 以
+  「`decision='approved'` 且 `approved_at` 最新」+ draftVersion 相等 判定；
+  写入同时回写 lead 状态（approved / rejected / needs_revision→退回 pending_approval）+ 审计事件。
+- **migration `005_approval_gate.sql`**：无表结构变更（`approvals` / `leads.approval_id` /
+  `delivery_quota` / `events` 枚举均已在 001 预留），仅补 `idx_approvals_lead_decision` 索引。
+  **刻意不回填历史 outreach** —— 回填等于伪造审批记录。
+- `utils.ts` statusMap 新增 5 个错误码（仅新增，不改既有值）。
+
+### 阶段 2 · 本地契约与载荷（已落地，提交 `a713c42`）
+- 新增 2 个 IPC 通道：`cloud:create-approval` / `cloud:list-approvals`
+  （待审批队列复用本地 `leads`，无需额外通道）。
+- 契约新增 `ApprovalDecision` / `SubmitApprovalPayload` / `CloudApprovalRecord` /
+  `CreateApprovalData` / `ListApprovalsData`；审批人取 `approverMachineId`
+  （= 本机机器 ID，与 license machineId 对齐，单机使用场景）。
+- `QueueOutreachPayload` 补 `draftVersion` / `approvalId` / `campaignId`（规范 §7.1 必需字段）。
+- `cloudflare-service` 新增 `createApproval` / `listApprovals`，含 `mapApprovalRow` 显式
+  snake→camel 映射（遵守 P0-1 教训：跨进程响应禁止裸 `as`）。
+
+### ⚠️ 门禁默认关闭（重要）
+`env.APPROVAL_GATE_ENABLED` **默认 `'false'`**。
+**必须等阶段 3（本地审批 UI）就绪后才能开启** —— 否则用户无审批入口，
+所有投递会被门禁 ⑦ 永久拒绝（`APPROVAL_REQUIRED`），反而破坏既有功能。
+当前默认关闭保证了既有投递链路不受影响。
+
+### 尚未完成
+- **阶段 3 · 审批 UI**：待审批队列 / 证据与风险展示 / 批准·驳回 / 草稿版本提示。
+  这是门禁开启的前置条件（`kone-PRD §5.1` 第 8 条要求前端必须提供这些入口）。
+- **阶段 4 · 配额熔断执行**：`delivery_quota` 读逻辑已接入门禁 ⑨，但写入侧
+  （投递成功后累加 `sent_today`）尚未实现。
+
+### 门禁
+- kone-cloud：**53/53**（35 既有 + 18 新增门禁测试，含 8 例负向授权、
+  `DRAFT_VERSION_MISMATCH` 覆盖「旧批准不得授权新草稿」、跨租户隔离、幂等、
+  以及「门禁关闭时不拦截」的向后兼容断言）。
+- 主仓库：typecheck(src + electron) 0 error；单测 **319/319**；
+  `verify:consistency` 71 declared / 60 registered / 69 preload 全绿。
+
+---
+
 ## [1.3.15] — 2026-10-07 · 文档回写 + 门禁补强（验收标准加固）
 
 **目标**：[1.3.14] 修复 5 项 P0 后，继续清掉 P1-C（文档过期/矛盾）与 P2（功能与文档不符），
