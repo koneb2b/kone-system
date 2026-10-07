@@ -103,6 +103,8 @@ export type LeadItem = {
      风险高于收益；审批态先以本字段承载，状态机正式迁移作为独立后续任务。 */
   approvalId?: string
   draftVersion?: number
+  /** 审批结论：undefined = 未审批；'approved' 已批准；'rejected' 已驳回；'needs_revision' 待修订 */
+  approvalDecision?: 'approved' | 'rejected' | 'needs_revision'
 }
 
 export type LeadSearchResult = {

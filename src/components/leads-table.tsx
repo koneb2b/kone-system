@@ -279,7 +279,7 @@ export function LeadsTable({
    * 邮箱等级取 'verified'：按规范 §5，能进入审批队列的线索其邮箱应已符合准入等级；
    * 后续接入真实验证等级后应改为读取 lead 上的实际等级。
    */
-  const handleApprove = async (lead: Lead) => {
+  const handleApproval = async (lead: Lead, decision: 'approved' | 'rejected') => {
     if (!canUseCloudSend) {
       toast({
         title: '高级版锁定',
@@ -295,20 +295,30 @@ export function LeadsTable({
       const res = await createApproval({
         leadId: String(lead.id),
         approverMachineId: info.machineId ?? 'unknown-machine',
-        decision: 'approved',
+        decision,
         draftVersion,
         emailVerificationGrade: 'verified',
       })
-      // 本地标记：存在 approvalId 即视为已批准（见 leads-store 字段说明）
-      await useLeadsStore.getState().updateLead(lead.id, { approvalId: res.approvalId, draftVersion })
+      // 本地标记：approved → 记 approvalId（可投递）；rejected → 清除 approvalId（不可投递）
+      await useLeadsStore.getState().updateLead(lead.id, {
+        approvalId: decision === 'approved' ? res.approvalId : undefined,
+        approvalDecision: decision,
+        draftVersion,
+      })
       toast({
-        title: '已批准',
-        description: `线索「${lead.company}」已通过人工审批，现可发送至云端。`,
-        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+        title: decision === 'approved' ? '已批准' : '已驳回',
+        description:
+          decision === 'approved'
+            ? `线索「${lead.company}」已通过人工审批，现可发送至云端。`
+            : `线索「${lead.company}」已驳回，不会进入投递队列。`,
+        className:
+          decision === 'approved'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-amber-50 border-amber-200 text-amber-900',
       })
     } catch (error) {
       toast({
-        title: '审批失败',
+        title: decision === 'approved' ? '审批失败' : '驳回失败',
         description: formatErrorMessage(error, '提交审批失败，请检查云端配置'),
         variant: 'destructive',
       })
@@ -604,24 +614,45 @@ export function LeadsTable({
                             : 'AI 深度分析'}
                       </Button>
                       {/* [V1.4.0] Phase 2.9 · 审批（宪法第 5 条：审批是投递的必要前提）
-                          未批准 → 「批准」可点；已批准（存在 approvalId）→ 显示「已批准」并禁用。 */}
+                          未审批 → 「批准」「驳回」可点；已批准/已驳回 → 对应按钮置灰。 */}
                       {canUseCloudSend && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs font-medium"
-                          onClick={() => void handleApprove(lead)}
-                          disabled={approving === lead.id || Boolean(lead.approvalId)}
-                          isLoading={approving === lead.id}
-                        >
-                          {approving === lead.id ? '提交中' : lead.approvalId ? '已批准' : '批准'}
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs font-medium"
+                            onClick={() => void handleApproval(lead, 'approved')}
+                            disabled={approving === lead.id || lead.approvalDecision === 'approved'}
+                            isLoading={approving === lead.id}
+                          >
+                            {approving === lead.id
+                              ? '提交中'
+                              : lead.approvalDecision === 'approved'
+                                ? '已批准'
+                                : '批准'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs font-medium text-amber-700"
+                            onClick={() => void handleApproval(lead, 'rejected')}
+                            disabled={approving === lead.id || lead.approvalDecision === 'rejected'}
+                          >
+                            {lead.approvalDecision === 'rejected' ? '已驳回' : '驳回'}
+                          </Button>
+                        </>
                       )}
                       <Button
                         size="sm"
                         className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400"
                         onClick={() => void handleSendToCloud(lead)}
-                        disabled={sendingCloud === lead.id || !onSendToCloud || !canUseCloudSend}
+                        disabled={
+                          sendingCloud === lead.id ||
+                          !onSendToCloud ||
+                          !canUseCloudSend ||
+                          /* 与云端门禁 ⑦ 一致：未批准不得投递（UI 与云端双保险） */
+                          lead.approvalDecision !== 'approved'
+                        }
                         isLoading={sendingCloud === lead.id}
                       >
                         {sendingCloud !== lead.id ? <Send className="size-3.5" /> : null}

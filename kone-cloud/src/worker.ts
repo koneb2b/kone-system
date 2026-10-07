@@ -903,7 +903,6 @@ async function handleQueueOutreach(request: Request, env: Env, workspace: { id: 
       )
     }
 
-    const DAILY_SEND_LIMIT = 200
     const todayKey = nowUTC().slice(0, 10)
     if (quota && quota.today_key === todayKey && quota.sent_today >= DAILY_SEND_LIMIT) {
       return errorResponse(
@@ -1009,6 +1008,114 @@ async function handleListOutreach(request: Request, env: Env, workspace: { id: s
 }
 
 // ── POST /cron/send — Cron 定时投递 ──
+// ───────────────────────────────────────────────────────────────
+// Phase 2.9 阶段 4：日配额与熔断的**写入侧**
+//
+// 为什么需要：门禁 ⑨ 会读 `delivery_quota` 判断配额与熔断，
+// 但此前**没有任何代码写入该表** → 配额检查永不触发，属
+// 「看起来有保护、实际不生效」（与审计发现的死代码同类问题）。
+// ───────────────────────────────────────────────────────────────
+
+/** 日投递配额上限（门禁 ⑨ 与写入侧共用同一常量，避免两处漂移） */
+const DAILY_SEND_LIMIT = 200
+
+/** 熔断触发阈值：退信率 / 投诉率超过以下比例即自动开熔断 */
+const BOUNCE_RATE_TRIP = 0.05 // 5%
+const COMPLAINT_RATE_TRIP = 0.001 // 0.1%
+/** 熔断持续时长：1 小时 */
+const CIRCUIT_OPEN_DURATION_MS = 60 * 60 * 1000
+
+/** 配额列名白名单映射（不接受任意列名，杜绝动态 SQL 注入） */
+const QUOTA_COLUMN: Record<'sent' | 'bounced' | 'complained', string> = {
+  sent: 'sent_today',
+  bounced: 'bounced_today',
+  complained: 'complained_today',
+}
+
+/**
+ * 递增 workspace 的日投递计数，跨日自动重置。
+ *
+ * 语义：
+ *   · 无记录            → 插入当日行，仅本次字段置 delta，其余为 0
+ *   · 同 today_key      → 对应列累加 delta
+ *   · 跨日（key 变化）  → 三个计数全部重置，仅本次字段置 delta，并清除熔断
+ */
+export async function bumpDeliveryQuota(
+  env: Env,
+  workspaceId: string,
+  field: 'sent' | 'bounced' | 'complained',
+  delta = 1,
+): Promise<void> {
+  const todayKey = nowUTC().slice(0, 10)
+  const now = nowUTC()
+  const col = QUOTA_COLUMN[field]
+
+  const existing = await env.DB.prepare(`SELECT today_key FROM delivery_quota WHERE workspace_id = ?`)
+    .bind(workspaceId)
+    .first<{ today_key: string }>()
+
+  const sent = field === 'sent' ? delta : 0
+  const bounced = field === 'bounced' ? delta : 0
+  const complained = field === 'complained' ? delta : 0
+
+  if (!existing) {
+    await env.DB.prepare(
+      `INSERT INTO delivery_quota (workspace_id, today_key, sent_today, bounced_today, complained_today, last_reset_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(workspaceId, todayKey, sent, bounced, complained, now)
+      .run()
+    return
+  }
+
+  if (existing.today_key === todayKey) {
+    await env.DB.prepare(`UPDATE delivery_quota SET ${col} = ${col} + ?, last_reset_at = ? WHERE workspace_id = ?`)
+      .bind(delta, now, workspaceId)
+      .run()
+    return
+  }
+
+  // 跨日：重置全部计数并清除熔断
+  await env.DB.prepare(
+    `UPDATE delivery_quota SET today_key = ?, sent_today = ?, bounced_today = ?, complained_today = ?, circuit_open_until = NULL, last_reset_at = ?
+     WHERE workspace_id = ?`,
+  )
+    .bind(todayKey, sent, bounced, complained, now, workspaceId)
+    .run()
+}
+
+/**
+ * 退信 / 投诉后按比率判断是否开启熔断。
+ * 阈值：退信率 > 5% 或 投诉率 > 0.1%（分母为当日 sent_today）。
+ * 熔断开启后门禁 ⑨ 会以 CIRCUIT_OPEN 拒绝新投递，直到 circuit_open_until 过期。
+ */
+export async function maybeTripCircuit(env: Env, workspaceId: string): Promise<void> {
+  const quota = await env.DB.prepare(
+    `SELECT sent_today, bounced_today, complained_today, circuit_open_until FROM delivery_quota WHERE workspace_id = ?`,
+  )
+    .bind(workspaceId)
+    .first<{
+      sent_today: number
+      bounced_today: number
+      complained_today: number
+      circuit_open_until: string | null
+    }>()
+
+  if (!quota || quota.sent_today <= 0) return
+  // 已在熔断中则不重复写入（保留原过期时间，避免被无限延长）
+  if (quota.circuit_open_until && quota.circuit_open_until > nowUTC()) return
+
+  const bounceRate = quota.bounced_today / quota.sent_today
+  const complaintRate = quota.complained_today / quota.sent_today
+  if (bounceRate <= BOUNCE_RATE_TRIP && complaintRate <= COMPLAINT_RATE_TRIP) return
+
+  const until = new Date(Date.now() + CIRCUIT_OPEN_DURATION_MS).toISOString()
+  await env.DB.prepare(`UPDATE delivery_quota SET circuit_open_until = ? WHERE workspace_id = ?`)
+    .bind(until, workspaceId)
+    .run()
+}
+
+// ── POST /cron/send — Cron 定时投递 ──
 async function handleCronSend(request: Request, env: Env, requestId: string): Promise<Response> {
   // Verify cron secret
   const cronSecret = request.headers.get('X-Cron-Secret')
@@ -1070,6 +1177,9 @@ async function handleCronSend(request: Request, env: Env, requestId: string): Pr
         `UPDATE outreach SET status = 'sent', sent_at = ?, resend_id = ?, provider_message_id = ?, send_attempts = send_attempts + 1, updated_at = ?
          WHERE id = ? AND workspace_id = ?`
       ).bind(now, resendData.id, resendData.id, now, outreach.id, outreach.workspace_id).run()
+
+      // 阶段 4：累加当日投递计数，供门禁 ⑨ 的配额判断使用
+      await bumpDeliveryQuota(env, outreach.workspace_id, 'sent')
 
       // Append event
       await env.DB.prepare(
@@ -1214,6 +1324,11 @@ async function handleResendWebhook(request: Request, env: Env, requestId: string
 
   // Update outreach if we have a status update
   if (statusUpdate && body.data?.id) {
+    // 阶段 4：退信/投诉需按 workspace 累加配额，故先取归属（webhook 本身无 workspace 上下文）
+    const target = await env.DB.prepare(`SELECT id, workspace_id FROM outreach WHERE resend_id = ?`)
+      .bind(body.data.id)
+      .first<{ id: string; workspace_id: string }>()
+
     // 状态机守卫 (P1-B)：replied 是 outreach 终态（CLOUD-COLLABORATION-DELIVERY.md §13.1.6）。
     // 缺少守卫时，迟到的 email.delivered 会把已 replied 的记录回退成 delivered，
     // 让"客户已回复"这一最有价值的信号被静默抹掉。
@@ -1221,8 +1336,21 @@ async function handleResendWebhook(request: Request, env: Env, requestId: string
     await env.DB.prepare(
       `UPDATE outreach SET ${statusUpdate.column} = ?, status = ?, provider_message_id = COALESCE(provider_message_id, ?), updated_at = ?
        WHERE resend_id = ?
-         AND status NOT IN ('replied')`
-    ).bind(now, statusUpdate.status, body.data.id, now, body.data.id).run()
+         AND status NOT IN ('replied')`,
+    )
+      .bind(now, statusUpdate.status, body.data.id, now, body.data.id)
+      .run()
+
+    // 阶段 4：退信/投诉累加当日配额，并按比率决定是否开熔断
+    if (target?.workspace_id) {
+      if (eventType === 'email.bounced') {
+        await bumpDeliveryQuota(env, target.workspace_id, 'bounced')
+        await maybeTripCircuit(env, target.workspace_id)
+      } else if (eventType === 'email.complained') {
+        await bumpDeliveryQuota(env, target.workspace_id, 'complained')
+        await maybeTripCircuit(env, target.workspace_id)
+      }
+    }
   }
 
   // Insert webhook event for audit

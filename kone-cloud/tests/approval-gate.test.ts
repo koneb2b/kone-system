@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { env } from 'cloudflare:workers'
-import worker from '../src/worker.js'
+import worker, { bumpDeliveryQuota, maybeTripCircuit } from '../src/worker.js'
 
 /** 门禁开启的 env：spread 保留 D1 等真实 binding，仅覆盖开关 */
 const gatedEnv = { ...env, APPROVAL_GATE_ENABLED: 'true' } as unknown as Parameters<typeof worker.fetch>[1]
@@ -369,5 +369,107 @@ describe('Phase 2.9 · POST /approvals', () => {
       CTX,
     )
     expect(res.status).toBe(404)
+  })
+})
+
+// ───────────────────────────────────────────────────────────────
+// 阶段 4 · 日配额与熔断的写入侧
+//
+// 背景：门禁 ⑨ 读 `delivery_quota` 判断配额与熔断，但此前**无人写入该表**
+// → 配额检查永不触发（"看起来有保护、实际不生效"）。本组测试锁定写入侧行为。
+// ───────────────────────────────────────────────────────────────
+
+const today = () => new Date().toISOString().slice(0, 10)
+
+describe('Phase 2.9 阶段4 · 日配额与熔断写入侧', () => {
+  it('首次投递写入当日配额行', async () => {
+    const { workspaceId } = await setupWorkspace('quota-first')
+    await bumpDeliveryQuota(gatedEnv, workspaceId, 'sent')
+    const q = await env.DB.prepare(`SELECT today_key, sent_today FROM delivery_quota WHERE workspace_id = ?`)
+      .bind(workspaceId)
+      .first<{ today_key: string; sent_today: number }>()
+    expect(q?.sent_today).toBe(1)
+    expect(q?.today_key).toBe(today())
+  })
+
+  it('同日累加（不重置）', async () => {
+    const { workspaceId } = await setupWorkspace('quota-accum')
+    await bumpDeliveryQuota(gatedEnv, workspaceId, 'sent')
+    await bumpDeliveryQuota(gatedEnv, workspaceId, 'sent')
+    await bumpDeliveryQuota(gatedEnv, workspaceId, 'sent')
+    const q = await env.DB.prepare(`SELECT sent_today FROM delivery_quota WHERE workspace_id = ?`)
+      .bind(workspaceId)
+      .first<{ sent_today: number }>()
+    expect(q?.sent_today).toBe(3)
+  })
+
+  it('跨日自动重置全部计数', async () => {
+    const { workspaceId } = await setupWorkspace('quota-reset')
+    await env.DB.prepare(
+      `INSERT INTO delivery_quota (workspace_id, today_key, sent_today, bounced_today, complained_today) VALUES (?, '2000-01-01', 99, 5, 2)`,
+    )
+      .bind(workspaceId)
+      .run()
+
+    await bumpDeliveryQuota(gatedEnv, workspaceId, 'sent')
+
+    const q = await env.DB.prepare(
+      `SELECT today_key, sent_today, bounced_today, complained_today FROM delivery_quota WHERE workspace_id = ?`,
+    )
+      .bind(workspaceId)
+      .first<{ today_key: string; sent_today: number; bounced_today: number; complained_today: number }>()
+    expect(q?.today_key).toBe(today())
+    expect(q?.sent_today).toBe(1)
+    expect(q?.bounced_today).toBe(0)
+    expect(q?.complained_today).toBe(0)
+  })
+
+  it('退信率超阈值（>5%）自动开熔断', async () => {
+    const { workspaceId } = await setupWorkspace('quota-trip')
+    await env.DB.prepare(
+      `INSERT INTO delivery_quota (workspace_id, today_key, sent_today, bounced_today) VALUES (?, ?, 100, 10)`,
+    )
+      .bind(workspaceId, today())
+      .run()
+
+    await maybeTripCircuit(gatedEnv, workspaceId)
+
+    const q = await env.DB.prepare(`SELECT circuit_open_until FROM delivery_quota WHERE workspace_id = ?`)
+      .bind(workspaceId)
+      .first<{ circuit_open_until: string | null }>()
+    expect(q?.circuit_open_until).toBeTruthy()
+    expect(new Date(q!.circuit_open_until!).getTime()).toBeGreaterThan(Date.now())
+  })
+
+  it('退信率正常（1%）不开熔断', async () => {
+    const { workspaceId } = await setupWorkspace('quota-ok')
+    await env.DB.prepare(
+      `INSERT INTO delivery_quota (workspace_id, today_key, sent_today, bounced_today) VALUES (?, ?, 100, 1)`,
+    )
+      .bind(workspaceId, today())
+      .run()
+
+    await maybeTripCircuit(gatedEnv, workspaceId)
+
+    const q = await env.DB.prepare(`SELECT circuit_open_until FROM delivery_quota WHERE workspace_id = ?`)
+      .bind(workspaceId)
+      .first<{ circuit_open_until: string | null }>()
+    expect(q?.circuit_open_until).toBeNull()
+  })
+
+  it('集成：写入侧累加达上限后，门禁 ⑨ 真实拒绝投递', async () => {
+    const { token, workspaceId } = await setupWorkspace('quota-integration')
+    const { leadId } = await seedLead(workspaceId)
+    await approveLead(workspaceId, leadId, 1)
+
+    // 通过真实写入路径把 sent_today 从 199 推到 200（= DAILY_SEND_LIMIT）
+    await env.DB.prepare(`INSERT INTO delivery_quota (workspace_id, today_key, sent_today) VALUES (?, ?, 199)`)
+      .bind(workspaceId, today())
+      .run()
+    await bumpDeliveryQuota(gatedEnv, workspaceId, 'sent')
+
+    const r = await queue(gatedEnv, token, { leadId, subject: 's', body: 'b', draftVersion: 1 })
+    expect(r.status).toBe(429)
+    expect(r.body.code).toBe('QUOTA_EXCEEDED')
   })
 })

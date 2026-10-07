@@ -73,15 +73,29 @@ lastVerifiedAt: 2026-10-07
 - `QUEUE_OUTREACH` 载荷补 `draftVersion`（缺省 0，与审批记录保持一致）。
 - `wrangler.toml` 显式声明 `APPROVAL_GATE_ENABLED = "false"`，并注释开启方式与影响。
 
+### 阶段 3 补充 · 驳回 UI
+「批准」按钮扩展为**「批准 / 驳回」**，`LeadItem` 新增 `approvalDecision`
+（`undefined` = 未审批 / `approved` / `rejected` / `needs_revision`）。
+「发送至云端」按钮增加前置条件 `approvalDecision === 'approved'` ——
+与云端门禁 ⑦ 形成 **UI + 服务端双保险**（即使门禁开关关闭，流程也符合宪法）。
+
+### 阶段 4 · 配额与熔断写入侧（已落地）
+修复一个与"死代码"同性质的问题：**门禁 ⑨ 的配额检查此前永远不会触发** ——
+它读 `delivery_quota`，但**没有任何代码写入该表**（"看起来有保护、实际不生效"）。
+- `bumpDeliveryQuota(env, workspaceId, field, delta)`：跨日自动重置三个计数；
+  列名经白名单映射（`QUOTA_COLUMN`），杜绝动态 SQL 注入。
+- `maybeTripCircuit(env, workspaceId)`：退信率 > 5% 或投诉率 > 0.1% 时开启熔断
+  （写 `circuit_open_until`，持续 1 小时）；已在熔断中不重复写入，避免被无限延长。
+- 接入点：`/cron/send` 投递成功后累加 `sent_today`；webhook 的
+  `email.bounced` / `email.complained` 累加对应计数并检查熔断。
+- `DAILY_SEND_LIMIT` 提为**模块级常量**，门禁 ⑨ 与写入侧共用，避免两处漂移。
+
 ### 尚未完成
-- **门禁开启**：能力与 UI 均已就绪，但 `APPROVAL_GATE_ENABLED` 仍为 `"false"`。
+- **门禁开启**：`APPROVAL_GATE_ENABLED` 仍为 `"false"`。
   建议先在干净环境端到端验证一次（批准 → 发送至云端）再开生产。
-- **待审批队列独立视图**：当前审批入口在**线索表行内**，尚未提供独立队列页
+- **待审批队列独立视图**：审批入口在**线索表行内**，尚未提供独立队列页
   （`kone-PRD §5.1` 第 8 条列出的完整入口之一）。
-- **驳回 / 退回修订**：UI 目前只提供「批准」；`rejected` / `needs_revision`
-  的云端 API 与门禁已支持，但本地 UI 未暴露。
-- **阶段 4 · 配额写入侧**：门禁 ⑨ 只读 `delivery_quota`，投递成功后累加
-  `sent_today` 的逻辑未实现（当前配额拦截仅在手动写入配额行后生效）。
+- **`needs_revision` UI**：云端 API 与门禁已支持，本地 UI 只暴露批准 / 驳回。
 
 ### 门禁
 - kone-cloud：**53/53**（35 既有 + 18 新增门禁测试，含 8 例负向授权、
