@@ -358,6 +358,11 @@ export type QueueOutreachPayload = {
   body: string
   scheduledAt?: string
   sequenceStage?: number
+  /* [V1.4.0] Phase 2.9 · 门禁 ⑦⑧ 所需的审批上下文（CLOUD-COLLABORATION-DELIVERY.md §7.1 必需字段）。
+     云端开启 APPROVAL_GATE_ENABLED 后，缺失 draftVersion 会返回 DRAFT_VERSION_MISMATCH。 */
+  draftVersion?: number
+  approvalId?: string
+  campaignId?: string
 }
 
 export type QueueOutreachResponse = {
@@ -500,6 +505,153 @@ export type ReportOutreachReplyResponse = {
  * 将 approved lead 加入发送队列（Phase 2）。
  * 云端 Cron 将定时扫描并调用 Resend API 发送。
  */
+/* ── [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条）─────────────
+   宪法：「高分、分阶段任务或 cloud_send 功能永不授权投递。
+   审批 + 服务端二次门禁成功是强制前提。」
+   本段提供审批记录的写入与查询；投递放行由云端门禁 ⑦ 判定。 */
+
+export type CreateApprovalPayload = {
+  leadId: string
+  /** 审批人 = 本机机器 ID（与 license machineId 对齐；单机使用场景） */
+  approverMachineId: string
+  decision: 'approved' | 'rejected' | 'needs_revision'
+  /** 当前草稿版本 —— 云端门禁 ⑦ 要求与审批记录严格相等 */
+  draftVersion: number
+  emailVerificationGrade: string
+  manualExceptionReason?: string
+}
+
+export type CreateApprovalData = {
+  approvalId: string
+  leadId: string
+  decision: string
+  draftVersion: number
+  status: string
+}
+
+export type ApprovalRecord = {
+  id: string
+  workspaceId: string
+  leadId: string
+  approverMachineId: string
+  decision: string
+  approvedAt: string
+  draftVersion: number
+  emailVerificationGrade: string
+  manualExceptionReason: string | null
+  riskSnapshot: string | null
+  createdAt: string
+}
+
+export type ListApprovalsData = {
+  approvals: ApprovalRecord[]
+  limit: number
+}
+
+/** 云端 approvals 原始行（snake_case，与 D1 列名一致） */
+type ApprovalRow = {
+  id: string
+  workspace_id: string
+  lead_id: string
+  approver_machine_id: string
+  decision: string
+  approved_at: string
+  draft_version: number
+  email_verification_grade: string
+  manual_exception_reason?: string | null
+  risk_snapshot?: string | null
+  created_at: string
+}
+
+/**
+ * D1 行 → 本地契约（snake_case → camelCase）显式映射。
+ * 跨进程响应**禁止裸 `as` 强转**——P0-1 教训：as 仅编译期生效，
+ * 运行时字段名不变会导致字段静默变 undefined。规则同 mapOutreachRow。
+ */
+const mapApprovalRow = (row: ApprovalRow): ApprovalRecord => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  leadId: row.lead_id,
+  approverMachineId: row.approver_machine_id,
+  decision: row.decision,
+  approvedAt: row.approved_at,
+  draftVersion: row.draft_version,
+  emailVerificationGrade: row.email_verification_grade,
+  manualExceptionReason: row.manual_exception_reason ?? null,
+  riskSnapshot: row.risk_snapshot ?? null,
+  createdAt: row.created_at,
+})
+
+/** 写入审批记录（云端不可覆盖，只追加） */
+export const createApproval = async (
+  store: ConfigStore,
+  payload: CreateApprovalPayload,
+): Promise<CreateApprovalData> => {
+  const config = getCloudflareConfig(store)
+
+  const response = await fetchWithTimeout(`${config.url}/v1/approvals`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      'X-Schema-Version': CLOUDFLARE_SCHEMA_VERSION,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const body = (await response.json().catch(() => ({}))) as {
+    success?: boolean
+    data?: CreateApprovalData
+    code?: string
+    message?: string
+  }
+
+  if (!response.ok || body.success === false) {
+    throw new Error(body.message || `Cloudflare create approval failed: ${response.status}`)
+  }
+  if (!body.data) {
+    throw new Error('Cloudflare create approval returned no data')
+  }
+  return body.data
+}
+
+/** 查询审批记录（按 leadId 或最近 N 条） */
+export const listApprovals = async (
+  store: ConfigStore,
+  opts?: { leadId?: string; limit?: number },
+): Promise<ListApprovalsData> => {
+  const config = getCloudflareConfig(store)
+
+  const params = new URLSearchParams()
+  if (opts?.leadId) params.set('leadId', opts.leadId)
+  params.set('limit', String(opts?.limit ?? 50))
+
+  const response = await fetchWithTimeout(`${config.url}/v1/approvals?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'X-Schema-Version': CLOUDFLARE_SCHEMA_VERSION,
+    },
+  })
+
+  const body = (await response.json().catch(() => ({}))) as {
+    success?: boolean
+    data?: { approvals?: ApprovalRow[]; limit?: number }
+    code?: string
+    message?: string
+  }
+
+  if (!response.ok || body.success === false) {
+    throw new Error(body.message || `Cloudflare list approvals failed: ${response.status}`)
+  }
+
+  // 显式 snake→camel 映射，禁止裸 as（P0-1 教训）
+  return {
+    approvals: (body.data?.approvals ?? []).map(mapApprovalRow),
+    limit: body.data?.limit ?? 0,
+  }
+}
+
 export const queueOutreach = async (
   store: ConfigStore,
   payload: QueueOutreachPayload,
@@ -696,6 +848,54 @@ export const registerCloudflareHandlers = (ipcMain: Electron.IpcMain, store: Con
           success: false,
           error: {
             code: 'POLL_OUTREACH_STATUS_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
+    },
+  )
+
+  // [V1.4.0] cloud:create-approval — 写入审批记录（AGENTS.md 宪法第 5 条）
+  registerIpc(
+    IPC_CHANNELS.CLOUD.CREATE_APPROVAL,
+    {
+      channel: IPC_CHANNELS.CLOUD.CREATE_APPROVAL,
+      requestRule: { type: 'any' },
+      responseRule: { type: 'any' },
+    },
+    async (_event: unknown, ...args: unknown[]) => {
+      try {
+        const payload = args[0] as CreateApprovalPayload
+        return { success: true, data: await createApproval(store, payload) }
+      } catch (err) {
+        return {
+          success: false,
+          error: {
+            code: 'CREATE_APPROVAL_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
+    },
+  )
+
+  // [V1.4.0] cloud:list-approvals — 查询审批记录
+  registerIpc(
+    IPC_CHANNELS.CLOUD.LIST_APPROVALS,
+    {
+      channel: IPC_CHANNELS.CLOUD.LIST_APPROVALS,
+      requestRule: { type: 'any' },
+      responseRule: { type: 'any' },
+    },
+    async (_event: unknown, ...args: unknown[]) => {
+      try {
+        const opts = (args[0] ?? {}) as { leadId?: string; limit?: number }
+        return { success: true, data: await listApprovals(store, opts) }
+      } catch (err) {
+        return {
+          success: false,
+          error: {
+            code: 'LIST_APPROVALS_FAILED',
             message: err instanceof Error ? err.message : String(err),
           },
         }

@@ -24,6 +24,10 @@ import type {
   CloudImapStatusData,
   CloudImapTestResult,
   CloudPollOutreachData,
+  /* [V1.4.0] Phase 2.9 · 审批 */
+  CreateApprovalData,
+  ListApprovalsData,
+  SubmitApprovalPayload,
   ConfigSetRequest,
   CreateCampaignData,
   CreateCampaignRequest,
@@ -150,6 +154,13 @@ export const cloudflarePollOutreachStatus = async (opts?: {
   offset?: number
 }): Promise<CloudPollOutreachData> =>
   unwrapIpc(await window.electronAPI.cloud.cloudflarePollOutreachStatus(opts), '拉取云端投递明细失败')
+
+/* [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条：审批是投递的必要前提）*/
+export const createApproval = async (payload: SubmitApprovalPayload): Promise<CreateApprovalData> =>
+  unwrapIpc(await window.electronAPI.cloud.createApproval(payload), '提交审批失败')
+
+export const listApprovals = async (opts?: { leadId?: string; limit?: number }): Promise<ListApprovalsData> =>
+  unwrapIpc(await window.electronAPI.cloud.listApprovals(opts), '查询审批记录失败')
 
 /* [V1.3.8] Phase 2.5/2.7 · IMAP 回复检测 */
 export const imapPoll = async (): Promise<CloudImapPollResult> =>

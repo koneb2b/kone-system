@@ -84,6 +84,17 @@ const electronAPI: ElectronApi = {
       ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CLOUDFLARE_DASHBOARD_STATS),
     cloudflarePollOutreachStatus: (opts?: { status?: string; limit?: number; offset?: number }) =>
       ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CLOUDFLARE_POLL_OUTREACH_STATUS, opts ?? {}),
+    /* [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条）*/
+    createApproval: (payload: {
+      leadId: string
+      approverMachineId: string
+      decision: 'approved' | 'rejected' | 'needs_revision'
+      draftVersion: number
+      emailVerificationGrade: string
+      manualExceptionReason?: string
+    }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CREATE_APPROVAL, payload),
+    listApprovals: (opts?: { leadId?: string; limit?: number }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.LIST_APPROVALS, opts ?? {}),
   },
   search: {
     execute: (query: SearchExecuteRequest) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH.EXECUTE, query),

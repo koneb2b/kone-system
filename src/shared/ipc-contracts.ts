@@ -738,6 +738,56 @@ export type CloudImapTestResult = {
   latencyMs?: number
 }
 
+/* ── [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条）──
+   宪法：「高分、分阶段任务或 cloud_send 功能永不授权投递。
+   审批 + 服务端二次门禁成功是强制前提。」
+   字段对齐 CLOUD-COLLABORATION-DELIVERY.md §6 与云端 approvals 表。 */
+
+/** 审批决策（与云端 approvals.decision CHECK 一致） */
+export type ApprovalDecision = 'approved' | 'rejected' | 'needs_revision'
+
+/** 提交审批决策的载荷 */
+export type SubmitApprovalPayload = {
+  leadId: string
+  /** 审批人 = 本机机器 ID（与 license machineId 对齐；单机使用场景） */
+  approverMachineId: string
+  decision: ApprovalDecision
+  /** 当前草稿版本 —— 云端门禁 ⑦ 要求与审批记录严格相等 */
+  draftVersion: number
+  emailVerificationGrade: string
+  manualExceptionReason?: string
+}
+
+/** 审批记录（对应云端 approvals 表） */
+export type CloudApprovalRecord = {
+  id: string
+  workspaceId: string
+  leadId: string
+  approverMachineId: string
+  decision: ApprovalDecision
+  approvedAt: string
+  draftVersion: number
+  emailVerificationGrade: string
+  manualExceptionReason?: string | null
+  riskSnapshot?: string | null
+  createdAt: string
+}
+
+/** 提交审批后的返回 */
+export type CreateApprovalData = {
+  approvalId: string
+  leadId: string
+  decision: ApprovalDecision
+  draftVersion: number
+  status: string
+}
+
+/** 审批记录查询返回 */
+export type ListApprovalsData = {
+  approvals: CloudApprovalRecord[]
+  limit: number
+}
+
 /* ── Automation Types ── */
 
 export type EmailVerifyResult = {
@@ -839,6 +889,9 @@ export type ElectronApi = {
       limit?: number
       offset?: number
     }) => Promise<IpcResponse<CloudPollOutreachData>>
+    /* [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条）*/
+    createApproval: (payload: SubmitApprovalPayload) => Promise<IpcResponse<CreateApprovalData>>
+    listApprovals: (opts?: { leadId?: string; limit?: number }) => Promise<IpcResponse<ListApprovalsData>>
   }
   onCloudRealtimeLeadEvent: (callback: (event: RealtimeLeadEvent) => void) => () => void
   automation: {

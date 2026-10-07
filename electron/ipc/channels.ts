@@ -64,6 +64,10 @@ export const IPC_CHANNELS = {
     /* [V1.3.8] Phase 2.7 · 云端触达看板（投递漏斗 + 30 日趋势） */
     CLOUDFLARE_DASHBOARD_STATS: 'cloud:cloudflare-dashboard-stats',
     CLOUDFLARE_POLL_OUTREACH_STATUS: 'cloud:cloudflare-poll-outreach-status',
+    /* [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条：审批是投递的必要前提）
+       仅 2 个通道：待审批队列复用本地 leads（status='pending_approval'），无需额外通道。 */
+    CREATE_APPROVAL: 'cloud:create-approval',
+    LIST_APPROVALS: 'cloud:list-approvals',
   },
   AUTOMATION: {
     VERIFY_EMAILS: 'automation:verify-emails',

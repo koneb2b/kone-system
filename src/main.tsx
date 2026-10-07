@@ -330,6 +330,21 @@ if (import.meta.env.DEV) {
           success: true,
           data: { outreach: [], limit: 0, offset: 0 },
         })) as ElectronApi['cloud']['cloudflarePollOutreachStatus'],
+        /* [V1.4.0] Phase 2.9 · 审批（dev shell 无云端，返回占位） */
+        createApproval: (async () => ({
+          success: true,
+          data: {
+            approvalId: 'dev-approval',
+            leadId: 'dev-lead',
+            decision: 'approved',
+            draftVersion: 0,
+            status: 'approved',
+          },
+        })) as ElectronApi['cloud']['createApproval'],
+        listApprovals: (async () => ({
+          success: true,
+          data: { approvals: [], limit: 0 },
+        })) as ElectronApi['cloud']['listApprovals'],
       },
       onCloudRealtimeLeadEvent: (() => () => undefined) as ElectronApi['onCloudRealtimeLeadEvent'],
       automation: {
