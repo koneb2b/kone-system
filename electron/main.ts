@@ -14,6 +14,11 @@ import { registerSearchHandlers } from './services/search-service'
 import { clearLegacyAutopilotNode, registerAutopilotStateHandlers } from './services/autopilot-state-service'
 import { registerSupabaseHandlers } from './services/supabase-service'
 import { registerAutomationHandlers } from './services/automation-service'
+import { registerCloudflareHandlers } from './services/cloudflare-service'
+import { registerOutreachSyncHandlers } from './services/outreach-sync-service'
+import { startOutreachSync, stopOutreachSync } from './services/outreach-sync-service'
+import { registerImapReplyHandlers } from './services/imap-reply-service'
+import { startImapReplyPoll, stopImapReplyPoll } from './services/imap-reply-service'
 import { registerSandboxHandlers } from './services/sandbox-service'
 import { registerAgentHandlers } from './services/agent-service'
 import { registerDnsHandlers } from './services/dns-service'
@@ -89,6 +94,9 @@ const registerIpcHandlers = () => {
   registerAutopilotStateHandlers(ipcMain, store)
   registerSupabaseHandlers(ipcMain, store, licenseGuard, () => mainWindowRef)
   registerAutomationHandlers(ipcMain, store, licenseGuard)
+  registerCloudflareHandlers(ipcMain, store)
+  registerOutreachSyncHandlers(ipcMain, store, () => mainWindowRef)
+  registerImapReplyHandlers(ipcMain, store, () => mainWindowRef)
   registerSandboxHandlers(ipcMain, store)
   registerAgentHandlers(ipcMain, store)
   registerDnsHandlers(ipcMain, store)
@@ -247,6 +255,15 @@ app
     // 故此处断言全部 invoke 通道均已注册；断言通过后锁定注册中心，禁止运行期新增注册（防回归）。
     registry.assertAllRegistered(collectInvokeChannels())
     registry.lock()
+
+    // [V1.3.10] P2.8b：注册中心锁定后启动后台轮询定时器。两个 timer 都遵循"注册中心 gate 之后"的
+    // 生命周期不变量——避免在通道未就绪前发起云端/IMAP 网络调用。
+    //   - startOutreachSync：cloud.outreachSyncEnabled 默认 true（Phase 2 起），60s 轮询云状态回写本地。
+    //   - startImapReplyPoll：cloud.imapReplyDetectionEnabled 默认 false（P2.8b 保守），15min 拉 IMAP
+    //     INBOX 匹配 In-Reply-To；未显式开启时立即返回，timer 保持 null。
+    // 两者首次轮询延迟 5s，避免 IMAP/Cloudflare 认证风暴。stop 在 app.on('before-quit') 中执行。
+    startOutreachSync(store, mainWindow)
+    startImapReplyPoll(store, mainWindow)
   })
   .catch((error) => {
     console.error('[Main] App startup failed:', error)
@@ -274,6 +291,14 @@ app.on('activate', async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  // [V1.3.10] P2.8b：停止后台轮询定时器，避免退出过程中触发新一轮 pollReplies 或 syncOutreachStatus。
+  // 两个 timer 的 setInterval 回调可能正在执行，clear 后仍会跑完当前回调；不阻塞退出流程。
+  try {
+    stopOutreachSync()
+    stopImapReplyPoll()
+  } catch (error) {
+    console.error('[Main] 停止后台轮询定时器失败:', error instanceof Error ? error.message : String(error))
+  }
   /* P0-5：退出前强制同步落盘，确保防抖窗口内尚未写盘的配置变更不丢失。 */
   try {
     store.flushSync?.()

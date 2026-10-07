@@ -3,12 +3,10 @@ import { isCircuitBreakerOpenError, safeFetch } from '../utils/http-client'
 import {
   ConfigStore,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  getN8nConfig,
   getProviderSecretKey,
   getPublicUserConfig,
   getUserLlmApiKey,
   SECRET_KEYS,
-  shouldAllowN8nPush,
 } from './config-service'
 import { registerSecureFeatureIpc, registerSecureIpc } from './license-service'
 import { getSecret } from './secret-manager'
@@ -243,40 +241,9 @@ export const registerProxyHandlers = (
 
         const hostname = parsed.hostname.toLowerCase()
         const allowedRoots = ['serpapi.com', 'api.openai.com']
-        const n8nConfig = store
-          ? getN8nConfig(store)
-          : { webhookUrl: '', autoPush: false, minScore: 60, roleFilter: '' }
-        const configuredWebhook = n8nConfig.webhookUrl
-        let configuredHostname = ''
-        if (configuredWebhook) {
-          try {
-            const webhookUrl = new URL(configuredWebhook)
-            if (webhookUrl.protocol !== 'https:') {
-              throw new Error('Configured webhook must use https')
-            }
-            configuredHostname = webhookUrl.hostname.toLowerCase()
-          } catch {
-            throw new Error('Configured webhook URL is invalid')
-          }
-        }
-        const allowed =
-          allowedRoots.some((root) => hostname === root || hostname.endsWith(`.${root}`)) ||
-          Boolean(configuredHostname && hostname === configuredHostname)
+        const allowed = allowedRoots.some((root) => hostname === root || hostname.endsWith(`.${root}`))
         if (!allowed) {
           throw new Error(`Proxy target not allowed: ${hostname}`)
-        }
-
-        if (store && configuredHostname && hostname === configuredHostname && normalizedMethod === 'POST') {
-          const normalizedBody =
-            body && typeof body === 'object' ? (body as { matchScore?: number; inferredRole?: string }) : undefined
-          const routeDecision = shouldAllowN8nPush(n8nConfig, {
-            matchScore: normalizedBody?.matchScore,
-            inferredRole: normalizedBody?.inferredRole,
-          })
-
-          if (!routeDecision.allowed) {
-            return { success: true, data: { status: 202, data: { skipped: true, reason: routeDecision.reason } } }
-          }
         }
 
         const isSerpApi = /(^|\.)serpapi\.com$/i.test(hostname)

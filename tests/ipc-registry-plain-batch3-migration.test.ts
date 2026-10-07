@@ -18,7 +18,7 @@
  *
  * 不实际 dispatch 的通道（仅断言"已登记"）：
  *   - ACCOUNT.CONNECT：需要 event.sender（WebContents）驱动沙箱会话
- *   - AUTOMATION.START_CAMPAIGN：放行后会真实调用 n8n / Supabase（外部副作用）
+ *   - AUTOMATION.START_CAMPAIGN：放行后返回目标态降级提示（云端投递闭环为目标态）
  *
  * 测试在 dev 形态（app.isPackaged=false）下运行，以真实触发契约校验。
  */

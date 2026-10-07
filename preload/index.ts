@@ -61,6 +61,30 @@ const electronAPI: ElectronApi = {
       ipcRenderer.invoke(IPC_CHANNELS.SEARCH.API_TEST_CONNECTION, payload),
     proxy: (payload: ProxyRequest) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH.API_PROXY, payload),
   },
+  cloud: {
+    /* Supabase 云端 */
+    checkCollision: (payload: { domain: string }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_COLLISION, payload),
+    syncLead: (payload: { lead: Record<string, unknown>; force?: boolean }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.SYNC_LEAD, payload),
+    upsertLead: (payload: UpsertLeadRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.UPSERT_LEAD, payload),
+    checkDomains: (payload: CheckDomainsRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_DOMAINS, payload),
+    createCampaign: (payload: CreateCampaignRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CREATE_CAMPAIGN, payload),
+    fetchTeamLeads: (payload?: { limit?: number }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.FETCH_TEAM_LEADS, payload),
+    fetchTracking: (payload: { domains: string[] }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.FETCH_TRACKING, payload),
+    subscribeRealtime: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.SUBSCRIBE_REALTIME),
+    unsubscribeRealtime: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.UNSUBSCRIBE_REALTIME),
+    fetchClaimedDomains: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.FETCH_CLAIMED_DOMAINS),
+    /* Phase 1 · Cloudflare 云端引擎 */
+    cloudflareConfigured: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CLOUDFLARE_CONFIGURED),
+    cloudflareTestConnection: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CLOUDFLARE_TEST_CONNECTION),
+    /* [V1.3.8] Phase 2.7 · 云端触达看板 */
+    cloudflareDashboardStats: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CLOUDFLARE_DASHBOARD_STATS),
+    cloudflarePollOutreachStatus: (opts?: { status?: string; limit?: number; offset?: number }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CLOUDFLARE_POLL_OUTREACH_STATUS, opts ?? {}),
+  },
   search: {
     execute: (query: SearchExecuteRequest) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH.EXECUTE, query),
   },
@@ -127,19 +151,6 @@ const electronAPI: ElectronApi = {
     saveExport: (payload: FileExportSaveRequest) => ipcRenderer.invoke(IPC_CHANNELS.FILES.EXPORT_SAVE, payload),
     exportPdf: (payload: FileExportPdfRequest) => ipcRenderer.invoke(IPC_CHANNELS.FILES.EXPORT_PDF, payload),
   },
-  cloud: {
-    checkCollision: (payload: { domain: string }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_COLLISION, payload),
-    syncLead: (payload: { lead: Record<string, unknown>; force?: boolean }) =>
-      ipcRenderer.invoke(IPC_CHANNELS.CLOUD.SYNC_LEAD, payload),
-    upsertLead: (payload: UpsertLeadRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.UPSERT_LEAD, payload),
-    checkDomains: (payload: CheckDomainsRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CHECK_DOMAINS, payload),
-    createCampaign: (payload: CreateCampaignRequest) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.CREATE_CAMPAIGN, payload),
-    fetchTeamLeads: (payload?: { limit?: number }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.FETCH_TEAM_LEADS, payload),
-    fetchTracking: (payload: { domains: string[] }) => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.FETCH_TRACKING, payload),
-    subscribeRealtime: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.SUBSCRIBE_REALTIME),
-    unsubscribeRealtime: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.UNSUBSCRIBE_REALTIME),
-    fetchClaimedDomains: () => ipcRenderer.invoke(IPC_CHANNELS.CLOUD.FETCH_CLAIMED_DOMAINS),
-  },
   onCloudRealtimeLeadEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       if (payload && typeof payload === 'object') callback(payload as any)
@@ -151,6 +162,13 @@ const electronAPI: ElectronApi = {
     verifyEmails: (payload: { emails: string[] }) => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.VERIFY_EMAILS, payload),
     startCampaign: (payload: CampaignStartRequest) =>
       ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN, payload),
+    /* [V1.3.8] Phase 2.5 · IMAP 回复检测 */
+    imapPoll: () => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.IMAP_POLL),
+    imapStatus: () => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.IMAP_STATUS),
+    /* [V1.3.11] Phase 2.8c · IMAP 自动轮询开关切换后即时重启 timer */
+    imapRestart: () => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.IMAP_RESTART),
+    /* [V1.3.12] Phase 2.8d · IMAP 主机连接测试 */
+    imapTestConnection: () => ipcRenderer.invoke(IPC_CHANNELS.AUTOMATION.IMAP_TEST_CONNECTION),
   },
   accounts: {
     connect: (payload: AccountConnectRequest) => ipcRenderer.invoke(IPC_CHANNELS.ACCOUNT.CONNECT, payload),

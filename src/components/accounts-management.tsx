@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   accountConnect,
   accountDisconnect,
@@ -26,6 +27,9 @@ import {
   onAccountStatusUpdate,
   secretSet,
   secretCheck,
+  configSet,
+  configGet,
+  imapRestart,
 } from '@/lib/electron-api'
 import { updateUserConfig, getUserConfig } from '@/lib/user-config'
 import { useToast } from '@/hooks/use-toast'
@@ -40,6 +44,11 @@ type EmailDraft = {
   smtpPass: string
   senderEmail: string
   senderName: string
+  /* Phase 2.5/P2.6：IMAP 收信（可选，Phase 2.5 云端投递回复检测使用） */
+  imapHost: string
+  imapPort: string
+  imapUser: string
+  imapPass: string
 }
 
 const EMPTY_EMAIL_DRAFT: EmailDraft = {
@@ -49,6 +58,10 @@ const EMPTY_EMAIL_DRAFT: EmailDraft = {
   smtpPass: '',
   senderEmail: '',
   senderName: '',
+  imapHost: '',
+  imapPort: '993',
+  imapUser: '',
+  imapPass: '',
 }
 
 const ACCOUNT_TYPE_META: Record<AccountType, { label: string; icon: typeof Mail; color: string; desc: string }> = {
@@ -86,12 +99,24 @@ export function AccountsManagement() {
   const [savingEmail, setSavingEmail] = useState(false)
   /* L0-3/F5：已保存密码标志（回显提示用，密码本体永不回显） */
   const [emailPassSaved, setEmailPassSaved] = useState(false)
+  /* P2.6：IMAP 独立密码保存标志（与 SMTP 分离，留空即回退到 SMTP 密码槽） */
+  const [imapPassSaved, setImapPassSaved] = useState(false)
+  /* [V1.3.11] P2.8c：IMAP 自动回复检测设置（cloud.imapReply* 配置项）
+     三档默认值与主进程 imap-reply-service.getImapReplyConfig 一致：
+     - enabled=false（保守，需客户显式开启）
+     - intervalMin=15（每 15 分钟拉 INBOX 一次，与 getImapReplyConfig 默认一致）
+     - lookbackDays=3（每次轮询回溯最近 3 天） */
+  const [imapAutoEnabled, setImapAutoEnabled] = useState(false)
+  const [imapIntervalMin, setImapIntervalMin] = useState(15)
+  const [imapLookbackDays, setImapLookbackDays] = useState(3)
+  const [imapSettingsSaving, setImapSettingsSaving] = useState(false)
 
   /* L0-3/F5：打开表单时回显已保存的非密字段；密码留空表示"保持不变" */
   const openEmailForm = useCallback(async (type: AccountType) => {
     setEmailDraft(EMPTY_EMAIL_DRAFT)
     setEditingEmailType(type)
     setEmailPassSaved(false)
+    setImapPassSaved(false)
     try {
       const config = await getUserConfig()
       const email = config.accounts?.email
@@ -103,14 +128,22 @@ export function AccountsManagement() {
           smtpPass: '',
           senderEmail: String(email.senderEmail || ''),
           senderName: String(email.senderName || ''),
+          imapHost: String(email.imapHost || ''),
+          imapPort: String(email.imapPort || 993),
+          imapUser: String(email.imapUser || ''),
+          imapPass: '',
         })
       }
     } catch {
       // 读取失败时保持空表单（新建语义）
     }
     try {
-      const meta = await secretCheck('secrets.email.smtpPass')
-      setEmailPassSaved(Boolean(meta?.exists))
+      const [smtpMeta, imapMeta] = await Promise.all([
+        secretCheck('secrets.email.smtpPass'),
+        secretCheck('secrets.email.imapPass'),
+      ])
+      setEmailPassSaved(Boolean(smtpMeta?.exists))
+      setImapPassSaved(Boolean(imapMeta?.exists))
     } catch {
       // secret 状态读取失败不影响表单打开
     }
@@ -133,6 +166,27 @@ export function AccountsManagement() {
   useEffect(() => {
     void refreshList()
   }, [refreshList])
+
+  /* [V1.3.11] P2.8c：挂载时从 config 读回 IMAP 自动回复检测设置
+     默认值与主进程 getImapReplyConfig 保持一致（enabled=false / interval=15min / lookback=3d） */
+  useEffect(() => {
+    void (async () => {
+      const [enabled, intervalMs, lookbackDays] = await Promise.all([
+        configGet<boolean>('cloud.imapReplyDetectionEnabled'),
+        configGet<number>('cloud.imapReplyInterval'),
+        configGet<number>('cloud.imapReplyLookbackDays'),
+      ])
+      setImapAutoEnabled(enabled === true)
+      if (typeof intervalMs === 'number' && intervalMs > 0) {
+        setImapIntervalMin(Math.round(intervalMs / 60000))
+      }
+      if (typeof lookbackDays === 'number' && lookbackDays > 0) {
+        setImapLookbackDays(Math.round(lookbackDays))
+      }
+    })().catch(() => {
+      /* 静默：读取失败用默认值 */
+    })
+  }, [])
 
   useEffect(() => {
     const unsub = onAccountStatusUpdate((entry) => {
@@ -172,14 +226,17 @@ export function AccountsManagement() {
     }
   }
 
-  /* P0-2 + L0-3/B3：保存 SMTP 配置 —— 非密字段写 user_config，密码写 secret-manager
-     （safeStorage 加密）；密码留空 = 保持已存密码不变；user_config 的明文遗留字段
-     一律清空（旧安装由主进程读端回退兼容）。 */
+  /* P0-2 + L0-3/B3 + P2.6：保存 SMTP + IMAP 配置 —— 非密字段写 user_config，密码写
+     secret-manager（safeStorage 加密）；密码留空 = 保持已存密码不变；user_config 的明文
+     遗留字段一律清空（旧安装由主进程读端回退兼容）。IMAP 全部字段可选，imapHost 留空
+     即视为"未配置"，Phase 2.5 回复检测轮询自动跳过。imapPass 留空即回退到 smtpPass 槽。 */
   const handleSaveEmail = async () => {
     if (!editingEmailType) return
     setSavingEmail(true)
     try {
       const newPass = String(emailDraft.smtpPass || '').trim()
+      const newImapPass = String(emailDraft.imapPass || '').trim()
+      const imapHost = String(emailDraft.imapHost || '').trim()
       await updateUserConfig((current) => ({
         ...current,
         accounts: {
@@ -191,11 +248,19 @@ export function AccountsManagement() {
             smtpPass: '',
             senderEmail: String(emailDraft.senderEmail || '').trim(),
             senderName: String(emailDraft.senderName || '').trim(),
+            /* IMAP 字段一律写入（即便为空）；imapHost 空 = 服务侧视为未配置 */
+            imapHost,
+            imapPort: imapHost ? Number(emailDraft.imapPort) || 993 : undefined,
+            imapUser: imapHost ? String(emailDraft.imapUser || '').trim() : undefined,
+            imapPass: '',
           },
         },
       }))
       if (newPass) {
         await secretSet({ key: 'secrets.email.smtpPass', value: newPass })
+      }
+      if (newImapPass) {
+        await secretSet({ key: 'secrets.email.imapPass', value: newImapPass })
       }
       await accountConnect({
         accountType: editingEmailType,
@@ -215,6 +280,34 @@ export function AccountsManagement() {
       toast({ title: '邮箱配置失败', description: message, variant: 'destructive' })
     } finally {
       setSavingEmail(false)
+    }
+  }
+
+  /* [V1.3.11] P2.8c：IMAP 自动回复检测设置变更处理
+     策略：先落盘 config，再调 imapRestart 让主进程即时重启 timer；失败回滚 UI 状态。
+     imapRestart 内部会 stop → start，start 立即读当前 config，因此必须先 configSet 再 restart。 */
+  const handleImapSettingChange = async (patch: { enabled?: boolean; intervalMin?: number; lookbackDays?: number }) => {
+    setImapSettingsSaving(true)
+    try {
+      const nextEnabled = patch.enabled ?? imapAutoEnabled
+      const nextIntervalMin = patch.intervalMin ?? imapIntervalMin
+      const nextLookbackDays = patch.lookbackDays ?? imapLookbackDays
+
+      await Promise.all([
+        configSet({ key: 'cloud.imapReplyDetectionEnabled', value: nextEnabled }),
+        configSet({ key: 'cloud.imapReplyInterval', value: nextIntervalMin * 60000 }),
+        configSet({ key: 'cloud.imapReplyLookbackDays', value: nextLookbackDays }),
+      ])
+      // 落盘后让主进程即时重启 timer，避免让用户重启应用才生效
+      await imapRestart()
+      setImapAutoEnabled(nextEnabled)
+      setImapIntervalMin(nextIntervalMin)
+      setImapLookbackDays(nextLookbackDays)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存失败'
+      toast({ title: 'IMAP 设置保存失败', description: message, variant: 'destructive' })
+    } finally {
+      setImapSettingsSaving(false)
     }
   }
 
@@ -407,6 +500,138 @@ export function AccountsManagement() {
                   />
                 </div>
               </div>
+
+              {/* Phase 2.5/P2.6：IMAP 收信（可选，云端投递回复检测专用） */}
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold text-slate-600">IMAP 收信（可选）</span>
+                  <span className="text-[10px] text-slate-400">用于云端投递回复检测 · In-Reply-To 匹配</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                  仅当启用云端投递（Cloudflare + Resend）时有效。填写 IMAP 主机后，本地会按 In-Reply-To 精确匹配送达的
+                  outreach 回复，并回写云端状态为 &lsquo;replied&rsquo;。IMAP 主机名与 SMTP 不同（例如 smtp.gmail.com vs
+                  imap.gmail.com），不做派生兜底；imapUser / imapPass 留空即复用 SMTP 账号与密码。
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-500">IMAP 主机（留空即关闭收信）</label>
+                    <Input
+                      placeholder="imap.example.com"
+                      value={emailDraft.imapHost}
+                      onChange={(e) => setEmailDraft((d) => ({ ...d, imapHost: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-500">IMAP 端口</label>
+                    <Input
+                      placeholder="993"
+                      inputMode="numeric"
+                      value={emailDraft.imapPort}
+                      onChange={(e) => setEmailDraft((d) => ({ ...d, imapPort: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-500">IMAP 用户名（留空复用 SMTP）</label>
+                    <Input
+                      placeholder="默认复用 SMTP 账号"
+                      value={emailDraft.imapUser}
+                      onChange={(e) => setEmailDraft((d) => ({ ...d, imapUser: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-500">
+                      IMAP 密码{imapPassSaved ? '（已保存，留空保持不变）' : ''}
+                    </label>
+                    <Input
+                      type="password"
+                      placeholder={imapPassSaved ? '留空保持当前密码' : '默认复用 SMTP 密码'}
+                      value={emailDraft.imapPass}
+                      onChange={(e) => setEmailDraft((d) => ({ ...d, imapPass: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* [V1.3.11] P2.8c：自动回复检测设置 —— 开关 + 轮询间隔 + 回溯天数
+                  三档默认值与主进程 getImapReplyConfig 一致；仅当已填 IMAP 主机时启用有意义 */}
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-600">自动回复检测</span>
+                      <span className="text-[10px] text-slate-400">保存后即时生效，无需重启应用</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                      启用后，主进程按下方间隔自动连接 IMAP 拉取 INBOX，用 In-Reply-To 精确匹配已送达的 outreach
+                      回复，并回写云端状态为 &lsquo;replied&rsquo;。关闭则仅保留手动"立即轮询"入口。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <Switch
+                      id="imap-auto-detect"
+                      checked={imapAutoEnabled}
+                      onCheckedChange={(v) => void handleImapSettingChange({ enabled: v })}
+                    />
+                    <label htmlFor="imap-auto-detect" className="text-xs text-slate-600">
+                      {imapAutoEnabled ? '已启用' : '已关闭'}
+                    </label>
+                  </div>
+                </div>
+
+                {imapAutoEnabled && (
+                  <div className="mt-3 grid grid-cols-2 gap-3 max-w-md">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-500">轮询间隔</label>
+                      <div className="flex gap-1">
+                        {[5, 15, 30, 60].map((min) => (
+                          <button
+                            key={min}
+                            type="button"
+                            disabled={imapSettingsSaving}
+                            onClick={() => void handleImapSettingChange({ intervalMin: min })}
+                            className={`flex-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors ${
+                              imapIntervalMin === min
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            {min} 分钟
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-500">回溯天数</label>
+                      <div className="flex gap-1">
+                        {[1, 3, 7].map((days) => (
+                          <button
+                            key={days}
+                            type="button"
+                            disabled={imapSettingsSaving}
+                            onClick={() => void handleImapSettingChange({ lookbackDays: days })}
+                            className={`flex-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors ${
+                              imapLookbackDays === days
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            {days} 天
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-slate-400 mt-2">
+                  {imapSettingsSaving
+                    ? '保存中…'
+                    : imapAutoEnabled
+                      ? `将每 ${imapIntervalMin} 分钟连接 IMAP，回溯最近 ${imapLookbackDays} 天邮件匹配回复`
+                      : '关闭状态：定时器不启动；仍可手动触发"立即轮询一次"'}
+                </p>
+              </div>
+
               <div className="mt-3 flex items-center gap-2">
                 <Button
                   size="sm"

@@ -6,7 +6,7 @@
 > `CLOUD-COLLABORATION-DELIVERY.md` 负责审批、云端门禁、投递、抑制、Webhook 和团队协同规则；本文件不重复定义这些业务规则。Provider 的可用状态不自动等同于“可发送、可自动跟进或可用于商业宣传以外的所有用途”。
 >
 > 校准依据：直接审计 `electron/services/providers/*.ts` 的 `execute()` 实现。
-> 最后核对：2026-09-22（审计基线 commit `0925cde`，见 `KONE-V1.3-规范文档与架构数据交互深度梳理报告.md`）。
+> 最后核对：2026-09-22（审计基线 commit `0925cde`，见 `archive/KONE-V1.3-规范文档与架构数据交互深度梳理报告.md`）。
 
 ## ✅ 真实可用 (Production — 可对外宣传)
 

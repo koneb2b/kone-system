@@ -50,7 +50,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   knowledge: { title: '企业知识库', subtitle: '构建您的私域 AI 大脑' },
   settings: { title: '系统设置', subtitle: 'API 密钥、搜索配置与账户管理' },
   'team-dashboard': { title: '团队协作看板', subtitle: '实时团队线索协同与防撞单管理' },
-  automation: { title: '智能触达工作流', subtitle: '客户清洗、模板配置与云端发送的协同引擎' },
+  automation: { title: '智能触达工作流', subtitle: '客户清洗、模板配置与本地发信工作台（云端投递闭环为目标态）' },
   accounts: {
     title: '多账号沙箱管理',
     subtitle: '独立持久化沙箱隔离，安全多开 LinkedIn / Facebook / WhatsApp / 企业邮箱',
@@ -294,7 +294,7 @@ export function DashboardPage() {
               title={activeNav === 'automation' ? '智能触达工作流暂未开放' : '团队协作看板暂未开放'}
               description={
                 activeNav === 'automation'
-                  ? '当前账号仍处于 Trial / Basic 范围，仅可使用本地获客与线索管理。升级后即可开启云端自动化、发送队列与追踪能力。'
+                  ? '当前账号仍处于 Trial / Basic 范围，仅可使用本地获客与线索管理。升级后可开启本地自动化发信工作台与团队协同；云端投递闭环为目标态。'
                   : '当前账号仍处于 Trial / Basic 范围，仅可使用本地线索闭环。升级后即可开启团队协作、防撞单与高级联动能力。'
               }
               ctaLabel="联系顾问升级"

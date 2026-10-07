@@ -148,7 +148,7 @@ Forbidden:
    - local export
    - local Autopilot
 4. Premium and Enterprise exclusively include remote commercial capabilities:
-   - n8n cloud email automation
+   - Cloudflare Workers cloud email automation (target state — Phase 1)
    - cloud send and verification chain
    - team collision detection
    - team dashboard and collaborative visibility
@@ -169,7 +169,7 @@ Autopilot is local-only and depends on:
 - non-sleeping system
 - working network
 
-By contrast, Premium n8n automation may continue remotely after payload handoff, even when the user's machine is offline.
+By contrast, Premium Cloudflare automation (target state) may continue remotely after payload handoff, even when the user's machine is offline.
 
 ---
 

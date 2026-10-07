@@ -27,6 +27,8 @@ export const SECRET_KEYS = {
   ANYSEARCH_BASE_URL: 'secrets.anysearch.baseUrl',
   /* L0-3/B3：Email Agent SMTP 密码加密落位（明文遗留字段仅作读端回退兼容） */
   EMAIL_SMTP_PASS: 'secrets.email.smtpPass',
+  /* Phase 2.5/P2.6：IMAP 回复检测专用密码加密落位。留空即回退到 EMAIL_SMTP_PASS */
+  EMAIL_IMAP_PASS: 'secrets.email.imapPass',
 } as const
 
 export const PROVIDER_SECRET_KEYS: Record<string, string> = {
@@ -281,13 +283,6 @@ type ProviderConfigSnapshot = {
   secretKey: string
 }
 
-export type N8nConfigSnapshot = {
-  webhookUrl: string
-  autoPush: boolean
-  minScore: number
-  roleFilter: string
-}
-
 export const getGoogleConfig = (store: ConfigStore) => {
   const googleLeads = getProviderConfig(store, 'google-leads')
   const googleMaps = getProviderConfig(store, 'google-maps')
@@ -306,47 +301,6 @@ export const getGoogleConfig = (store: ConfigStore) => {
     googleLeads: normalizeProviderSnapshot('google-leads', googleLeads, SECRET_KEYS.GOOGLE_LEADS_API_KEY),
     googleMaps: normalizeProviderSnapshot('google-maps', googleMaps, SECRET_KEYS.GOOGLE_MAPS_API_KEY),
   }
-}
-
-export const getN8nConfig = (store: ConfigStore): N8nConfigSnapshot => {
-  const userConfig = getPublicUserConfig(store) as {
-    n8n?: { webhookUrl?: string; autoPush?: boolean; minScore?: number; roleFilter?: string }
-  }
-
-  const rawMinScore = Number(userConfig?.n8n?.minScore)
-  return {
-    webhookUrl: String(userConfig?.n8n?.webhookUrl || '').trim(),
-    autoPush: Boolean(userConfig?.n8n?.autoPush),
-    minScore: Number.isFinite(rawMinScore) ? Math.max(0, Math.min(100, rawMinScore)) : 60,
-    roleFilter: String(userConfig?.n8n?.roleFilter || '').trim(),
-  }
-}
-
-export const shouldAllowN8nPush = (config: N8nConfigSnapshot, lead: { matchScore?: number; inferredRole?: string }) => {
-  if (!config.autoPush) {
-    return { allowed: true as const, reason: '' }
-  }
-
-  const matchScore = Number.isFinite(Number(lead.matchScore)) ? Number(lead.matchScore) : 0
-  if (matchScore < config.minScore) {
-    return {
-      allowed: false as const,
-      reason: `该线索评分低于自动推送阈值 ${config.minScore}，已被智能路由拦截`,
-    }
-  }
-
-  const normalizedRoleFilter = config.roleFilter.toLowerCase()
-  const normalizedInferredRole = String(lead.inferredRole || '')
-    .trim()
-    .toLowerCase()
-  if (normalizedRoleFilter && !normalizedInferredRole.includes(normalizedRoleFilter)) {
-    return {
-      allowed: false as const,
-      reason: `该线索角色不符合自动推送条件（需匹配：${config.roleFilter}），已被智能路由拦截`,
-    }
-  }
-
-  return { allowed: true as const, reason: '' }
 }
 
 export const getConfigValue = (store: ConfigStore, key: string) => {

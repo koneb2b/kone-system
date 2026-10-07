@@ -644,6 +644,100 @@ export type CreateCampaignData = {
   error?: string
 }
 
+/* ── Cloud Outreach Dashboard Types (Phase 2.7) ── */
+
+/**
+ * 云端触达看板聚合统计（KPI 卡数据源）。
+ * 结构镜像 electron/services/cloudflare-service.ts 的 DashboardStats。
+ */
+export type CloudDashboardStats = {
+  leads: {
+    total: number
+    scored: number
+    pendingApproval: number
+    approved: number
+    queued: number
+    sent: number
+    replied: number
+    suppressed: number
+  }
+  outreach: {
+    total: number
+    pending: number
+    sent: number
+    delivered: number
+    bounced: number
+    complained: number
+    failed: number
+  }
+  suppressions: number
+  syncVersion: number
+}
+
+/** 单条云端 outreach 记录（用于漏斗 + 趋势聚合） */
+export type CloudOutreachRecord = {
+  id: string
+  workspaceId: string
+  leadId: string
+  campaignId: string
+  sequenceStage: number
+  scheduledAt: string
+  sentAt?: string | null
+  deliveredAt?: string | null
+  bouncedAt?: string | null
+  complainedAt?: string | null
+  repliedAt?: string | null
+  provider: string
+  resendId?: string | null
+  providerMessageId?: string | null
+  subject: string
+  status: string
+  bounceType?: string | null
+  error?: string | null
+  sendAttempts: number
+  nextRetryAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CloudPollOutreachData = {
+  outreach: CloudOutreachRecord[]
+  limit: number
+  offset: number
+}
+
+/** IMAP 单次轮询结果（对应 electron/services/imap-reply-service.ts 的 ImapPollResult） */
+export type CloudImapPollResult = {
+  polled: number
+  matched: number
+  reported: number
+  idempotent: number
+  skipped?: string
+  errors: string[]
+  since: string
+  at: string
+}
+
+/** IMAP 状态查询返回（对应 getImapReplyStatus） */
+export type CloudImapStatusData = {
+  enabled: boolean
+  intervalMs: number
+  lookbackDays: number
+  cloudflareConfigured: boolean
+  imapConfigured: boolean
+  running: boolean
+  lastPoll: { at: string; result: CloudImapPollResult } | null
+}
+
+/** IMAP 主机连接测试结果（对应 imap-reply-service.testImapConnection） */
+export type CloudImapTestResult = {
+  ok: boolean
+  message: string
+  mailbox?: string
+  totalMessages?: number
+  latencyMs?: number
+}
+
 /* ── Automation Types ── */
 
 export type EmailVerifyResult = {
@@ -735,11 +829,28 @@ export type ElectronApi = {
     subscribeRealtime: () => Promise<IpcResponse<null>>
     unsubscribeRealtime: () => Promise<IpcResponse<null>>
     fetchClaimedDomains: () => Promise<IpcResponse<ClaimedDomainsData>>
+    /* Phase 1 · Cloudflare 云端引擎 */
+    cloudflareConfigured: () => Promise<IpcResponse<{ configured: boolean }>>
+    cloudflareTestConnection: () => Promise<IpcResponse<{ ok: boolean; message: string; latencyMs: number }>>
+    /* [V1.3.8] Phase 2.7 · 云端触达看板 */
+    cloudflareDashboardStats: () => Promise<IpcResponse<CloudDashboardStats>>
+    cloudflarePollOutreachStatus: (opts?: {
+      status?: string
+      limit?: number
+      offset?: number
+    }) => Promise<IpcResponse<CloudPollOutreachData>>
   }
   onCloudRealtimeLeadEvent: (callback: (event: RealtimeLeadEvent) => void) => () => void
   automation: {
     verifyEmails: (payload: { emails: string[] }) => Promise<IpcResponse<EmailVerifyData>>
     startCampaign: (payload: CampaignStartRequest) => Promise<IpcResponse<CampaignStartData>>
+    /* [V1.3.8] Phase 2.5 · IMAP 回复检测 */
+    imapPoll: () => Promise<IpcResponse<CloudImapPollResult>>
+    imapStatus: () => Promise<IpcResponse<CloudImapStatusData>>
+    /* [V1.3.11] Phase 2.8c · IMAP 自动轮询开关切换后即时重启 timer */
+    imapRestart: () => Promise<IpcResponse<CloudImapStatusData>>
+    /* [V1.3.12] Phase 2.8d · IMAP 主机连接测试 */
+    imapTestConnection: () => Promise<IpcResponse<CloudImapTestResult>>
   }
   accounts: {
     connect: (payload: AccountConnectRequest) => Promise<IpcResponse<AccountConnectData>>

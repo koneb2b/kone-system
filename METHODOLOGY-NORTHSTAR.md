@@ -220,7 +220,7 @@
 - 坚决不做重型分布式数据库集群与全功能复杂 CRM
 ### 成熟阶段演进路线 (V2.0 规模化协同)
 - 数据层演进：SQLite -> PostgreSQL (支持多业务员权限隔离与并发)
-- 调度层演进：集成轻量级 n8n 自动化引擎实现工作流拖拽编排
+- 调度层演进：Cloudflare Workers + Queue 实现云端自动化编排（Phase 1）
 - 资产层演进：打通自建开源 CRM (Twenty CRM / Mautic) 实现全生命周期管理
 
 ## 八、 七步全流程落地执行清单 (Checklist)

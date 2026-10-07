@@ -19,146 +19,169 @@ const channelsPath = '../../dist-electron/electron/ipc/channels.js'
 
 const capturedRequests = []
 
-test('cloud handoff payload obeys compact slice caps and filters invalid email leads', async () => {
-  const electronMock = createElectronMock()
-  capturedRequests.length = 0
+test(
+  'cloud handoff returns target-state degradation when Cloudflare not configured',
+  async () => {
+    const electronMock = createElectronMock()
+    capturedRequests.length = 0
 
-  global.fetch = async (url, options = {}) => {
-    capturedRequests.push({ url: String(url), options })
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {}
-      },
-      async text() {
-        return ''
-      },
+    global.fetch = async (url, options = {}) => {
+      capturedRequests.push({ url: String(url), options })
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {}
+        },
+        async text() {
+          return ''
+        },
+      }
     }
-  }
 
-  await withModuleMocks(
-    {
-      electron: electronMock,
-      [`../utils/http-client::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'automation-service.js')}`]:
-        {
-          safeFetch: global.fetch,
-        },
-    },
-    async () => {
-      resetModule(automationServicePath)
-      resetModule(channelsPath)
-      const { registerAutomationHandlers } = require(automationServicePath)
-      const { IPC_CHANNELS } = require(channelsPath)
-      const ipcMain = createIpcMainMock()
-      const store = createStoreMock({
-        user_config: {
-          n8n: { webhookUrl: 'https://n8n.example.com/webhook/start' },
-        },
-        'system.machineId': 'cloud-handoff-device',
-      })
-      const licenseGuard = createLicenseGuardMock({
-        claims: {
-          status: 'active',
-          expiresAt: Date.now() + 60_000,
-          features: ['cloud_send'],
-          licenseKey: 'KONE-CLOUD',
-          plan: 'enterprise',
-        },
-      })
-
-      registerAutomationHandlers(ipcMain, store, licenseGuard)
-      const long = 'X'.repeat(5000)
-      const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN)(createEventMock(), {
-        templateId: 'default',
-        leads: [
+    await withModuleMocks(
+      {
+        electron: electronMock,
+        [`../utils/http-client::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'automation-service.js')}`]:
           {
-            email: 'valid@example.com',
-            company: long,
-            website: 'https://example.com',
-            matchScore: 88,
-            country: long,
-            contact: long,
-            contactTitle: long,
-            phone: long,
-            address: long,
-            source: long,
-            inferredRole: long,
-            matchReasons: ['a', 'b', 'c', 'd', 'e'],
-            riskFlags: ['r1', 'r2', 'r3', 'r4'],
-            snippet: long,
-            aiAnalysis: {
-              companyProfile: long,
-              painPoints: long,
-              valueMapping: long,
-              source: long,
+            safeFetch: global.fetch,
+          },
+      },
+      async () => {
+        resetModule(automationServicePath)
+        resetModule(channelsPath)
+        const { registerAutomationHandlers } = require(automationServicePath)
+        const { IPC_CHANNELS } = require(channelsPath)
+        const ipcMain = createIpcMainMock()
+        // No cloudflare config — should return target-state degradation
+        const store = createStoreMock({
+          user_config: {},
+          'system.machineId': 'cloud-handoff-device',
+        })
+        const licenseGuard = createLicenseGuardMock({
+          claims: {
+            status: 'active',
+            expiresAt: Date.now() + 60_000,
+            features: ['cloud_send'],
+            licenseKey: 'KONE-CLOUD',
+            plan: 'enterprise',
+          },
+        })
+
+        registerAutomationHandlers(ipcMain, store, licenseGuard)
+        const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN)(createEventMock(), {
+          templateId: 'default',
+          leads: [
+            { email: 'valid@example.com', company: 'Valid Lead', matchScore: 88 },
+            { email: '', company: 'No Email Lead', matchScore: 95 },
+            { email: 'low-score@example.com', company: 'Low Score Lead', matchScore: 40 },
+            { email: 'unscored@example.com', company: 'Unscored Lead' },
+          ],
+        })
+
+        assert.equal(result?.success, true)
+        assert.equal(result?.data?.triggered, false)
+        assert.equal(result?.data?.pushed, false)
+        assert.equal(result?.data?.accepted, 0)
+        assert.equal(result?.data?.rejected, 4)
+        assert.ok(result?.data?.message?.includes('云端投递闭环为目标态'))
+      },
+    )
+
+    // No actual fetch calls — Cloudflare not configured
+    assert.equal(capturedRequests.length, 0)
+  },
+  { timeout: 10000 },
+)
+
+test(
+  'cloud handoff pushes leads when Cloudflare is configured',
+  async () => {
+    const electronMock = createElectronMock()
+    capturedRequests.length = 0
+
+    global.fetch = async (url, options = {}) => {
+      capturedRequests.push({ url: String(url), options })
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            success: true,
+            data: {
+              id: 'lead-id-123',
+              status: 'scored',
+              approvalRequired: true,
+              collision: false,
             },
-            aiGeneratedPitch: {
-              emailSubject: long,
-              emailBody: long,
-            },
-            userSettings: {
-              selectedModel: long,
-              icpProfile: {
-                targetProduct: long,
-                buyerPersona: long,
-                coreAdvantage: long,
-                negativeIcp: long,
-              },
-            },
-          },
-          {
-            email: '',
-            company: 'No Email Lead',
-            website: 'https://no-email.example.com',
-            matchScore: 95,
-          },
-          {
-            email: 'low-score@example.com',
-            company: 'Low Score Lead',
-            website: 'https://low-score.example.com',
-            matchScore: 40,
-          },
-          {
-            email: 'unscored@example.com',
-            company: 'Unscored Lead',
-            website: 'https://unscored.example.com',
-          },
-        ],
-      })
+          }
+        },
+        async text() {
+          return ''
+        },
+      }
+    }
 
-      assert.equal(result?.success, true)
-      assert.equal(result?.data?.accepted, 1)
-      assert.equal(result?.data?.rejected, 3)
-    },
-  )
+    await withModuleMocks(
+      {
+        electron: electronMock,
+        [`../utils/http-client::${path.join(process.cwd(), 'dist-electron', 'electron', 'services', 'automation-service.js')}`]:
+          {
+            safeFetch: global.fetch,
+          },
+      },
+      async () => {
+        resetModule(automationServicePath)
+        resetModule(channelsPath)
+        const { registerAutomationHandlers } = require(automationServicePath)
+        const { IPC_CHANNELS } = require(channelsPath)
+        const ipcMain = createIpcMainMock()
+        // Cloudflare configured
+        const store = createStoreMock({
+          user_config: {},
+          'system.machineId': 'cloud-handoff-device',
+          'cloud.provider': 'cloudflare',
+          'cloud.cloudflareUrl': 'https://kone-cloud.example.workers.dev',
+          'cloud.cloudflareApiKey': 'test-api-key-123',
+          'cloud.cloudflareWorkspaceId': 'ws-test-001',
+        })
+        const licenseGuard = createLicenseGuardMock({
+          claims: {
+            status: 'active',
+            expiresAt: Date.now() + 60_000,
+            features: ['cloud_send'],
+            licenseKey: 'KONE-CLOUD',
+            plan: 'enterprise',
+          },
+        })
 
-  assert.ok(capturedRequests.length > 0)
-  const requestBody = JSON.parse(String(capturedRequests[0].options.body || '{}'))
-  const first = requestBody.leads[0]
-  assert.equal(requestBody.leads.length, 1)
-  assert.ok(first.lead_info.company.length <= 200)
-  assert.ok(first.lead_info.country.length <= 50)
-  assert.ok(first.lead_info.contact.length <= 100)
-  assert.ok(first.lead_info.contact_title.length <= 120)
-  assert.ok(first.lead_info.phone.length <= 80)
-  assert.ok(first.lead_info.address.length <= 240)
-  assert.ok(first.lead_info.source.length <= 120)
-  assert.ok(first.lead_info.inferred_role.length <= 120)
-  assert.ok(first.lead_info.snippet.length <= 500)
-  assert.ok(first.ai_analysis.companyProfile.length <= 800)
-  assert.ok(first.ai_analysis.painPoints.length <= 800)
-  assert.ok(first.ai_analysis.valueMapping.length <= 1000)
-  assert.ok(first.ai_generated_pitch.emailSubject.length <= 200)
-  assert.ok(first.ai_generated_pitch.emailBody.length <= 2400)
-  assert.ok(first.user_settings.selectedModel.length <= 120)
-  assert.ok(first.user_settings.icpProfile.targetProduct.length <= 500)
-  assert.ok(first.user_settings.icpProfile.buyerPersona.length <= 100)
-  assert.ok(first.user_settings.icpProfile.coreAdvantage.length <= 500)
-  assert.ok(first.user_settings.icpProfile.negativeIcp.length <= 300)
-  assert.ok(first.lead_info.match_reasons.length <= 4)
-  assert.ok(first.lead_info.risk_flags.length <= 3)
-})
+        registerAutomationHandlers(ipcMain, store, licenseGuard)
+        const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOMATION.START_CAMPAIGN)(createEventMock(), {
+          templateId: 'default',
+          leads: [
+            { id: 'lead-1', email: 'valid@example.com', company: 'Valid Lead', matchScore: 88 },
+            { id: 'lead-2', email: 'team@team.com', company: 'Team Lead', matchScore: 75 },
+          ],
+        })
+
+        assert.equal(result?.success, true)
+        assert.equal(result?.data?.triggered, true)
+        assert.equal(result?.data?.pushed, 2)
+        assert.equal(result?.data?.accepted, 2)
+        assert.equal(result?.data?.rejected, 0)
+
+        // Verify fetch calls were made with correct headers
+        assert.equal(capturedRequests.length, 2)
+        const firstRequest = capturedRequests[0]
+        assert.ok(firstRequest.url.includes('/v1/leads'))
+        assert.ok(firstRequest.options.headers['Authorization'].startsWith('Bearer '))
+        assert.ok(firstRequest.options.headers['Idempotency-Key'])
+        assert.ok(firstRequest.options.headers['X-Schema-Version'])
+      },
+    )
+  },
+  { timeout: 10000 },
+)
 
 test.after(() => {
   Module._load = originalLoad

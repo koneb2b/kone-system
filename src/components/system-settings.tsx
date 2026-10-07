@@ -10,25 +10,16 @@ import { useConfigStore, type IcpProfile } from '@/store/config-store'
 import { secretCheck } from '@/lib/electron-api'
 import { BaseSettingsTab, type ApiKeyConfig } from '@/components/settings/base-settings-tab'
 import { IcpSettingsTab } from '@/components/settings/icp-settings-tab'
-import { N8nSettingsTab } from '@/components/settings/n8n-settings-tab'
+import { CloudSettingsTab } from '@/components/settings/cloud-settings-tab'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { getUserConfig, updateUserSettingsConfig, type UserSettingsConfig } from '@/lib/user-config'
-import { useLicenseStore } from '@/store/licenseStore'
 
 type PersistedApiKeyConfig = { id: string; baseUrl: string }
-
-type N8nSettings = {
-  webhookUrl: string
-  autoPush: boolean
-  minScore: number
-  roleFilter: string
-}
 
 type PersistedUserConfig = UserSettingsConfig & {
   providers?: PersistedApiKeyConfig[]
   icpProfile?: IcpProfile
   connectionStatus?: Record<string, 'connected' | 'error' | 'pending'>
-  n8n?: N8nSettings
   selectedModel?: string
 }
 
@@ -56,12 +47,9 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   const apiKeysRef = useRef<ApiKeyConfig[]>([])
   const connectionStatusRef = useRef<Record<string, 'connected' | 'error' | 'pending'>>({})
   const icpProfileRef = useRef<IcpProfile>(defaultIcpProfile)
-  const n8nSettingsRef = useRef<N8nSettings>({ webhookUrl: '', autoPush: false, minScore: 60, roleFilter: '' })
   const selectedModelRef = useRef('')
   const persistVersionRef = useRef(0)
   const { toast } = useToast()
-  const tier = useLicenseStore((state) => state.tier)
-  const isTrial = useLicenseStore((state) => state.isTrial)
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
   const defaultConfigs: ApiKeyConfig[] = [
     { id: 'llm', name: '智能决策大脑 (LLM)', icon: Cpu, key: '', baseUrl: '', status: 'pending' },
@@ -78,14 +66,7 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   const [modelList] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState('')
   const { icpProfile, setIcpProfile, hydrateFromStorage } = useConfigStore()
-  const [n8nSettings, setN8nSettings] = useState<N8nSettings>({
-    webhookUrl: '',
-    autoPush: false,
-    minScore: 60,
-    roleFilter: '',
-  })
   const [connectionStatus, setConnectionStatus] = useState<Record<string, 'connected' | 'error' | 'pending'>>({})
-  const n8nLocked = isTrial || tier !== 'premium'
 
   useEffect(() => {
     apiKeysRef.current = apiKeys
@@ -98,10 +79,6 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   useEffect(() => {
     icpProfileRef.current = icpProfile
   }, [icpProfile])
-
-  useEffect(() => {
-    n8nSettingsRef.current = n8nSettings
-  }, [n8nSettings])
 
   useEffect(() => {
     selectedModelRef.current = selectedModel
@@ -174,7 +151,6 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
     const loadData = async () => {
       try {
         let savedKeys: PersistedApiKeyConfig[] | undefined
-        let savedN8n: N8nSettings | undefined
         let savedModel: string | undefined
         let savedConnection: Record<string, 'connected' | 'error' | 'pending'> | undefined
         const raw = await getUserConfig<PersistedUserConfig>()
@@ -183,7 +159,6 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
         } else if (raw && typeof raw === 'object') {
           const typed = raw as PersistedUserConfig
           if (Array.isArray(typed.providers)) savedKeys = typed.providers
-          if (typed.n8n) savedN8n = typed.n8n
           if (typed.selectedModel) savedModel = typed.selectedModel
           if (typed.connectionStatus) savedConnection = typed.connectionStatus
         }
@@ -212,9 +187,6 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
                 ]),
               ) as Record<string, 'connected' | 'error' | 'pending'>,
           )
-        }
-        if (savedN8n) {
-          setN8nSettings(savedN8n)
         }
         if (savedModel) {
           setSelectedModel(savedModel)
@@ -254,14 +226,12 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
     overrides?: {
       connectionStatus?: Record<string, 'connected' | 'error' | 'pending'>
       icpProfile?: IcpProfile
-      n8nSettings?: N8nSettings
       selectedModel?: string
     },
   ): PersistedUserConfig => ({
     providers: toPersisted(configs),
     icpProfile: overrides?.icpProfile ?? icpProfileRef.current,
     connectionStatus: overrides?.connectionStatus ?? connectionStatusRef.current,
-    n8n: overrides?.n8nSettings ?? n8nSettingsRef.current,
     selectedModel: overrides?.selectedModel ?? selectedModelRef.current,
   })
 
@@ -376,19 +346,6 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
 
   const isSaving = saveStatus === 'saving'
 
-  const updateN8n = (patch: Partial<N8nSettings>) => {
-    const nextN8nSettings = { ...n8nSettingsRef.current, ...patch }
-    n8nSettingsRef.current = nextN8nSettings
-    setN8nSettings(nextN8nSettings)
-    schedulePersist(() => {
-      const configs = apiKeysRef.current
-      return {
-        configs,
-        persistedValue: buildPersistedValue(configs, { n8nSettings: nextN8nSettings }),
-      }
-    })
-  }
-
   const updateConfig = (id: string, patch: Partial<ApiKeyConfig>) => {
     const next = apiKeysRef.current.map((k) => (k.id === id ? { ...k, ...patch } : k))
     const nextConnectionStatus = {
@@ -465,10 +422,10 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
                   ICP 智能画像引擎
                 </TabsTrigger>
                 <TabsTrigger
-                  value="n8n"
+                  value="cloud"
                   className="text-slate-600 transition-all data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
                 >
-                  高级（Kone 协同引擎）
+                  云端引擎
                 </TabsTrigger>
               </TabsList>
 
@@ -507,16 +464,8 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
                 />
               </TabsContent>
 
-              <TabsContent value="n8n">
-                <N8nSettingsTab
-                  n8nSettings={n8nSettings}
-                  locked={n8nLocked}
-                  onRequestUpgrade={() => setUpgradeModalOpen(true)}
-                  onUpdateN8n={updateN8n}
-                  onSave={() => void persist(apiKeysRef.current, { notify: true })}
-                  isSaving={isSaving}
-                  manualSaving={manualSaving}
-                />
+              <TabsContent value="cloud">
+                <CloudSettingsTab />
               </TabsContent>
             </Tabs>
           </div>

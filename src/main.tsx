@@ -300,6 +300,36 @@ if (import.meta.env.DEV) {
           success: true,
           data: { domains: [], offline: true },
         })) as ElectronApi['cloud']['fetchClaimedDomains'],
+        cloudflareConfigured: (async () => ({
+          success: true,
+          data: { configured: false },
+        })) as ElectronApi['cloud']['cloudflareConfigured'],
+        cloudflareTestConnection: (async () => ({
+          success: true,
+          data: { ok: false, message: 'Dev shell: 云端未连接', latencyMs: 0 },
+        })) as ElectronApi['cloud']['cloudflareTestConnection'],
+        cloudflareDashboardStats: (async () => ({
+          success: true,
+          data: {
+            leads: {
+              total: 0,
+              scored: 0,
+              pendingApproval: 0,
+              approved: 0,
+              queued: 0,
+              sent: 0,
+              replied: 0,
+              suppressed: 0,
+            },
+            outreach: { total: 0, pending: 0, sent: 0, delivered: 0, bounced: 0, complained: 0, failed: 0 },
+            suppressions: 0,
+            syncVersion: 0,
+          },
+        })) as ElectronApi['cloud']['cloudflareDashboardStats'],
+        cloudflarePollOutreachStatus: (async () => ({
+          success: true,
+          data: { outreach: [], limit: 0, offset: 0 },
+        })) as ElectronApi['cloud']['cloudflarePollOutreachStatus'],
       },
       onCloudRealtimeLeadEvent: (() => () => undefined) as ElectronApi['onCloudRealtimeLeadEvent'],
       automation: {
@@ -309,8 +339,54 @@ if (import.meta.env.DEV) {
         })) as ElectronApi['automation']['verifyEmails'],
         startCampaign: (async () => ({
           success: true,
-          data: { triggered: false, error: 'Dev shell: n8n 未连接' },
+          data: { triggered: false, pushed: false, accepted: 0, rejected: 0, message: '云端投递闭环为目标态' },
         })) as ElectronApi['automation']['startCampaign'],
+        imapPoll: (async () => ({
+          success: true,
+          data: {
+            polled: 0,
+            matched: 0,
+            reported: 0,
+            idempotent: 0,
+            errors: [],
+            since: '',
+            at: '',
+            skipped: 'dev-shell',
+          },
+        })) as ElectronApi['automation']['imapPoll'],
+        imapStatus: (async () => ({
+          success: true,
+          data: {
+            enabled: false,
+            intervalMs: 0,
+            lookbackDays: 3,
+            cloudflareConfigured: false,
+            imapConfigured: false,
+            running: false,
+            lastPoll: null,
+          },
+        })) as ElectronApi['automation']['imapStatus'],
+        imapRestart: (async () => ({
+          success: true,
+          data: {
+            enabled: false,
+            intervalMs: 0,
+            lookbackDays: 3,
+            cloudflareConfigured: false,
+            imapConfigured: false,
+            running: false,
+            lastPoll: null,
+          },
+        })) as ElectronApi['automation']['imapRestart'],
+        imapTestConnection: (async () => ({
+          success: true,
+          data: {
+            ok: false,
+            message: '开发环境：未实际连接 IMAP 主机',
+            totalMessages: 0,
+            latencyMs: 0,
+          },
+        })) as ElectronApi['automation']['imapTestConnection'],
       },
       accounts: {
         connect: (async () => ({

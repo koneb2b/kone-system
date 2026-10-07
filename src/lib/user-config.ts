@@ -10,12 +10,6 @@ export type UserSettingsConfig = {
     negativeIcp?: string
   }
   connectionStatus?: Record<string, 'connected' | 'error' | 'pending'>
-  n8n?: {
-    webhookUrl: string
-    autoPush: boolean
-    minScore?: number
-    roleFilter?: string
-  }
   userRole?: 'trial' | 'pro' | 'enterprise'
   searchTimeoutMs?: number
   analysisTimeoutMs?: number
@@ -26,10 +20,17 @@ export type UserSettingsConfig = {
 }
 
 /**
- * Email Agent SMTP 配置（P0-2 链路修复 + L0-3/B3 加密改造）。
- * 注意：smtpPass 字段仅作【旧安装明文遗留回退】——新保存一律写入
+ * Email Agent SMTP + IMAP 配置（P0-2 链路修复 + L0-3/B3 加密改造 + Phase 2.5/P2.6 IMAP 扩展）。
+ *
+ * SMTP 字段：smtpPass 仅作【旧安装明文遗留回退】——新保存一律写入
  * secret-manager（'secrets.email.smtpPass'，safeStorage 加密），
  * 渲染端保存时会将本字段清空；主进程读端优先取 secret。
+ *
+ * IMAP 字段（Phase 2.5）：imapHost 必须显式填写——**不从 smtpHost 派生**
+ * （不同提供商的 imap/smtp 主机名不同，如 smtp.gmail.com vs imap.gmail.com）。
+ * imapUser/imapPass 均可留空，主进程读端按 imapUser → smtpUser、
+ * imapPass 加密槽 → smtpPass 加密槽的顺序回退。imapPass 明文字段同 smtpPass
+ * 一样仅作遗留回退，新保存一律走 secret-manager 的 'secrets.email.imapPass'。
  */
 export type EmailAccountConfig = {
   smtpHost?: string
@@ -39,6 +40,12 @@ export type EmailAccountConfig = {
   smtpPass?: string
   senderEmail?: string
   senderName?: string
+  /* ── IMAP（Phase 2.5 回复检测，可选）── */
+  imapHost?: string
+  imapPort?: number
+  imapUser?: string
+  /** @deprecated 明文遗留回退字段 —— 请勿新写入，读端仅作兼容 */
+  imapPass?: string
 }
 
 export type UserKnowledgeBaseConfig = {
@@ -63,7 +70,7 @@ export type UserLeadsDataConfig = {
 }
 
 // user_config 边界约定：
-// 1) settings: providers / selectedModel / icpProfile / connectionStatus / n8n / userRole / timeouts
+// 1) settings: providers / selectedModel / icpProfile / connectionStatus / userRole / timeouts
 // 2) leads data: leads / searchResults
 // 3) knowledge data: knowledgeBase
 // 不同模块写入时必须只 merge 自己负责的边界，禁止整包覆盖整个 user_config。
@@ -106,14 +113,4 @@ export const updateUserSettingsConfig = async <T extends UserSettingsConfig = Us
   return nextSettings
 }
 
-export const getN8nSettings = async () => {
-  const config = await getUserConfig()
-  return {
-    webhookUrl: config.n8n?.webhookUrl?.trim() || '',
-    autoPush: Boolean(config.n8n?.autoPush),
-    minScore: Number.isFinite(Number(config.n8n?.minScore))
-      ? Math.max(0, Math.min(100, Number(config.n8n?.minScore)))
-      : 60,
-    roleFilter: String(config.n8n?.roleFilter || '').trim(),
-  }
-}
+// 云端自动化配置已移除（Phase 0），Phase 1 接入 Cloudflare Workers 后重新实现。

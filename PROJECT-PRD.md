@@ -145,7 +145,7 @@ Kone 是一个面向 B2B 出海场景的 Electron 桌面应用，核心定位不
 - 发送给 LLM 的网站正文必须经过 HTML 去噪，并严格截断至不超过 `3000` 字符
 - 任何突破上述限制的代码提交都应被视为架构违例
 
-#### 1.3.4 高级版 n8n 自动化隔离
+#### 1.3.4 高级版云端自动化隔离（目标态）
 
 云端自动化与本地获客被代码严格隔离：
 
@@ -249,14 +249,14 @@ Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> �
 
 对应产品价值：
 
-- N8N 云端自动化序列
-- 邮箱验证、云端发送队列、Webhook 触发
+- Cloudflare Workers 云端自动化序列（目标态，Phase 1）
+- 邮箱验证、云端发送队列、Webhook 触发（目标态）
 - 团队实时防撞单
 - 团队线索拉取与跟进大盘
 - Realtime 订阅与团队状态联动
 - **账号管理多开沙箱**：LinkedIn、Facebook、WhatsApp 独立 `session.fromPartition` 持久化隔离沙箱
 - **AI 销售团队**：WhatsApp 拓客猎手、LinkedIn Profile 只读辅助、邮件跟进助理三大本地智能体持久化沙箱多开与实时启动控制；LinkedIn 不包含自动 Connect 或自动私信
-- **自动化序列**：N8N 云端自动化邮件序列、邮箱验证、Webhook 触发
+- **自动化序列**：Cloudflare Workers 云端自动化邮件序列（目标态）、邮箱验证、Webhook 触发（目标态）
 - **团队协作**：实时防撞单、线索拉取与跟进大盘、Realtime 订阅与团队状态联动
 
 代码层面的严格隔离点包括：
@@ -1483,16 +1483,16 @@ Autopilot 依托以下本地资源：
 
 #### 与 Premium 云端自动化的差异
 
-高级版 `cloud_send` / N8N 自动化在完成数据交接之后，执行主体转移到云端：
+高级版 `cloud_send` / Cloudflare Workers 自动化（目标态）在完成数据交接之后，执行主体转移到云端：
 
-- `automation:start-campaign` 只负责把裁剪后的 Payload 交给 Webhook
-- 一旦 `safeFetch(webhookUrl, ...)` 成功，后续自动化流程可以在云端 24 小时脱机运行
-- 用户本地电脑此后即使关闭，也不影响已交接到 N8N 的邮件流程继续执行
+- `automation:start-campaign` 只负责把裁剪后的 Payload 交给云端队列
+- 一旦投递成功，后续自动化流程可以在云端 24 小时脱机运行（Phase 1 接入 Cloudflare Workers + Queue + Resend）
+- 用户本地电脑此后即使关闭，也不影响已交接的邮件流程继续执行（目标态）
 
 因此，PRD 中必须把两者明确区分为：
 
 - `Autopilot`：本地伴随式后台巡航，必须开机且不可休眠
-- `N8N Automation`：云端脱机自动化，交接完成后可 24 小时持续运行
+- `Cloudflare Automation`（目标态）：云端脱机自动化，交接完成后可 24 小时持续运行（Phase 1）
 
 ## 3.6 Analysis 模块（深度分析与开发信）
 
@@ -1771,7 +1771,7 @@ async function writeBackAgentStatus(
 | 能力 | Basic | Premium |
 |---|---|---|
 | 搜索管道（Provider 体系） | `google_maps` + `google_organic` + 用户自带 SerpApi/AnySearch | 全量 Provider + 可配置自定义 Provider |
-| Agent 管道 | Email + WhatsApp Web 低量本地执行；LinkedIn 只读辅助可按授权开放 | WhatsApp Cloud API + LinkedIn Profile 辅助 + Email/N8N 全渠道 |
+| Agent 管道 | Email + WhatsApp Web 低量本地执行；LinkedIn 只读辅助可按授权开放 | WhatsApp Cloud API + LinkedIn Profile 辅助 + Email/Cloudflare Workers 全渠道（目标态） |
 | ICP 评分 | 确定性评分 + LLM 评分 | 同 Basic + 自定义评分权重 |
 | Agent 写回 `agentStatus` | ✅（本地执行成功后必须写回） | ✅ |
 ---

@@ -17,11 +17,447 @@ lastVerifiedAt: 2026-09-22
 
 ---
 
+## [1.3.13] — 2026-09-29 · Phase 2.8e · 云端看板 60 秒自动刷新
+
+**目标**：P2.7 落地看板后，用户长时间挂着（例如跑一批投递期间）看不到 KPI/漏斗/趋势的实时变化，只能手动 F5。本轮在组件层加入 60 秒静默刷新，让看板成为"活着"的面板。
+
+### 实现
+- **周期**：60 秒（比 IMAP 15 分钟快、比应用心跳慢，不打爆云端 dashboard API）
+- **静默刷新**（`refreshSilent`）：不调用 `setView('loading')` / `setView('error')`，仅在数据就绪后原地更新 `stats / records / imap / loadedAt`。用户正在读表 / 选时间窗口时不会被 skeleton 打断
+- **视图状态守护**：`refreshSilent` 内部先检查 `viewRef.current === 'ready'`，`loading` / `error` / `idle` 态跳过（避免覆盖首屏加载）
+- **前台可见性判断**（`document.visibilityState`）：
+  - 首次 mount：启动 60s `setInterval`
+  - `visibilitychange` 切到 `hidden`：标记 `paused = true`，后续 tick 直接 return（不发起 IPC）
+  - 切回 `visible`：清 `paused` + **立即**触发一次 `refreshSilent`（弥补切走期间的空档）
+- **卸载清理**：组件卸载时 `clearInterval` + `removeEventListener`，防内存泄漏
+
+### 设计取舍
+- **静默刷新 vs 全屏 loading**：静默不打断用户操作，代价是加载指示器不会刷新；页面底部"更新于 HH:mm:ss"的时间戳会即时更新，作为唯一可见的刷新信号
+- **不新增 IPC / 不新增云端 API**：完全走既有 `cloudflareDashboardStats` + `cloudflarePollOutreachStatus` + `imapStatus` 三个通道
+- **不上报到应用心跳日志**：60s 一次的 UI 数据刷新属于正常业务流量，不打点
+- **不设开关**：看板只在 premium/enterprise 展示，本身就是"看数据"入口，静默刷新是合理默认；显式开关留待用户抱怨后再补
+
+### 门禁
+- 无新增 IPC 通道（IPC 计数保持 69 / 58 / 11 / 0）
+- typecheck src + electron 全绿、315 单测全绿、verify:consistency 通过、lint 0 errors
+
+---
+
+## [1.3.12] — 2026-09-29 · Phase 2.8d · IMAP 主机连接测试按钮
+
+**目标**：IMAP 主机配置容易出错（用户混淆 `smtp.gmail.com` 与 `imap.gmail.com`、端口、认证方式），此前配置完只能等 timer 首轮报错才发现，诊断周期长达一个 poll interval。本次在云端看板 IMAP 面板新增**"测试连接"按钮**，用户 30 秒内可验证凭据是否有效。
+
+### 新增 IPC 通道（+1 declared，+1 registered）
+- **`automation:imap-test-connection`** → 主进程做一次纯连接性验证（connect + `getMailboxLock('INBOX')`），**不拉邮件、不做 message-id 匹配、不写云端**
+  - 返回：`{ ok, message, mailbox?, totalMessages?, latencyMs }`
+  - Fail-Closed：未配置时返回 `ok:false, message:'IMAP 未配置：请在账户管理邮箱表单中填写 IMAP 主机…'`
+  - 超时：`socketTimeout: 30_000`（30 秒）
+  - 无锁：不占用 `clientLocks`（测试是独立一次性连接，不干扰后台 timer）
+
+### 主进程实现（`imap-reply-service.testImapConnection`）
+- 复用 `readImapCredentials`（读 `cloud.imap*` 五个 key）
+- 独立实例化 `ImapFlow`（不复用 poll 用的连接，避免锁竞争）
+- 成功路径：`connect → getMailboxLock('INBOX') → mailbox('INBOX').exists → release → logout`
+- 失败路径：捕获 Error 消息原样返回（含 `ECONNREFUSED` / `AUTHENTICATE` 拒绝 / `Invalid user or password`），便于用户判断是网络还是凭据问题
+
+### 前端（`cloud-outreach-dashboard.tsx` IMAP 面板）
+- **新增按钮**："测试连接"（`PlugZap` 图标），与既有"立即轮询一次"并列成 2 列
+- **结果卡片**：成功绿色 + `CheckCircle2` / 失败红色 + `XCircle`；显示 message + 延迟（ms）
+- **加载态**：按钮图标变 `Loader2 animate-spin`，按钮 disabled 防重复点击
+- **失败处理**：IPC 抛错时把 err.message 塞进 result，仍渲染红色卡片（不因网络抖动让 UI 静默）
+
+### 设计取舍
+- **不复用 poll 的连接锁**：测试是低频、独立操作，与后台 timer 并发安全
+- **不缓存结果**：每次点击都真实连接一次，避免用户看旧结果误判
+- **不上报云端**：测试是本地诊断动作，不产生投递/回复数据
+- **不修改既有 timer 逻辑**：测试是纯诊断，不影响 `startImapReplyPoll` / `stopImapReplyPoll` 生命周期
+
+### 门禁
+- IPC 计数：69 declared / 58 invoke registered / 11 push / 0 plain
+- `ipc-startup-gate.test.ts`：`collectInvokeChannels` 断言 57 → 58
+- typecheck src + electron 全绿、262+ 单测全绿
+
+---
+
+## [1.3.11] — 2026-09-29 · Phase 2.8c · IMAP 自动回复检测开关 UI
+
+**目标**：P2.8b 把 IMAP 自动轮询 timer 挂上了 `main.ts`，但 `cloud.imapReplyDetectionEnabled` 默认 false、无 UI 可切换——用户配好 IMAP 主机后仍需在 Settings 里手动 `config.set` 或直接改 user_config 才能让自动检测跑起来。本次补齐**"自动回复检测"开关 UI + 轮询间隔 + 回溯天数**，让高级版用户在邮箱表单里一站式配置。
+
+### 新增 IPC 通道（+1 declared，+1 registered）
+- **`automation:imap-restart`** → 主进程 stop → start IMAP 轮询 timer，返回最新 `ImapStatusData`
+  - 场景：UI 落盘 config 后立即调此通道，无需重启应用即可让新设置生效
+  - Fail-Closed：若 enabled=false，`startImapReplyPoll` 立即返回，timer 保持 null
+
+### 邮箱表单新增区块
+- **位置**：`accounts-management.tsx` 邮箱表单 IMAP 凭据下方（"IMAP 收信"分隔线之后）
+- **三档设置**：
+  - **自动回复检测开关**（Switch）：默认关，切换后调 `imapRestart()` 即时重启 timer
+  - **轮询间隔**（4 档 chip：5 / 15 / 30 / 60 分钟）：默认 15 分钟
+  - **回溯天数**（3 档 chip：1 / 3 / 7 天）：默认 3 天
+- **数据源**：直接读写 `configStore` 的 `cloud.imapReply*` 三个 key（不写入 user_config，避免混淆）
+- **持久化流程**：`configSet` × 3 → `imapRestart()` → 更新本地 state；失败时 toast + 不更新 state（避免 UI 与后端不一致）
+- **加载**：`useEffect` 挂载时 `Promise.all([configGet × 3])` 回读当前值，失败用默认值
+
+### 设计取舍（诚实化）
+- **不新增 config schema / 不动云端 API / 不引入 IPC 认证**：完全走既有 `configGet` / `configSet` 通道
+- **timer 即时重启而非延迟生效**：用户切换开关后立刻能看到效果（P2.8b 挂载后已具备 `stopImapReplyPoll` 语义）
+- **三档默认值与主进程 `getImapReplyConfig` 完全一致**：`enabled=false` / `intervalMs=15*60*1000` / `lookbackDays=3`，避免用户看到"UI 显示 A，实际生效 B"
+- **chip 组而非 Select**：3-4 个固定选项，chip 更直观；与 P2.8a 看板时间窗口 chip 视觉一致
+- **不校验 IMAP 主机是否已填**：即使未配置 IMAP 主机，开关仍可切换（`imap-reply-service` 内部会 `skipped: 'imap_not_configured'` 静默降级，不报错）
+
+### 门禁与测试矩阵
+- `tsc --noEmit -p tsconfig.json` ✅ 0 errors
+- `tsc -p tsconfig.electron.json` ✅ 0 errors
+- `npm run test:unit` ✅ **315/315**
+- `npm run verify:consistency` ✅ **68 声明 / 57 已注册 / 11 推送 / 0 plain / 142 交叉引用**
+- `npm run lint` ✅ 0 errors（254 warnings 无新增）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1.6`**：追加"IMAP 自动回复检测开关 UI 已落地"，未闭环项中"无 UI"关闭
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量
+
+### 未闭环项（不阻断发布）
+- **IMAP 主机健康检测**：本次仅落"配置→开关→timer 启动"闭环；未做 IMAP 连接性测试按钮（下一轮候选）
+
+**受影响 SSOT**：`CHANGELOG.md`、`CLOUD-COLLABORATION-DELIVERY.md` §13.1.6、`electron/ipc/channels.ts`、`electron/services/imap-reply-service.ts`、`preload/index.ts`、`src/shared/ipc-contracts.ts`、`src/lib/electron-api.ts`、`src/main.tsx`、`src/components/accounts-management.tsx`、`tests/ipc-startup-gate.test.ts`。
+
+---
+
+## [1.3.10] — 2026-09-29 · Phase 2.8b · 后台轮询定时器挂载（IMAP + Outreach Sync）
+
+**目标**：P2.5 / P2.6 / P2.7 落地了 IMAP 回复检测与云端 outreach 状态同步两条后台链路的基础设施，但两个 timer 都"仅 export 未挂载"——用户即便配置了 IMAP 主机、开启了高级版，云端数据也不会自动更新，只能在看板点"刷新"手动拉。本次在 `main.ts` 挂载两条 timer，让**云端数据自动刷新**成为交付默认行为。
+
+### 交付
+- **`electron/main.ts` whenReady 尾部**：`registry.lock()` 之后立即调用 `startOutreachSync(store, mainWindow)` + `startImapReplyPoll(store, mainWindow)`，确保"注册中心 gate 之后"的生命周期不变量（通道就绪后再发起网络调用）
+- **`electron/main.ts` before-quit**：追加 `stopOutreachSync()` + `stopImapReplyPoll()`，退出前主动清 timer，避免退出过程中触发新一轮 poll
+- **`electron/services/imap-reply-service.ts` `startImapReplyPoll`**：新增首次轮询延迟 5 秒（`setTimeout`），与 `outreach-sync-service` 的启动节奏对齐，避免 IMAP + Cloudflare 认证风暴
+- **`electron/services/imap-reply-service.ts` `stopImapReplyPoll`**：追加 `clearTimeout(firstPollTimeout)`，防止 stop 后 5 秒延迟触发一次漏网轮询
+
+### 设计取舍（诚实化）
+- **两个 timer 的开关策略不对称**：
+  - `cloud.outreachSyncEnabled` 默认 **true**（Phase 2 起即默认）：60s 轮询是核心闭环，客户默认开启合理
+  - `cloud.imapReplyDetectionEnabled` 默认 **false**：15min 拉 IMAP 是可选增强，客户 IMAP 服务器并发上限差异大，保守不主动开启
+- **不引入调度器抽象**：两条 timer 都用原生 `setInterval` + `setTimeout`，与既有 codebase 风格一致；不引入 cron 库或更复杂的调度层（拒绝过度工程化）
+- **不改 IPC / 不改云端 API / 不改 config schema**：完全走既有 `store.get('cloud.outreachSyncEnabled')` / `store.get('cloud.imapReplyDetectionEnabled')` 通道
+- **`before-quit` 用 try/catch 包裹**：即使 stop 抛错也不阻塞 quit 流程
+
+### 客户体验
+- **默认（未配 IMAP）**：应用启动后 5 秒，`outreach-sync` 开始 60s 一轮地刷新云端状态；`imap-reply` 因为 enabled=false 立即返回，timer 保持 null。**行为与升级前完全一致**，不引入意外开销
+- **配置 IMAP 后**：客户配置 `imapHost` 且把 `cloud.imapReplyDetectionEnabled` 置 true（可通过 Settings / cloud config API 设置，本轮未新增 UI）→ 5 秒后开始首次 IMAP 轮询 → 之后每 15 分钟自动拉回复。**不再需要用户手动点"立即轮询一次"**
+
+### 门禁与测试矩阵
+- `tsc --noEmit -p tsconfig.json` ✅ 0 errors
+- `tsc -p tsconfig.electron.json` ✅ 0 errors
+- `npm run test:unit` ✅ **315/315**
+- `npm run verify:consistency` ✅ 67 声明 / 56 注册 / 11 推送 / 0 plain / 142 交叉引用
+- `npm run lint` ✅ 0 errors（254 warnings 无新增）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1.6`**：Timer 挂载状态从"未挂载"更新为"P2.8b 已挂载"
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1.3`**：追加"outreach-sync timer 已在 main.ts 挂载"
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量
+
+### 未闭环项（不阻断发布）
+- **IMAP 自动轮询启用开关无 UI**：客户仍需在 Settings 中通过 config API 或直接写 user_config 把 `cloud.imapReplyDetectionEnabled` 置 true。下一轮候选项：在 `accounts-management.tsx` 邮箱表单加"自动回复检测"toggle。
+- **`startOutreachSync` 的初始 delay 未对齐**：`outreach-sync-service` 已用 5s delay，`imap-reply-service` 本轮补齐；两者语义对齐，无遗留 gap。
+
+**受影响 SSOT**：`CHANGELOG.md`、`CLOUD-COLLABORATION-DELIVERY.md` §13.1.3 / §13.1.6、`electron/main.ts`、`electron/services/imap-reply-service.ts`。
+
+---
+
+## [1.3.9] — 2026-09-29 · Phase 2.8a · 看板时间窗口 + 投递明细表 + CSV 导出
+
+**目标**：Phase 2.7 的看板展示整体战况（KPI + 漏斗 + 30 日趋势 + IMAP 状态），但用户仍看不到"逐条投递的具体状态、失败原因、时间"。本次在看板底部追加**投递明细表 + 时间窗口筛选 + CSV 导出**，让高级版用户既能看总量、也能下钻逐条明细并留存证据。
+
+### 交付
+- **时间窗口筛选**（4 档 chip：近 7 天 / 30 天 / 90 天 / 全部）：默认 30 天，切换即刻重算漏斗 + 趋势 + 明细；KPI 卡不受影响（始终展示云端聚合总量，与云端 dashboard API 口径一致）
+- **投递明细表**（`OutreachTable`）：最多 50 行，7 列（时间 / 主题 / 状态徽章 / Provider / Message ID / 尝试次数 / 失败原因）；时间窗口过滤后取前 50 条，状态徽章按终态着色（success/info/warning/danger/muted）
+- **CSV 导出**（`exportCsv`）：导出当前时间窗口下的**全部明细**（不仅限于表格前 50 条），带 UTF-8 BOM（Excel 打开中文不乱码）、RFC 4180 转义、文件名带日期戳 `cloud-outreach-YYYY-MM-DD.csv`；用 `URL.createObjectURL` + `Blob` 触发浏览器下载，无第三方依赖
+- **趋势标题动态化**：随时间窗口切换为「近 7 天 / 30 天 / 90 天投递趋势」或「投递趋势（全部）」
+- **表格空态**：筛选窗口内无数据时显示"当前时间窗口内暂无投递明细"提示，非空白
+
+### 数据源复用（未新增 IPC）
+- 时间窗口过滤基于前端已拉取的 `pollOutreachStatus({limit:300})` 结果集，按 `sentAt ?? createdAt` 时间戳过滤
+- 漏斗、趋势、明细三个视图共享 `filteredRecords` 派生数据，避免重复计算
+- 数据上限仍为 300 条（云端默认 limit），超过 300 条的极端场景需后续追加分页/游标
+
+### 设计取舍
+- **不在 IPC 层做时间过滤**：现有 `pollOutreachStatus` 支持 `status` 但不支持时间范围；本次前端过滤，避免云端 API 变动 + D1 schema 迁移。300 条上限内性能完全够用。
+- **表格默认 50 行 + CSV 导全部**：50 行是可读性与性能平衡；CSV 让需要全部明细的用户一键落盘，避免 DOM 过重。
+- **KPI 卡不受时间窗口影响**：KPI 卡是"全局快照"，用户直觉是"看到总账"，若同时受时间窗口影响会产生认知错位；已在时间窗口筛选条上显式标注"当前窗口共 N 条投递"作为交叉参照。
+- **CSV 采用 UTF-8 BOM**：Windows 中文 Excel 默认以 GBK 打开 CSV，BOM 前缀让 Excel 正确识别编码。
+
+### 门禁与测试矩阵
+- `tsc --noEmit -p tsconfig.json` ✅ 0 errors
+- `npm run test:unit` ✅ **315/315**
+- `npm run verify:consistency` ✅ 67 声明 / 56 注册 / 11 推送 / 0 plain / 142 交叉引用（本次未新增 IPC）
+- `npm run lint` ✅ 0 errors（254 warnings 全部为历史遗留，无新增）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1.7`**：追加"时间窗口 + 明细表 + CSV 导出"落地注记
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量
+- **`src/components/cloud-outreach-dashboard.tsx`**：新增 `TimeWindow` 类型 + `TIME_WINDOW_OPTIONS` + `STATUS_META` + `OutreachTable` + `exportCsv` + 时间窗口 chip 条 + 明细表
+
+### 未闭环项（不阻断发布）
+- 云端 API 无原生时间过滤：超过 300 条历史记录的长尾场景需追加分页游标或云端时间范围参数
+- 表格排序/搜索：本次先做默认时序（云端返回顺序），未做二次交互
+
+**受影响 SSOT**：`CHANGELOG.md`、`CLOUD-COLLABORATION-DELIVERY.md` §13.1.7、`src/components/cloud-outreach-dashboard.tsx`。
+
+---
+
+## [1.3.8] — 2026-09-29 · Phase 2.7 · 云端触达看板（投递漏斗 + 30 日趋势 + IMAP 状态）
+
+**目标**：Phase 2 / 2.5 / 2.6 已把云端投递、回复检测、IMAP 配置三条链路全部落地为可运行基础设施，但**用户看不到数据**。本次把三条链路聚合到一个可视化面板——`CloudOutreachDashboard`——嵌入「智能触达工作流」页面顶部，让高级版用户在 30 秒内掌握整体战况（KPI + 漏斗 + 趋势 + IMAP 状态）。
+
+### 新增 IPC 通道（+2 declared，+2 registered）
+- **`cloud:cloudflare-dashboard-stats`** → `getDashboardStats`：KPI 聚合（排队/已发/送达/退信/投诉/失败/回复/同步版本）
+- **`cloud:cloudflare-poll-outreach-status`** → `pollOutreachStatus({limit:300})`：拉取明细用于漏斗 + 30 日趋势聚合
+- 两处 handler 均封装 `success` / `error` 双态返回，前端 Fail-Closed 展示"未连接"占位而非崩溃
+
+### 云端看板组件（`src/components/cloud-outreach-dashboard.tsx` 新建）
+- **KPI 8 卡**：排队 / 已发送 / 已送达 / 已回复 / 退信 / 投诉 / 发送失败 / 同步版本，四色分层（info=蓝 / success=绿 / warning=琥珀 / danger=红）
+- **三大比率**：送达率、回复率、退信率；**送达率分母扣除退信+投诉**，反映真实到达客户邮箱的比例（诚实标注，避免用户误读）
+- **投递漏斗**：6 阶段（排队→已发→送达→退信→投诉→回复）横向条 + 占比 + 计数；每阶段单独分母（sent 系以 sent 为分母，排队以 total 为分母），标注说明避免误读
+- **IMAP 回复检测面板**：配置状态、轮询间隔、回溯天数、运行状态、上次轮询详情（扫描数/命中/上报/幂等/错误），支持一键触发 `imapPoll()`
+- **30 日趋势迷你图**：纯 SVG 手绘折线（无第三方依赖），三条曲线（发送/送达/回复），横轴显示日期范围与图例
+- **三态展示**：云端未配置 → 空态卡引导去设置；加载中 → skeleton；就绪 → 完整看板
+- **嵌入位置**：`automation-workflow.tsx` 顶部（`canUseCloudSend` 为 true 时显示）
+
+### 数据流与类型
+- **`electron/ipc/channels.ts`**：新增 `CLOUDFLARE_DASHBOARD_STATS` / `CLOUDFLARE_POLL_OUTREACH_STATUS`
+- **`electron/services/cloudflare-service.ts`**：`registerCloudflareHandlers` 新增 2 个 handler，均通过 try/catch 包装，返回 `{success:false, error:{code,message}}` 而非 throw
+- **`preload/index.ts`**：`cloud.cloudflareDashboardStats()` / `cloud.cloudflarePollOutreachStatus(opts)` 暴露
+- **`preload/index.ts`**：`automation.imapPoll()` / `automation.imapStatus()` 暴露（P2.5 已实现通道，此处补 preload 层）
+- **`src/shared/ipc-contracts.ts`**：新增 `CloudDashboardStats` / `CloudOutreachRecord` / `CloudPollOutreachData` / `CloudImapPollResult` / `CloudImapStatusData` 五个类型
+- **`src/lib/electron-api.ts`**：新增 `cloudflareDashboardStats()` / `cloudflarePollOutreachStatus()` / `imapPoll()` / `imapStatus()` 四个 wrapper
+- **`src/main.tsx`**：dev shell 补齐 4 个 stub（避免 Web-only 开发模式 typecheck 失败）
+
+### 设计取舍
+- **funnel 不用 recharts**：recharts 无内置 FunnelChart，且为单一漏斗引入整块依赖过重；改为纯 CSS 条 + 比例计算，可读性优先
+- **30 日趋势用 SVG 手绘**：看板角落不需要复杂交互，SVG polyline 已足够；主图表 (data-center) 仍保留 recharts AreaChart
+- **不新增定时器订阅**：用户点"刷新"或页面加载时拉一次；自动轮询延至客户 IMAP 并发决策后与 `outreach-sync-service` 一并挂 `startImapReplyPoll()`
+
+### 门禁与测试矩阵
+- `tsc --noEmit -p tsconfig.json` ✅ 0 errors（src）
+- `tsc --noEmit -p tsconfig.electron.json` ✅ 0 errors（electron）
+- `npm run test:unit` ✅ **315/315**
+- `npm run verify:consistency` ✅ **67 声明通道 / 56 已注册 / 11 推送 / 0 plain 直挂 / 142 文档交叉引用**
+- `npm run test:security-audit` ✅ 6/6（`release/win-unpacked` 缺失为已知打包阶段问题，参见 1.3.7 未闭环项）
+- `tests/ipc-startup-gate.test.ts`：invoke 断言从 54 更新到 **56**（新增 2 通道）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1`**：未闭环项更新，新增 §13.1.7 "云端触达看板" 落地记录
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量
+- **`electron/ipc/channels.ts`**：新增 2 通道（Phase 2.7 注释块）
+- **`src/shared/ipc-contracts.ts`**：新增 5 个 Cloud 类型（Cloud Outreach Dashboard Types 章节）
+
+### 未闭环项（不阻断发布）
+- **自动轮询定时器**：与 1.3.7 相同，等待客户 IMAP 并发决策；看板"立即轮询一次"按钮已可提供手动入口
+- **打包冒烟 (B2)**：`release/win-unpacked/resources/app.asar` 系统进程独占，需在锁释放环境跑
+- **真实数据端到端**：看板需要 Cloudflare + Resend + IMAP 三源齐全才能显示非零数据；dev shell stub 返回空态
+
+**受影响 SSOT**：`CHANGELOG.md`、`CLOUD-COLLABORATION-DELIVERY.md` §13.1、`electron/ipc/channels.ts`、`electron/services/cloudflare-service.ts`、`preload/index.ts`、`src/shared/ipc-contracts.ts`、`src/lib/electron-api.ts`、`src/main.tsx`、`src/components/automation-workflow.tsx`、`tests/ipc-startup-gate.test.ts`。
+
+---
+
+## [1.3.7] — 2026-09-29 · Phase 2.6 · IMAP 凭证 UI 落地（关闭 P2.5 唯一 UI 缺口）
+
+**目标**：Phase 2.5 的 IMAP 回复检测基础设施（1.3.6）已在服务端与本地服务层完整落地，但用户仍无法在 Settings 中配置 IMAP 主机——基础设施因此是"死代码"。本次补齐 `accounts-management.tsx` 的 IMAP 配置区，让 Phase 2.5 从"能跑但配不了"变为"能跑也能配"。
+
+### 本地（`electron/` + `src/`）
+- **加密槽扩展**（`electron/services/config-service.ts`）：`SECRET_KEYS` 新增 `EMAIL_IMAP_PASS = 'secrets.email.imapPass'`，与既有 `EMAIL_SMTP_PASS` 并列。IMAP 密码独立槽位，允许客户在同一账号不同协议使用不同应用专用密码。
+- **类型扩展**（`src/lib/user-config.ts`）：`EmailAccountConfig` 新增可选 `imapHost? / imapPort? / imapUser? / imapPass?` 字段，文档注释明确 IMAP 不派生自 SMTP + `imapPass` 明文字段仅作遗留回退（新保存走 secret-manager）。
+- **凭证回退链**（`electron/services/imap-reply-service.ts` `readImapCredentials`）：密码取值顺序更新为 `imapPass 加密槽 → imapPass 明文遗留 → smtpPass 加密槽 → smtpPass 明文遗留`。允许"共用同一密码"场景直接留空 `imapPass` 复用 SMTP 槽；imapUser 缺省回退 smtpUser。
+- **UI 落地**（`src/components/accounts-management.tsx`）：邮箱表单新增"IMAP 收信（可选）"分区，与 SMTP 分区用分隔线区隔；4 个字段（IMAP 主机 / 端口 / 用户名 / 密码），全部字段留空即视为"未配置"，`imap-reply-service` 侧自动 skip 静默降级。密码独立回显"已保存"徽标（复用 SMTP 的 `secretCheck` 机制）。表单标题与说明文案明确标注 IMAP 主机与 SMTP 主机不同、imapUser/imapPass 留空回退到 SMTP 值的语义。
+- **保存路径**（`handleSaveEmail`）：IMAP 字段一律写入 `user_config.accounts.email`（即便为空，保持显式）；`imapPass` 明文槽位清空，实际密码写 `secretSet({ key: 'secrets.email.imapPass' })`；SMTP 逻辑不变。
+
+### 与既有 `email-agent.checkReply` 的边界（延续 1.3.6 决策）
+- `email-agent.checkReply` 按发件人**域名**匹配（本地 Agent 序列推进，粒度 = lead）。
+- `imap-reply-service.pollReplies` 按 `In-Reply-To` 匹配具体 `provider_message_id`（云端投递闭环，粒度 = 单条 outreach）。
+- 两者读取同一 IMAP 凭证，粒度与语义不重叠，不做合并。
+
+### 门禁与测试矩阵
+- `npx tsc --noEmit -p tsconfig.json` ✅ 零错误（src 侧）
+- `npx tsc --noEmit -p tsconfig.electron.json` ✅ 零错误（electron 侧）
+- `npm run test:unit` ✅ **315/315**（无新增测试——UI 层为纯表单，不引入新的可断言逻辑；主进程凭证回退链已由 imap-reply-service 单测覆盖）
+- `npm run verify:consistency` ✅ 65 声明通道 / 54 已注册 / 11 推送 / 0 plain 直挂（本轮无 IPC 变更）
+- `npm run lint` ✅ 0 error（imap-reply-service 3 处 `any` warning 延续 P2.5 决策——imapflow 动态 envelope/headers 结构无强类型，与既有 `email-agent.checkReply` 口径一致）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1.6`**：将"未闭环项 · IMAP 凭证 UI"从待办移至"已闭环"注记，并补充 IMAP UI 落地细节与密码回退链。
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量。
+
+### 未闭环项（不阻断发布）
+- **定时轮询 timer 挂载**：`startImapReplyPoll()` 已 export，需在客户 IMAP 服务器并发上限确认后挂载到 `main.ts`。与 `outreach-sync-service` 同状态，一并决策（详见 1.3.6 未闭环项）。
+- **小流量实发验证**：Phase 2 + Phase 2.5 + Phase 2.6 全部依赖真实 Resend + IMAP 环境，需在干净机器人工执行。
+- **打包冒烟（B2）**：受 `release/win-unpacked/resources/app.asar` 系统进程独占阻塞，需在锁释放环境执行 `npm run test:smoke`。
+
+**受影响 SSOT**：`CLOUD-COLLABORATION-DELIVERY.md` §13.1.6、`src/lib/user-config.ts`、`electron/services/config-service.ts`（SECRET_KEYS）、`electron/services/imap-reply-service.ts`（凭证回退链）、`CHANGELOG.md`。
+
+---
+
+## [1.3.6] — 2026-09-29 · Phase 2.5 · IMAP 回复检测基础设施
+
+**目标**：补齐 Phase 2 遗留的 "replied" 终态落地缺口。Phase 2 的投递闭环只到 Resend 侧的 `delivered / bounced / complained` 三态，客户回复邮件的接收未接入。本次以**本地 IMAP 拉取 + In-Reply-To 精确匹配**的方式把 outreach 收敛到 `replied` 终态，与 Resend `email.replied` webhook 通道并存（本地优先，云端兜底）。
+
+### 云端（`kone-cloud/`）
+- **P2.5-a · D1 迁移**（`migrations/003_reply_detection.sql`）：`CREATE TABLE outreach_new` 允许 `status IN ('pending', 'sent', 'delivered', 'bounced', 'complained', 'failed', 'replied')`（SQLite 不支持修改 CHECK，需建表→复制→DROP→RENAME→重建索引）；新增 `email_opened_at` / `email_clicked_at` 列；新增 `email_replies` 表（`UNIQUE(outreach_id, message_id)` 幂等键 + 3 个索引）；新增 `idx_outreach_sent_at` 供 IMAP poller 的 `since` 窗口扫描。
+- **P2.5-b · Webhook 事件扩展**（`src/worker.ts`）：`handleResendWebhook` 的 switch 补 `email.opened`（落 `email_opened_at`，保持 `delivered`）/ `email.clicked`（落 `email_clicked_at`，保持 `delivered`）/ `email.replied`（落 `replied_at`，置 `replied` 终态）。签名验证、时间窗、常时比较、事件级去重复用 P2-13 的 Svix HMAC 实现。
+- **P2.5-c · 新路由** `POST /v1/outreach/reply`（`src/worker.ts` `handleReportReply`）：入参 `outreachId` / `messageId` / `sender`（必填）+ `inReplyTo` / `subject` / `replyBody` / `receivedAt`（选填）；先按 `(id, workspace_id)` 校验 tenant 隔离，再按 `UNIQUE(outreach_id, message_id)` 幂等短路；命中则写入 `email_replies` 存档 + `events type='outreach.replied' actor='imap_poller'` 审计 + bump `sync_tokens`，并将 outreach 置为 `replied`。响应体携带 `idempotent: true|false` 让本地 poller 决定是否重复推送本地状态。
+- **P2.5-d · Cron 收件人修复**（`src/worker.ts`）：`handleCronSend` 原先直接用 `outreach.lead_id` 当收件人（错误），改为 JOIN `leads` + `contacts` 取 `normalized_email`（Phase 2 E2E 测试暴露）。
+
+### 本地（`electron/`）
+- **P2.5-e · 新服务**（`services/imap-reply-service.ts`）：`imapflow` 连接 INBOX → 搜索 `since = now - lookbackDays` → 拉 `envelope + headers:['In-Reply-To','References','Message-Id']` → 归一化（小写、去 `< >`、去空白）后与云端 `outreach.provider_message_id` map 匹配 → 命中调 `reportOutreachReply` → 上报成功且非幂等短路时推送 `AGENT.LEAD_STATUS_UPDATED`（`whatsappStatus='replied'`）。返回体 `{ polled, matched, reported, idempotent, skipped?, errors, since, at }` 供 UI 与日志消费。
+- **P2.5-f · 云端 API 扩展**（`services/cloudflare-service.ts`）：新增 `reportOutreachReply()` 与 `ReportOutreachReplyPayload/Response` 类型；`pollOutreachStatus` 已支持 `status` 过滤，poller 用它拉取 `sent` + `delivered` 两态建索引（含 `providerMessageId`）。
+- **P2.5-g · IPC 通道**（`ipc/channels.ts`）：新增 `AUTOMATION.IMAP_POLL = 'automation:imap-poll'`（手动触发一次轮询）+ `AUTOMATION.IMAP_STATUS = 'automation:imap-status'`（读取配置 + 最近一次结果）。两者均通过 `registerImapReplyHandlers` 在 `main.ts` 注册。
+- **凭证策略**（`readImapCredentials`）：`imapHost` 从 `user_config.accounts.email.imapHost` 显式读取（**不派生自 smtpHost**——IMAP 与 SMTP 主机不同，如 `smtp.gmail.com` vs `imap.gmail.com`）；`imapUser` 缺省回退 `smtpUser`；`imapPass` 缺省回退 `secret-manager` 的加密 `EMAIL_SMTP_PASS`，再回退明文遗留字段。任一必需字段缺失即返回 null，`pollReplies` 以 `skipped: 'imap_not_configured'` 静默降级。
+- **Timer 挂载状态**（诚实化）：`startImapReplyPoll()` / `stopImapReplyPoll()` 已 export，但 `main.ts` 尚未调用——**与 `outreach-sync-service` 同状态**（同样 export 但未挂载）。当前版本通过 IPC 手动触发；自动轮询的挂载需要评估客户 IMAP 服务器并发上限后单独决策，不阻断 Phase 2.5 基础设施落地。
+
+### 门禁与测试矩阵
+- `npm run typecheck` ✅（本地 src + electron 两侧，修复 `SECRET_KEYS` 从 `secret-manager` 改为 `config-service` 的导入 + 移除 `ImapFlowOptions.messageTimeout` 非合法字段）
+- `npm run test:unit` ✅ **315/315**（`ipc-startup-gate` 期望值由 52 → 54，对齐新增 `automation:imap-poll` + `automation:imap-status` 通道；console.log 同步更新）
+- `kone-cloud/npm test` ✅ **35/35**（+6 条 IMAP 回复检测用例：`POST /outreach/reply` 存档 / 幂等短路 / 参数校验 / tenant 隔离 / `email.opened` 落 `email_opened_at` / `email.clicked` 落 `email_clicked_at`）
+- `npm run verify:consistency` ✅（65 声明通道 / 54 已注册 / 11 推送 / 0 plain 直挂；文档交叉引用 137 处零漂移）
+- `npm run lint` ✅ 0 error（imap-reply-service 3 处 `any` warning 均为 imapflow 动态 envelope/headers 结构，与既有 `email-agent.checkReply` 口径一致，不阻断）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1.6`**：新增 IMAP 回复检测门禁（云端 /v1/outreach/reply + Webhook email.replied + 本地 IMAP poller + Fail-Closed + 幂等 + 状态机 + Timer 挂载状态）。
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量；`SCHEMA_VERSION = '1.0.0'` 保持不变。
+
+### 未闭环项（不阻断发布）
+- **定时轮询 timer 挂载**：`startImapReplyPoll()` 已 export，需在客户 IMAP 服务器并发上限确认后挂载到 `main.ts`。与 outreach-sync 同状态，一并决策。
+- **IMAP 凭证 UI**：`user_config.accounts.email.imapHost` 字段在 `accounts-management.tsx` 尚未暴露——当前需要用户在 Settings 或用户配置中手工添加。UI 补齐留待 V1.4。
+- **小流量实发验证**：Phase 2 + Phase 2.5 全部依赖真实 Resend + IMAP 环境，需在干净机器人工执行（详见 MEMORY.md 干净机器验收流程）。
+- **打包冒烟（B2）**：受 `release/win-unpacked/resources/app.asar` 系统进程独占阻塞，需在锁释放环境执行 `npm run test:smoke`。
+
+**受影响 SSOT**：`CLOUD-COLLABORATION-DELIVERY.md` §13.1.6、`kone-cloud/migrations/003_reply_detection.sql`、`electron/ipc/channels.ts`、`CHANGELOG.md`。
+
+---
+
+## [1.3.5] — 2026-09-28 · Phase 2 · Resend 投递闭环落地
+
+**目标**：在 Phase 1 云地协同基础上打通"云端排队 → Cron 投递 → Resend 回调 → 状态回写本地 Agent"的完整链路，同时保持 `automation:queue-outreach` 走 Fail-Closed premium 门禁。
+
+### 云端（`kone-cloud/`）
+- **P2-1 · D1 迁移**（`migrations/002_outreach_webhook.sql`）：新增 `webhook_events` 表（`UNIQUE(provider, event_id)` 幂等键 + `workspace_id NULL` 支持全局回调）+ outreach 扩展列 `resend_id` / `send_attempts` / `next_retry_at` + 3 个新索引。
+- **P2-2/3/4/5 · Worker 路由**（`src/worker.ts`）：新增 `/v1/outreach/queue`（幂等 + 状态守卫 `LEAD_NOT_APPROVED`）、`/v1/outreach/status`（分页 + 过滤）、`/v1/cron/send`（`X-Cron-Secret` 独立鉴权 + JOIN `leads/contacts` 解析收件人 + 指数退避 60/300/900/3600s）、`/v1/webhooks/resend`（**Svix HMAC-SHA256 签名验证 + ±300s 时间窗 + 常时比较 + `webhook_events.UNIQUE` 去重 + `email.delivered/bounced/complained` 三态落库**）。**Webhook 与 Cron 路由置于 Bearer 认证之前**，走自身鉴权通道。
+- **P2-13 · Resend Webhook 真实签名验证**（`src/worker.ts`）：按 https://docs.svix.com/receiving/verifying-payloads/how-manual 实现——`signedContent = ${svix-id}.${svix-timestamp}.${rawBody}`，`key = base64Decode(secret 剥离 whsec_ 前缀)`，`signature = base64(HMAC-SHA256(key, signedContent))`。签名头支持多值空格分隔（Svix 可发 1–3 个）；缺失/伪造/过期签名均返回 `UNAUTHORIZED (401)`，无降级路径。原 `x-resend-signature` 存在性检查已移除，避免 Fail-Closed 旁路。
+- **Resend 客户端**（`src/resend.ts`）：从 worker 主流程抽出为独立模块，附带 `setTestSendResult()` 测试钩子——Cloudflare Workers 跨请求上下文禁止复用 I/O 流，因此 E2E 用模块钩子而非 `stubGlobal(fetch)` 注入 mock。
+- **P2-9 · Worker 测试**（`tests/worker.test.ts`）：**29 条全绿**（27 路由/授权/幂等/签名 + 2 E2E 旅程）。签名专项 4 用例：签名正确 / 无签名 / 篡改签名 / 过期时间戳（重放）。
+
+### 本地（`electron/`）
+- **P2-6 · 云端 API**（`services/cloudflare-service.ts`）：新增 `queueOutreach()` / `pollOutreachStatus()` + 对应 payload / response 类型。
+- **P2-7 · IPC 通道**（`ipc/channels.ts`）：新增 `AUTOMATION.QUEUE_OUTREACH = 'automation:queue-outreach'`；`automation-service.ts` 集成 `ensureTrialAccess` + `licenseGuard` 双门禁。
+- **P2-8 · 状态回写**（`services/outreach-sync-service.ts`）：60s 轮询云端 `pending/sent/delivered/bounced` 四态，映射为本地 `AgentStatus.whatsappStatus` + `emailSequenceStage`，经 `AGENT.LEAD_STATUS_UPDATED` 推送。`mapOutreachToAgentStatus()` 用 `as AgentStatus['emailSequenceStage']` 收窄数值到 `0|1|2|3` union 类型。
+
+### 门禁与测试矩阵
+- `npm run typecheck` ✅（本地 + 修复 `automation-service` 3 处 TS2554/TS18047/TS2339 与 `outreach-sync-service` 1 处 TS2322）
+- `npm run test:unit` ✅ **315/315**（`ipc-startup-gate` 期望值由 51 → 52，对齐新增 `automation:queue-outreach` 通道）
+- `kone-cloud/npm test` ✅ **29/29**（0 unhandled errors，含 4 条 webhook 签名专项用例：正常 / 缺失 / 篡改 / 重放）
+- `npm run test:security-audit` ✅ **6/6**（`KoneAI.exe` 未打包是环境问题，6 条策略断言全过）
+- `npm run verify:consistency` ✅ **零漂移**（P2-12 收官：`kone-PRD.md` / `PROVIDER-CAPABILITY.md` / `CHANGELOG.md` 内 4 处指向 `archive/` 归档文档的裸引用补齐前缀；`CLOUD-COLLABORATION-DELIVERY.md §13.1` 与 `CHANGELOG.md` 内模板占位符日期文件名已改写为不带 `.md` 扩展名的描述，避免 verify:docs 把它当成真实文件校验）
+
+### 规范回写
+- **`CLOUD-COLLABORATION-DELIVERY.md §13.1`**：新增 Phase 2 Resend 投递闭环门禁（D1 迁移 / Worker 路由 / 客户端本地层 / E2E 验证 / §13 通用门禁对应关系共 5 项）。
+- **`kone-PRD.md §零.3` 宪法常量表**：本次未新增常量；`SCHEMA_VERSION = '1.0.0'` 保持不变。
+
+### 未闭环项（不阻断发布）
+- IMAP 回复检测（Phase 2.5 计划）：当前仅通过 `outreach.status='replied'` 占位，未接入 IMAP 拉取。
+- 小流量实发（干净机器人工验证）：需在实际 Resend 域名 + 客户 API key 环境执行。
+- 打包冒烟（B2）：受 `release/win-unpacked/resources/app.asar` 系统进程独占阻塞，需在锁释放环境执行 `npm run test:smoke`。
+
+**受影响 SSOT**：`CLOUD-COLLABORATION-DELIVERY.md` §13.1、`kone-cloud/migrations/002_outreach_webhook.sql`、`electron/ipc/channels.ts`、`CHANGELOG.md`。
+
+---
+
+## [1.3.4] — 2026-09-28 · Phase 1 收官与 Phase 2 规划
+
+### Phase 1 收官
+- **Task #10 规范治理件收敛**：4 份审计报告归档至 `archive/`（商用上线就绪度、商用就绪度终审、对齐审计、规范文档梳理）；FIELD-DICTIONARY / STATE-MACHINES / GLOSSARY / CHANGELOG / METHODOLOGY-NORTHSTAR 均已就位。
+- **Task #9 前端性能治理**：`leads-table.tsx` 添加 `LEADS_TABLE_DISPLAY_LIMIT = 50` 显示上限，避免大量保存线索时表格全量渲染卡顿；流式评分增量更新（P1-3）、search-result-card memo、Vite manualChunks 已在前序完成。
+- **Task #12 构建链状态**：环境阻塞（app.asar 被系统进程独占），已记录状态，需在干净环境执行 `npm run test:smoke`。
+
+### Phase 2 规划
+- **KONE-V1.3-Phase2-Resend投递接入规划-2026-09-28.md**：完整投递闭环架构设计（Cron 定时投递、Webhook 状态回写、IMAP 回复检测、跨端同步）；11 个子任务分解，预估 12h。
+
+**受影响 SSOT**：`CLOUD-COLLABORATION-DELIVERY.md`（§13 门禁待 Phase 2 完成后更新）、`CHANGELOG.md`。
+
+---
+
+## [1.3.3] — 2026-09-28 · Phase 1: Cloudflare 云地协同最小可用
+
+**目标**：最小可用云——本地 KONE 推送线索到 Cloudflare D1，Pages 仪表盘可见；本地 SMTP 仍为主要发送通道。
+
+### kone-cloud/ Monorepo
+- **D1 Schema**（`migrations/001_init.sql`）：workspaces / companies / contacts / leads / outreach / events / suppressions / sync_tokens，8 表 + 索引。PRAGMA 已移除（D1 不支持）。
+- **Worker 核心**（`src/worker.ts`）：5 个路由（POST/GET /leads, GET /events, POST /suppressions/unsubscribe, GET /dashboard/stats）。Bearer token auth + SHA-256 hash、Idempotency-Key 去重、Workspace 隔离、全局抑制（跨租户）、企业防撞单。
+- **工具函数**（`src/utils.js` / `src/auth.js`）：hashToken / jsonResponse / errorResponse / generateId / nowUTC / normalizeEmail / normalizeDomain / parseJson / authenticate。
+- **测试套件**（`tests/worker.test.ts`）：15 条测试（vitest-plugin + D1 migration setup），全部通过。
+- **Pages 仪表盘**（`pages/`）：React 18 + Vite + Tailwind，Auth 面板 + Dashboard（StatsCards / LeadTable / EventStream），30s 自动刷新。构建体积 158KB（gzip 50KB）。
+
+### 本地集成（electron/services/cloudflare-service.ts）
+- **Fail-Closed 配置读取**：`cloud.provider` + `cloud.cloudflareUrl` + `cloud.cloudflareApiKey` + `cloud.cloudflareWorkspaceId`，缺失即跳过。
+- **推送 API**：pushLead / pushLeadsBatch / getDashboardStats / testConnection，15s 超时，指数退避。
+- **Payload 构建**：buildLeadPayload + deriveIdempotencyKey（sha256:localRefId:workspaceId）。
+- **IPC 注册**：registerCloudflareHandlers → CLOUDFLARE_TEST_CONNECTION / CLOUDFLARE_CONFIGURED。
+
+### Provider 路由（automation-service.ts）
+- `cloud.provider` = 'supabase' | 'cloudflare'（默认 supabase 保持向后兼容）。
+- Cloudflare 已配置 → 推送批次到 Workers；未配置 → 返回目标态降级提示。
+
+### IPC 全链路
+- **channels.ts**：+2 通道（CLOUDFLARE_TEST_CONNECTION / CLOUDFLARE_CONFIGURED），总计 62 声明 / 51 invoke / 11 push。
+- **main.ts**：registerCloudflareHandlers 注册；dev shell mock 补齐。
+- **preload + electron-api**：cloud.cloudflareConfigured / cloud.cloudflareTestConnection。
+- **settings UI**：新增"云端引擎"Tab（Provider 选择 + URL/Key/WorkspaceId + 测试连接按钮）。
+
+### 测试覆盖
+- Worker 测试：15/15 通过。
+- 本地 cloud handoff 测试：2/2 通过。
+- 启动门禁：51 invoke 通道全部登记，lock 生效。
+- **typecheck**：零错误。
+- **test:unit**：316 条 / 313 通过（3 条预存失败，与 Phase 1 无关）。
+
+### 受影响 SSOT
+`ARCH-STANDARDS.md`、`CLOUD-COLLABORATION-DELIVERY.md`、`kone-PRD.md`、`AGENTS.md`、`README.md`。
+
+---
+
+## [1.3.2] — 2026-09-25 · Phase 0: N8N 移除与 Phase -1 对客口径对齐
+
+### Phase -1：对客口径对齐（合规前置）
+- **README.md**：版本对照表"云端邮箱清洗 / 云端自动化"加注"完整投递闭环为目标态"（原 N8N 自动化）；巡航说明更新为目标态表述。
+- **upgrade-modal.tsx**：高级版文案从"云端自动化序列 + 多节点自动化发信引擎"改为"本地自动化序列 + 本地发信工作台（云端投递闭环为目标态）"。
+- **dashboard-page.tsx**：自动化序列副标题从"云端发送的协同引擎"改为"本地发信工作台（云端投递闭环为目标态）"；升级提示文案更新。
+- **automation-workflow.tsx**：新增 Premium 用户"云端投递闭环为目标态"信息徽标；Basic 锁定提示文案移除 N8N / Snov.io 提法。
+- **help-dialog.tsx**：两处帮助文案移除 N8N 提法，更新为目标态表述。
+
+### Phase 0：N8N 移除（铁律一落地）
+- **删除** `src/components/settings/n8n-settings-tab.tsx`（145 行）。
+- **system-settings.tsx**：移除 N8N Tab（TabsTrigger + TabsContent）、N8nSettings 类型、相关 state/ref/handler、useLicenseStore 依赖。
+- **automation-service.ts**：删除 N8N Webhook 部分（`getN8nWebhookUrl`、`isPlaceholderWebhook`、`resolveAuthorizationLevel`、`triggerN8nWorkflow`、`N8N_GOLD_FILTER_MIN_SCORE`、`resolveLeadScore`、`safeFetch` 导入）；`start-campaign` IPC 保留授权门禁，返回目标态降级提示。
+- **config-service.ts**：删除 `N8nConfigSnapshot` 类型、`getN8nConfig`、`shouldAllowN8nPush`。
+- **proxy-service.ts**：删除 N8N webhook hostname 白名单逻辑（`getN8nConfig`/`shouldAllowN8nPush` 导入与路由决策块）。
+- **cloud-sync-gate.ts**：注释中 N8N 提法更新为通用"云端邮件营销"。
+- **supabase-service.ts**：`createCampaign` 注释从"由 n8n 后续消费"改为"由 Cloudflare Workers 后续消费（目标态）"。
+- **user-config.ts / config-store.ts**：移除 `n8n` 字段类型定义；`getN8nSettings` 函数已删除。
+- **main.tsx**：Dev shell `startCampaign` mock 从"n8n 未连接"改为目标态提示。
+- **ARCH-STANDARDS.md §7.4**：`n8n cloud email automation` → `Cloudflare Workers cloud email automation (target state — Phase 1)`。
+- **ARCH-STANDARDS.md §8**：`Premium n8n automation` → `Premium Cloudflare automation (target state)`。
+- **kone-PRD.md**：N8N 提法更新为 Cloudflare Workers 目标态表述。
+- **AGENTS.md**：邮件助理云端方案从 N8N 更新为 Cloudflare Workers。
+- **tests/**：`ipc-contract-sweep.test.ts` 移除 N8N mock；`ipc-registry-plain-batch3-migration.test.ts` 注释更新。
+
+**受影响 SSOT**：`ARCH-STANDARDS.md`、`kone-PRD.md`、`AGENTS.md`、`README.md`。
+
+---
+
 ## [1.3.1] — 2026-09-22 · 规范治理与 P0 阻断项修复
 
 **基线 commit**：`0925cde`
 **发布判定**：仍为 `NO-GO`（依 `CLOUD-COLLABORATION-DELIVERY.md §0`；本次仅修复阻断项，云端协同目标态未落地）
-**审计依据**：`KONE-V1.3-规范文档与架构数据交互深度梳理报告.md`
+**审计依据**：`archive/KONE-V1.3-规范文档与架构数据交互深度梳理报告.md`
 
 ### 修复 · 前端设计系统（P0-1）
 

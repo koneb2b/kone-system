@@ -328,7 +328,7 @@ const checkDomainCollisions = async (
 
 /**
  * createCampaign — 将发信任务写入 campaigns 表
- * 强制设定 status='queued'，由 n8n 后续消费
+ * 强制设定 status='queued'，由 Cloudflare Workers 后续消费（目标态）
  */
 const createCampaign = async (
   store: ConfigStore,

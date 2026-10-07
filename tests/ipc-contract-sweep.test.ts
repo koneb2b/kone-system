@@ -231,7 +231,6 @@ const loadAllHandlers = () => {
       llmApiKey: 'mock-llm-key',
       selectedModel: 'gpt-4o-mini',
       icpProfile: { targetProduct: 'battery', buyerPersona: 'procurement', coreAdvantage: 'fast quote' },
-      n8n: { webhookUrl: '' },
     },
     'system.machineId': 'ipc-sweep-device',
     'system.hardwareMachineId': 'ipc-sweep-device',

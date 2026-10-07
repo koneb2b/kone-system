@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Crown,
   AlertTriangle,
+  Info,
   Workflow,
   MailCheck,
 } from 'lucide-react'
@@ -27,6 +28,7 @@ import { useLicenseStore } from '@/store/licenseStore'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { useLeadsStore } from '@/store/leads-store'
 import { getUserConfig, updateUserConfig } from '@/lib/user-config'
+import { CloudOutreachDashboard } from './cloud-outreach-dashboard'
 
 const TEMPLATES = [
   {
@@ -397,6 +399,9 @@ export function AutomationWorkflow() {
   return (
     <>
       <div className="flex flex-col gap-5">
+        {/* [V1.3.8] Phase 2.7 · 云端触达看板：仅当 Premium/Enterprise 可用时展示 */}
+        {canUseCloudSend && <CloudOutreachDashboard />}
+
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -443,7 +448,12 @@ export function AutomationWorkflow() {
               <Crown className="size-3.5" />
               Basic 套餐已锁定云端发送
             </div>
-          ) : null}
+          ) : (
+            <div className="ml-auto inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+              <Info className="size-3.5" />
+              云端投递闭环为目标态
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -668,8 +678,8 @@ export function AutomationWorkflow() {
               </div>
               {!canUseCloudSend ? (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  当前为试用版 / Basic 套餐，云端协同发送已锁定。点击发送按钮即可唤起高级版升级通道，解锁 N8N / Snov.io
-                  闭环。
+                  当前为试用版 / Basic
+                  套餐，云端协同发送已锁定。点击发送按钮即可唤起高级版升级通道，解锁本地自动化发信工作台（云端投递闭环为目标态）。
                 </div>
               ) : null}
               {campaignResult && (

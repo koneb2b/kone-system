@@ -19,7 +19,6 @@ export type PersistedUserConfig = {
   providers?: Array<{ id?: string; baseUrl?: string }>
   selectedModel?: string
   icpProfile?: IcpProfile
-  n8n?: { webhookUrl: string; autoPush: boolean; minScore?: number; roleFilter?: string }
 }
 
 type ConfigState = {

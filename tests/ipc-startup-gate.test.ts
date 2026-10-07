@@ -89,6 +89,8 @@ const exportPath = '../dist-electron/electron/services/export-service.js'
 const autopilotStatePath = '../dist-electron/electron/services/autopilot-state-service.js'
 const supabasePath = '../dist-electron/electron/services/supabase-service.js'
 const automationPath = '../dist-electron/electron/services/automation-service.js'
+const cloudflarePath = '../dist-electron/electron/services/cloudflare-service.js'
+const imapReplyPath = '../dist-electron/electron/services/imap-reply-service.js'
 const sandboxPath = '../dist-electron/electron/services/sandbox-service.js'
 const agentPath = '../dist-electron/electron/services/agent-service.js'
 const dnsPath = '../dist-electron/electron/services/dns-service.js'
@@ -145,6 +147,8 @@ const runMainRegistrationSequence = (
   const { registerAutopilotStateHandlers } = require(autopilotStatePath)
   const { registerSupabaseHandlers } = require(supabasePath)
   const { registerAutomationHandlers } = require(automationPath)
+  const { registerCloudflareHandlers } = require(cloudflarePath)
+  const { registerImapReplyHandlers } = require(imapReplyPath)
   const { registerSandboxHandlers } = require(sandboxPath)
   const { registerAgentHandlers } = require(agentPath)
   const { registerDnsHandlers } = require(dnsPath)
@@ -166,6 +170,8 @@ const runMainRegistrationSequence = (
   registerAutopilotStateHandlers(ipcMain, store)
   registerSupabaseHandlers(ipcMain, store, licenseGuard, () => null)
   registerAutomationHandlers(ipcMain, store, licenseGuard)
+  registerCloudflareHandlers(ipcMain, store)
+  registerImapReplyHandlers(ipcMain, store, () => null)
   registerSandboxHandlers(ipcMain, store)
   registerAgentHandlers(ipcMain, store)
   registerDnsHandlers(ipcMain, store)
@@ -198,9 +204,10 @@ test('启动门禁：完整注册序列后 assertAllRegistered 通过 + lock 生
   const { licenseGuard } = require(licensePath).createLicenseService(store)
   const ipcMain = makeIpcMain()
 
-  // 1) collectInvokeChannels 精确为 49（声明 60 − 仅推送 11），且与 PUSH_CHANNELS 互斥
+  // 1) collectInvokeChannels 精确为 58（声明 69 − 仅推送 11），且与 PUSH_CHANNELS 互斥
+  //    [V1.3.12] Phase 2.8d 新增 1 个 invoke：automation:imap-test-connection（IMAP 主机连接测试）
   const invoke = collectInvokeChannels()
-  assert.equal(invoke.length, 49, 'collectInvokeChannels 应返回 49 个 invoke 通道')
+  assert.equal(invoke.length, 58, 'collectInvokeChannels 应返回 58 个 invoke 通道')
   // 2) 完整复刻 main.ts 注册序列
   runMainRegistrationSequence(
     registry,
@@ -235,7 +242,7 @@ test('启动门禁：完整注册序列后 assertAllRegistered 通过 + lock 生
     'lock() 后应禁止新增注册',
   )
 
-  console.log('[startup-gate] 49 invoke 通道全部登记，门禁通过 + 锁定生效')
+  console.log('[startup-gate] 54 invoke 通道全部登记，门禁通过 + 锁定生效')
 })
 
 test('启动门禁非空：漏注册 invoke 通道时 assertAllRegistered 抛错', async () => {

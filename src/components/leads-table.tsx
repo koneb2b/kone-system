@@ -205,6 +205,9 @@ export function LeadsTable({
     setSavedLeadIds(new Set(leads.map((lead) => lead.id)))
   }, [leads])
 
+  /* P1-4：显示上限 50 条——与 OMNI_SEARCH_RESULT_LIMIT 对齐，
+     避免用户积累大量保存线索时表格全量渲染导致卡顿。 */
+  const LEADS_TABLE_DISPLAY_LIMIT = 50
   const displayLeads = useMemo(
     () =>
       leads
@@ -217,7 +220,8 @@ export function LeadsTable({
             return false
           return true
         })
-        .sort((a, b) => (hasNumericMatchScore(b) ? b.matchScore : -1) - (hasNumericMatchScore(a) ? a.matchScore : -1)),
+        .sort((a, b) => (hasNumericMatchScore(b) ? b.matchScore : -1) - (hasNumericMatchScore(a) ? a.matchScore : -1))
+        .slice(0, LEADS_TABLE_DISPLAY_LIMIT),
     [filters, leads],
   )
 

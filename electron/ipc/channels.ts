@@ -58,10 +58,25 @@ export const IPC_CHANNELS = {
     UNSUBSCRIBE_REALTIME: 'cloud:unsubscribe-realtime',
     REALTIME_LEAD_EVENT: 'cloud:realtime-lead-event',
     FETCH_CLAIMED_DOMAINS: 'cloud:fetch-claimed-domains',
+    /* Phase 1 · Cloudflare 云端引擎测试连接 */
+    CLOUDFLARE_TEST_CONNECTION: 'cloud:cloudflare-test-connection',
+    CLOUDFLARE_CONFIGURED: 'cloud:cloudflare-configured',
+    /* [V1.3.8] Phase 2.7 · 云端触达看板（投递漏斗 + 30 日趋势） */
+    CLOUDFLARE_DASHBOARD_STATS: 'cloud:cloudflare-dashboard-stats',
+    CLOUDFLARE_POLL_OUTREACH_STATUS: 'cloud:cloudflare-poll-outreach-status',
   },
   AUTOMATION: {
     VERIFY_EMAILS: 'automation:verify-emails',
     START_CAMPAIGN: 'automation:start-campaign',
+    /* Phase 2: Outreach 投递闭环 */
+    QUEUE_OUTREACH: 'automation:queue-outreach',
+    /* Phase 2.5: 本地 IMAP 回复检测（In-Reply-To 匹配 outreach.provider_message_id） */
+    IMAP_POLL: 'automation:imap-poll',
+    IMAP_STATUS: 'automation:imap-status',
+    /* [V1.3.11] Phase 2.8c · IMAP 自动轮询开关切换后即时重启 timer */
+    IMAP_RESTART: 'automation:imap-restart',
+    /* [V1.3.12] Phase 2.8d · IMAP 主机连接测试（仅连通性，不拉邮件） */
+    IMAP_TEST_CONNECTION: 'automation:imap-test-connection',
   },
   /* V1.3 DNS 域名健康探测 */
   DNS: {

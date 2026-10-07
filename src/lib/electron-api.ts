@@ -19,6 +19,11 @@ import type {
   CampaignStartRequest,
   CheckDomainsData,
   ClaimedDomainsData,
+  CloudDashboardStats,
+  CloudImapPollResult,
+  CloudImapStatusData,
+  CloudImapTestResult,
+  CloudPollOutreachData,
   ConfigSetRequest,
   CreateCampaignData,
   CreateCampaignRequest,
@@ -127,6 +132,39 @@ export const fetchModels = async (payload: FetchModelsRequest): Promise<FetchMod
 
 export const testConnection = async (payload: TestConnectionRequest): Promise<TestConnectionData> =>
   unwrapIpc(await window.electronAPI.api.testConnection(payload), '连接失败')
+
+/* Phase 1 · Cloudflare 云端引擎 */
+export const cloudflareConfigured = async (): Promise<{ configured: boolean }> =>
+  unwrapIpc(await window.electronAPI.cloud.cloudflareConfigured(), '读取 Cloudflare 配置状态失败')
+
+export const cloudflareTestConnection = async (): Promise<{ ok: boolean; message: string; latencyMs: number }> =>
+  unwrapIpc(await window.electronAPI.cloud.cloudflareTestConnection(), 'Cloudflare 连接测试失败')
+
+/* [V1.3.8] Phase 2.7 · 云端触达看板 */
+export const cloudflareDashboardStats = async (): Promise<CloudDashboardStats> =>
+  unwrapIpc(await window.electronAPI.cloud.cloudflareDashboardStats(), '读取云端触达统计失败')
+
+export const cloudflarePollOutreachStatus = async (opts?: {
+  status?: string
+  limit?: number
+  offset?: number
+}): Promise<CloudPollOutreachData> =>
+  unwrapIpc(await window.electronAPI.cloud.cloudflarePollOutreachStatus(opts), '拉取云端投递明细失败')
+
+/* [V1.3.8] Phase 2.5/2.7 · IMAP 回复检测 */
+export const imapPoll = async (): Promise<CloudImapPollResult> =>
+  unwrapIpc(await window.electronAPI.automation.imapPoll(), 'IMAP 轮询失败')
+
+export const imapStatus = async (): Promise<CloudImapStatusData> =>
+  unwrapIpc(await window.electronAPI.automation.imapStatus(), '读取 IMAP 状态失败')
+
+/* [V1.3.11] Phase 2.8c · IMAP 自动轮询开关切换后即时重启 timer */
+export const imapRestart = async (): Promise<CloudImapStatusData> =>
+  unwrapIpc(await window.electronAPI.automation.imapRestart(), '重启 IMAP 轮询失败')
+
+/* [V1.3.12] Phase 2.8d · IMAP 主机连接测试 */
+export const imapTestConnection = async (): Promise<CloudImapTestResult> =>
+  unwrapIpc(await window.electronAPI.automation.imapTestConnection(), 'IMAP 连接测试失败')
 
 export const proxyRequest = async (payload: ProxyRequest): Promise<ProxyData> =>
   unwrapIpc(await window.electronAPI.api.proxy(payload), '代理请求失败')
