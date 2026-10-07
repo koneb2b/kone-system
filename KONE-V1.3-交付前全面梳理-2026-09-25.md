@@ -74,7 +74,7 @@
 | 2 | 免安装版 | `win-unpacked/KoneAI.exe` | ✅ 已产出 |
 | 3 | **使用说明（5 步上手）** | `README.md` 步骤表 | ✅ 已有 |
 | 4 | 授权激活码 | 由你方按客户发放 | 你方流程 |
-| 5 | 打包冒烟证据 | `tests/packaged-smoke-report.json` | ⚠️ **未通过**（`app.asar` 被系统级进程持有，属环境问题；见 `CHANGELOG.md` 尾部说明） |
+| 5 | 打包冒烟证据 | `tests/packaged-smoke-report.json` | ✅ **已通过（2026-10-07，替代方案）**：改用 `npm run test:smoke:alt`（输出到 `release-build/`，绕开 `release/` 下被系统进程持有的 `app.asar`）。报告 `booted/activationScreenVisible/preloadBridgeVisible` 三项均为 true |
 
 **打包命令**（复现）：
 ```bash
@@ -120,7 +120,7 @@ npm run test:smoke:alt    # 打包 + 冒烟一步到位
 - [x] 类型检查 0 error
 - [x] 文档 / IPC 契约一致性双绿
 - [x] 安装包产出成功
-- [ ] 打包版真机启动 + 桥接可见（packaged-smoke **未通过**：`app.asar` 进程锁阻塞，需在锁释放的干净环境重跑）
+- [x] 打包版真机启动 + 桥接可见（packaged-smoke **已通过**：2026-10-07 改用 `npm run test:smoke:alt` 输出到 `release-build/`，绕开 `app.asar` 进程锁；`booted` / `activationScreenVisible` / `preloadBridgeVisible` 三项全绿）
 - [x] 安全基线三件套（contextIsolation / nodeIntegration / sandbox）
 - [ ] **人工冒烟**：在一台干净机器上安装 → 激活 → 跑通一次完整搜索（**建议交付前人工做一遍**）
 

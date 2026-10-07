@@ -17,6 +17,42 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.1] — 2026-10-07 · 打包冒烟打通（P0-5 遗留项闭环）
+
+**背景**：审计与交付梳理长期将「打包冒烟 B2」记为**未通过**，
+原因是 `release/win-unpacked/resources/app.asar` 被系统级进程持有
+（`Device or resource busy`，且无 Electron/Kone 进程可见）。
+
+**本次发现**：仓库**早已准备替代方案**，此前未被使用 ——
+```json
+"dist:alt":      "vite build && npm run build:electron && electron-builder --win nsis -c.directories.output=release-build",
+"test:smoke:alt": "npm run dist:alt && node ./scripts/packaged-smoke.cjs release-build"
+```
+即**换输出目录**（`release-build/`）绕开被锁文件。
+
+**执行结果（2026-10-07）**：
+- 安装包成功产出：`release-build/Kone-Intellect-Setup-1.3.15.exe`（89.9 MB）
+- 冒烟报告 `tests/packaged-smoke-report.json`：
+  | 断言 | 值 |
+  |---|---|
+  | `booted` | ✅ true |
+  | `activationScreenVisible` | ✅ true |
+  | `preloadBridgeVisible` | ✅ true |
+  | `dashboardNavVisible` | false（**预期**：未激活时停在激活页，不进看板） |
+- 通过判定（`scripts/packaged-smoke.cjs:124`）：
+  `!booted || !preloadBridgeVisible || (!activationScreenVisible && !dashboardNavVisible)`
+  → `false`，**冒烟通过**。
+
+**遗留噪音（非阻断，已记录）**：
+- `[BackupService] Checksum mismatch`：历史备份文件（2026-09-11/13/14）校验失败，
+  属旧数据遗留，不影响启动。
+- `fsync EPERM ... 已降级为仅原子 rename`：文件系统不支持 fsync，代码已优雅降级。
+
+**结论**：交付阻断项中的「打包冒烟」**已闭环**。
+今后验证打包请用 `npm run test:smoke:alt`，无需等待 `release/` 锁释放。
+
+---
+
 ## [1.4.0] — 2026-10-07 · Phase 2.9 · 审批 → 云端二次门禁（阶段 1+2 落地）
 
 **动机**：`AGENTS.md` 宪法第 5 条 —— *"A high score, staged Agent task or `cloud_send` feature never authorizes delivery. Approval plus server-side second-gate success is mandatory."*
