@@ -12,7 +12,14 @@ import { Label } from '@/components/ui/label'
 import { getLeadUniqueKey, LeadItem, useLeadsStore } from '@/store/leads-store'
 import { getDataSourceMeta } from '@/lib/data-source-meta'
 import { formatMatchScoreForExport } from '@/lib/lead-mappers'
-import { saveExportFile, agentGetStatus, onAgentLeadStatusUpdated } from '@/lib/electron-api'
+import {
+  saveExportFile,
+  agentGetStatus,
+  onAgentLeadStatusUpdated,
+  /* [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条：审批是投递的必要前提） */
+  createApproval,
+  getLicenseInfo,
+} from '@/lib/electron-api'
 import type { AgentStatus } from '@/shared/ipc-contracts'
 
 type Lead = LeadItem
@@ -148,6 +155,8 @@ export function LeadsTable({
   onViewAll,
 }: LeadsTableProps) {
   const [sendingCloud, setSendingCloud] = useState<number | null>(null)
+  /* [V1.4.0] Phase 2.9 · 审批进行中标记 */
+  const [approving, setApproving] = useState<number | null>(null)
   const [savedLeadIds, setSavedLeadIds] = useState<Set<number>>(new Set())
   const [filterOpen, setFilterOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -256,6 +265,55 @@ export function LeadsTable({
       toast({ title: '发送失败', description: formatErrorMessage(error, '发送到云端失败'), variant: 'destructive' })
     } finally {
       setSendingCloud(null)
+    }
+  }
+
+  /**
+   * [V1.4.0] Phase 2.9 · 人工审批（AGENTS.md 宪法第 5 条）
+   *
+   * 宪法：「高分、分阶段任务或 cloud_send 功能永不授权投递。
+   * 审批 + 服务端二次门禁成功是强制前提。」
+   * 本动作写入不可覆盖的审批记录；投递放行由云端门禁 ⑦ 依据该记录判定。
+   *
+   * 审批人取本机 machineId（与云端 approvals.approver_machine_id 对齐，单机场景）。
+   * 邮箱等级取 'verified'：按规范 §5，能进入审批队列的线索其邮箱应已符合准入等级；
+   * 后续接入真实验证等级后应改为读取 lead 上的实际等级。
+   */
+  const handleApprove = async (lead: Lead) => {
+    if (!canUseCloudSend) {
+      toast({
+        title: '高级版锁定',
+        description: '云端投递为高级版能力，审批后需云端协同，请先升级。',
+        variant: 'destructive',
+      })
+      return
+    }
+    setApproving(lead.id)
+    try {
+      const info = await getLicenseInfo()
+      const draftVersion = lead.draftVersion ?? 0
+      const res = await createApproval({
+        leadId: String(lead.id),
+        approverMachineId: info.machineId ?? 'unknown-machine',
+        decision: 'approved',
+        draftVersion,
+        emailVerificationGrade: 'verified',
+      })
+      // 本地标记：存在 approvalId 即视为已批准（见 leads-store 字段说明）
+      await useLeadsStore.getState().updateLead(lead.id, { approvalId: res.approvalId, draftVersion })
+      toast({
+        title: '已批准',
+        description: `线索「${lead.company}」已通过人工审批，现可发送至云端。`,
+        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+      })
+    } catch (error) {
+      toast({
+        title: '审批失败',
+        description: formatErrorMessage(error, '提交审批失败，请检查云端配置'),
+        variant: 'destructive',
+      })
+    } finally {
+      setApproving(null)
     }
   }
 
@@ -545,6 +603,20 @@ export function LeadsTable({
                             ? '查看分析'
                             : 'AI 深度分析'}
                       </Button>
+                      {/* [V1.4.0] Phase 2.9 · 审批（宪法第 5 条：审批是投递的必要前提）
+                          未批准 → 「批准」可点；已批准（存在 approvalId）→ 显示「已批准」并禁用。 */}
+                      {canUseCloudSend && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs font-medium"
+                          onClick={() => void handleApprove(lead)}
+                          disabled={approving === lead.id || Boolean(lead.approvalId)}
+                          isLoading={approving === lead.id}
+                        >
+                          {approving === lead.id ? '提交中' : lead.approvalId ? '已批准' : '批准'}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         className="bg-blue-600 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400"

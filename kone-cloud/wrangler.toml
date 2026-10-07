@@ -7,6 +7,15 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 SCHEMA_VERSION = "1.0.0"
 
+# ── Phase 2.9 云端二次门禁（AGENTS.md 宪法第 5 条）──
+# 本地审批 UI 已就绪（线索表「批准」按钮 → cloud:create-approval），
+# 可将本项改为 "true" 启用。启用后以下请求会被拒绝：
+#   APPROVAL_REQUIRED（无审批记录）/ DRAFT_VERSION_MISMATCH（草稿版本不符）
+#   COMPANY_CONFLICT（撞单保护期）/ SUPPRESSED（全局抑制）
+#   EMAIL_GRADE_INSUFFICIENT（邮箱等级不足）/ QUOTA_EXCEEDED / CIRCUIT_OPEN
+# 建议先在干净环境端到端验证一次（批准 → 发送至云端）再开生产。
+APPROVAL_GATE_ENABLED = "false"
+
 # ── D1 Binding ──
 [[d1_databases]]
 binding = "DB"

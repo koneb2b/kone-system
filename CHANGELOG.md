@@ -62,11 +62,26 @@ lastVerifiedAt: 2026-10-07
 所有投递会被门禁 ⑦ 永久拒绝（`APPROVAL_REQUIRED`），反而破坏既有功能。
 当前默认关闭保证了既有投递链路不受影响。
 
+### 阶段 3 · 本地审批入口（已落地）
+- `leads-table` 每行新增**「批准」按钮**（仅高级版显示）：未批准 → 可点；
+  已批准（`lead.approvalId` 存在）→ 显示「已批准」并禁用。
+- 点击后：取本机 `machineId` 作审批人 → 调 `cloud:create-approval` →
+  本地写入 `approvalId` / `draftVersion`。
+- `LeadItem` 新增 `approvalId?` / `draftVersion?`。
+  **取舍**：本轮**不扩展 `LeadStatus` 枚举** —— 改枚举会触及既有 UI 分支与数据迁移，
+  风险高于收益；审批态先以字段承载，状态机正式迁移作为独立后续任务。
+- `QUEUE_OUTREACH` 载荷补 `draftVersion`（缺省 0，与审批记录保持一致）。
+- `wrangler.toml` 显式声明 `APPROVAL_GATE_ENABLED = "false"`，并注释开启方式与影响。
+
 ### 尚未完成
-- **阶段 3 · 审批 UI**：待审批队列 / 证据与风险展示 / 批准·驳回 / 草稿版本提示。
-  这是门禁开启的前置条件（`kone-PRD §5.1` 第 8 条要求前端必须提供这些入口）。
-- **阶段 4 · 配额熔断执行**：`delivery_quota` 读逻辑已接入门禁 ⑨，但写入侧
-  （投递成功后累加 `sent_today`）尚未实现。
+- **门禁开启**：能力与 UI 均已就绪，但 `APPROVAL_GATE_ENABLED` 仍为 `"false"`。
+  建议先在干净环境端到端验证一次（批准 → 发送至云端）再开生产。
+- **待审批队列独立视图**：当前审批入口在**线索表行内**，尚未提供独立队列页
+  （`kone-PRD §5.1` 第 8 条列出的完整入口之一）。
+- **驳回 / 退回修订**：UI 目前只提供「批准」；`rejected` / `needs_revision`
+  的云端 API 与门禁已支持，但本地 UI 未暴露。
+- **阶段 4 · 配额写入侧**：门禁 ⑨ 只读 `delivery_quota`，投递成功后累加
+  `sent_today` 的逻辑未实现（当前配额拦截仅在手动写入配额行后生效）。
 
 ### 门禁
 - kone-cloud：**53/53**（35 既有 + 18 新增门禁测试，含 8 例负向授权、

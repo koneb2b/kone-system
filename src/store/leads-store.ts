@@ -96,6 +96,13 @@ export type LeadItem = {
   agentStatus?: AgentStatus
   /* P0-1：搜索产物稳定 UUID（SearchExecuteResult.id），用于 agentStatus 写回关联 */
   leadKey?: string
+  /* [V1.4.0] Phase 2.9 · 审批（AGENTS.md 宪法第 5 条）
+     存在 approvalId 即表示该线索已通过人工审批；draftVersion 必须与云端审批记录
+     严格相等（门禁 ⑦ 校验），草稿变更后需递增并重新批准。
+     取舍说明：本轮**不扩展 LeadStatus 枚举**——改枚举会触及既有 UI 分支与数据迁移，
+     风险高于收益；审批态先以本字段承载，状态机正式迁移作为独立后续任务。 */
+  approvalId?: string
+  draftVersion?: number
 }
 
 export type LeadSearchResult = {

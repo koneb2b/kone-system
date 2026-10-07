@@ -251,7 +251,8 @@ export const registerAutomationHandlers = (
       const trialDenied = ensureTrialAccess(store, licenseGuard, '云端投递')
       if (trialDenied) return trialDenied
 
-      const { leadId, subject, body, scheduledAt, sequenceStage } = p || {}
+      // [V1.4.0] Phase 2.9：draftVersion 供云端门禁 ⑦ 与审批记录比对
+      const { leadId, subject, body, scheduledAt, sequenceStage, draftVersion } = p || {}
 
       if (!leadId || !subject || !body) {
         return {
@@ -269,6 +270,8 @@ export const registerAutomationHandlers = (
         body,
         scheduledAt,
         sequenceStage,
+        // [V1.4.0] Phase 2.9：缺失时默认 0，与审批记录（默认 0）保持一致
+        draftVersion: typeof draftVersion === 'number' ? draftVersion : 0,
       })
 
       return {
