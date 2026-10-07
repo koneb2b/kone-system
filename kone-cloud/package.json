@@ -1,0 +1,29 @@
+{
+  "name": "kone-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kone V1.3 Cloudflare Workers + D1 + Pages cloud backend",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 migrations apply kone-leads --local",
+    "db:init-remote": "wrangler d1 migrations apply kone-leads --remote",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "pages:dev": "cd pages && npm run dev",
+    "pages:build": "cd pages && npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "miniflare": "^3.20250101.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^3.100.0"
+  }
+}

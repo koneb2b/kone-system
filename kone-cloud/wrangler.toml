@@ -1,0 +1,27 @@
+name = "kone-cloud"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Non-secret variables (safe to commit) ──
+[vars]
+SCHEMA_VERSION = "1.0.0"
+
+# ── D1 Binding ──
+[[d1_databases]]
+binding = "DB"
+database_name = "kone-leads"
+
+# ── Queue Binding (Phase 2: outreach delivery) ──
+# [[queues.producers]]
+# binding = "OUTREACH_QUEUE"
+# queue = "kone-outreach"
+
+# ── Cron Trigger (Phase 2: sweep pending outreach) ──
+# [triggers]
+# crons = ["*/15 * * * *"]
+
+# ── Secrets (use `wrangler secret put <name>`) ──
+# RESEND_API_KEY = "re_xxx"
+# RESEND_WEBHOOK_SECRET = "whsec_xxx"   # Svix-format; verify via x-resend-signature is NOT used
+# SENDER_DOMAIN = "outreach.kone-cloud.com"

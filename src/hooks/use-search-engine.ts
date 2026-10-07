@@ -206,7 +206,10 @@ const resolveSearchStageMessage = (payload?: {
     return '正在执行相关度预筛，剔除泛化结果...'
   }
   if (payload?.stage === 'blind_scoring' || payload?.searchMode === 'anysearch') {
-    return 'AnySearch 正在通过全网海关数据、全球展会名录及社媒多渠道深度穿透高管决策人...'
+    // 对客口径修正（P1-A）：原以「全网海关数据」这类权威数据库口吻播报，
+    // 但 customs_shipment / trade_show 实为公开网页近似检索（PROVIDER-CAPABILITY.md:20/24）。
+    // 补「近似匹配，仅供参考」限定，避免用户误认为来自官方海关数据库。
+    return 'AnySearch 正在通过公开网页海关线索、展会名录及社媒多渠道检索决策人（近似匹配，仅供参考）...'
   }
   if (payload?.searchMode === 'maps-keyword-fallback') {
     return '地图定位受限，正在尝试扩大识别范围...'

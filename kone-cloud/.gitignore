@@ -1,0 +1,16 @@
+# kone-cloud（Cloudflare Worker 子项目）忽略规则
+# 目的：本目录此前完全未入库（git ls-files kone-cloud = 0），
+# 首次入库时必须排除 node_modules 与构建/临时产物，否则会把数千个依赖文件一并纳入。
+
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+
+# vitest 运行期生成的临时配置（形如 vitest.config.ts.timestamp-1790604005702-*.mjs）
+*.timestamp-*.mjs
+
+# 环境变量
+.env
+.env.*
+!.env.example

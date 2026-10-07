@@ -47,8 +47,12 @@ const providerBaseUrlHints: Record<string, { placeholder: string; hint: string }
 }
 
 const providerDescriptions: Record<string, string> = {
+  // 对客口径修正（P1-A）：原文案宣称「深度穿透潜客高管**个人邮箱**、海关提单」。
+  // 实际 anysearch-provider 的 email 仅为第三方响应透传，代码内无任何邮箱发掘/校验实现；
+  // 且 PROVIDER-CAPABILITY.md:24 禁止以「官方海关提单数据库」口径宣传。
+  // 现按文档与代码事实改写，字段以服务商返回为准。
   anysearch:
-    '安全保存 AnySearch 垂直实体级 API 密钥，用于在获客时深度穿透潜客高管个人邮箱、海关提单与全球展会足迹，燃料自理支持本地持久化。',
+    '安全保存 AnySearch 垂直实体级 API 密钥，用于多源 B2B 实体检索（海关线索、展会名录、社媒画像等，字段以服务商返回为准，仅供参考），燃料自理支持本地持久化。',
 }
 
 type SecretState = {
