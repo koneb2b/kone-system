@@ -17,6 +17,64 @@ lastVerifiedAt: 2026-09-22
 
 ---
 
+## [1.3.14] — 2026-10-07 · 云端投递链路 P0 缺陷修复 + 对客口径整改
+
+**来源**：`KONE-V1.3-文档一致性与隐患深度审计报告-2026-10-07.md`。
+全项目文档与代码交叉审计发现 5 项 P0 / 10 项 P1，本轮完成其中 5 项 P0 与 P1-A / P1-B 的修复。
+
+**共同特征**：这些缺陷**全部落在现有门禁盲区**——`verify:consistency` 只做字面值比对与断链检查，
+`tsc` 管不了运行时字段名，`npm run test:unit` 不覆盖跨进程契约。故修复前门禁全绿。
+
+### P0-1 · 看板数据链路断裂（snake_case ↔ camelCase 零映射）
+- **根因**：`kone-cloud` 返回 D1 原始行（`sent_at` / `workspace_id`），本地 `OutreachStatus` 为 camelCase（`sentAt` / `workspaceId`），
+  而 `pollOutreachStatus` 用 `as PollOutreachResult` **裸强转**——TS 的 `as` 仅编译期生效，运行时字段名不变。
+- **后果**：除 `id / status / subject / provider / error` 五个同名字段外，所有时间戳恒 `undefined` →
+  漏斗全 0、趋势恒空、明细表被时间窗口整表过滤为空、CSV 时间戳列全空、IMAP 轮询恒 `skipped:'no_outstanding_outreach'`。
+- **修复**：新增 `mapOutreachRow()` 显式映射；新增 `tests/cloud-outreach-field-mapping.test.ts`（4 条）锁定字段名防回归。
+- **规则**：跨进程响应**禁止裸 `as` 强转**，一律走显式映射。
+- **不受影响**：KPI 卡走 `dashboardStats`，其 SQL 别名本就是 camelCase，数据正常。
+
+### P0-2 · 跨租户越权（安全，最高优先）
+- **根因**：退订取消语句 `UPDATE outreach SET status='failed' WHERE status='pending'` 缺 workspace 与 email 谓词。
+- **后果**：任一租户任一邮箱退订 → **全平台所有租户**的 pending 队列被清空。
+- **修复**：按 `normalized_email` 限定（JOIN `leads`/`contacts`）。
+- **刻意不加 workspace 谓词**：抑制名单本身是全局语义（`workspace_id = NULL`），加了反而会让其他租户继续向已退订邮箱投递。
+
+### P0-3 · Webhook 事件去重键错配
+- **根因**：`UNIQUE(provider, event_id)` 配 `event_id = data.id`（Resend 的 **email id**），
+  而同一封邮件的 `sent / delivered / bounced` **共用该 id** → 首事件后后续事件判重复，`delivered / bounced` 永不落库。
+- **修复**：改用 Svix 的 `svix-id`（每事件唯一）；新增 `004_webhook_event_idempotency.sql` 将唯一键改为 `(provider, event_type, event_id)` 双保险。
+
+### P0-4 · `event_type` CHECK 缺 `email.replied`
+- **根因**：`002_outreach_webhook.sql` 枚举未含该值（`003` 只重建了 `outreach` 表，遗漏 `webhook_events`），而 worker switch 已处理。
+- **后果**：回复事件 INSERT 触发 CHECK 失败 → HTTP 500。
+- **修复**：`004` migration 重建 `webhook_events` 补枚举（沿用 003 已验证的 `_new` → 复制 → DROP → RENAME 模式）。
+
+### P0-5 · 73 个文件未提交（交付风险）
+- **根因**：`[1.3.3]`–`[1.3.13]` 全部仅存在于工作区，HEAD 停在 2026-09-25，无提交号可追溯/回滚。
+- **修复**：分两次提交落库 —— `4d01998`（审计修复，41 文件）+ `15ac352`（累积落库，46 文件）。
+- **附带**：`kone-cloud` 子项目此前**完全未入库**（`git ls-files kone-cloud` = 0），本次首次纳入源码，已加 `.gitignore` 排除 `node_modules` 与 vitest 临时文件。
+- **提交卫生**：严格用 `git add -u` + 显式路径，**未使用 `git add -A`**；已排除 `release.rar`、`tests/*-report.json`、`.omo/`、`.sisyphus/`、`.workbuddy-ai/`、归档目录。
+
+### P1-B · 安全与状态机守卫
+- `cronSecret` 改用 `constantTimeEqual`（原为 `!==` 普通比较，存在时序侧信道；文档声称已实现但实际未落地）。
+- outreach UPDATE 加 `AND status NOT IN ('replied')` 守卫，防止迟到的 `email.delivered` 把已回复记录回退。
+
+### P1-A · 对客口径整改（合规）
+`PROVIDER-CAPABILITY.md:24` 明令禁止以「官方海关提单数据库」口径宣传。三处 UI 已按代码事实改写：
+- `src/lib/data-source-meta.ts`：`海关提单` → `海关线索（参考）`（徽标出现在全部线索卡片，与免责声明不同屏）
+- `src/components/settings/base-settings-tab.tsx`：删除「深度穿透潜客高管**个人邮箱**」（anysearch 的 email 仅为第三方透传，无邮箱发掘实现）
+- `src/hooks/use-search-engine.ts`：`全网海关数据` → `公开网页海关线索…（近似匹配，仅供参考）`
+
+### 顺带修正
+- `OutreachStatus` 可空字段统一为 `| null`，与前端 `CloudOutreachRecord` 对齐（原为 `?: string`，无法表达 D1 的 NULL 语义）。
+
+### 门禁
+typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 条映射契约测试）；
+`verify:consistency` 69 / 58 / 11 / 0；lint 0 error（254 warnings 均为既有）。
+
+---
+
 ## [1.3.13] — 2026-09-29 · Phase 2.8e · 云端看板 60 秒自动刷新
 
 **目标**：P2.7 落地看板后，用户长时间挂着（例如跑一批投递期间）看不到 KPI/漏斗/趋势的实时变化，只能手动 F5。本轮在组件层加入 60 秒静默刷新，让看板成为"活着"的面板。
