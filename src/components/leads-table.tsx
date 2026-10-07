@@ -170,6 +170,9 @@ export function LeadsTable({
     hasDecisionMakers: false,
     hasCustomsData: false,
     hasExhibition: false,
+    /* [V1.4.0] Phase 2.9 · 待审批队列：筛选出尚未人工批准的线索。
+       对应 kone-PRD §5.1 第 8 条「前端必须提供待审批队列」。 */
+    pendingApproval: false,
   })
   const { toast } = useToast()
 
@@ -223,6 +226,8 @@ export function LeadsTable({
         .filter((lead) => {
           if (filters.highMatch && (!hasNumericMatchScore(lead) || lead.matchScore < 80)) return false
           if (filters.hasEmail && !lead.email) return false
+          /* 待审批队列：只保留尚未批准（含未审批 / 已驳回）的线索 */
+          if (filters.pendingApproval && lead.approvalDecision === 'approved') return false
           if (filters.hasDecisionMakers && (!lead.decisionMakers || lead.decisionMakers.length === 0)) return false
           if (filters.hasCustomsData && !lead.customsData) return false
           if (filters.hasExhibition && (!lead.exhibitionFootprints || lead.exhibitionFootprints.length === 0))
@@ -371,6 +376,19 @@ export function LeadsTable({
                 <SheetTitle className="text-slate-800">筛选条件</SheetTitle>
               </SheetHeader>
               <div className="mt-6 space-y-4">
+                {/* [V1.4.0] Phase 2.9 · 待审批队列入口（kone-PRD §5.1 第 8 条） */}
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="pendingApproval"
+                    checked={filters.pendingApproval}
+                    onCheckedChange={(checked) =>
+                      setFilters((prev) => ({ ...prev, pendingApproval: checked as boolean }))
+                    }
+                  />
+                  <Label htmlFor="pendingApproval" className="text-slate-700">
+                    仅显示待审批线索
+                  </Label>
+                </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="highMatch"
