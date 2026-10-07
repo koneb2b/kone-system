@@ -1,0 +1,34 @@
+-- ───────────────────────────────────────────────────────────────────
+-- Kone V1.3 · Cloudflare D1 Schema · 005_approval_gate.sql
+-- Version: v1.4.0 (2026-10-07)
+-- Phase 2.9: 审批 → 云端二次门禁（AGENTS.md 宪法第 5 条落地）
+--
+-- 变更动机：
+--   `AGENTS.md` 宪法第 5 条要求「高分 / 分阶段任务 / cloud_send 授权**永不等于允许投递**，
+--   必须 approval + 服务端二次门禁」。此前该约束在代码中无实现：
+--   `queueOutreach` 仅校验 lead.status ∈ {approved, queued}，而 `approved`
+--   在本地无任何设置点（本地 status 枚举不含该值）→ 该校验分支实为死代码，
+--   真实路径靠 `queued` 宽松放行。
+--
+--   本迁移**不新增表**：`approvals`（001 §5）、`leads.approval_id` / `leads.draft_version`
+--   （001 §4）、`delivery_quota`（001 §9）、`events` 的
+--   `approval.created` / `lead.approved` / `lead.rejected` 枚举（001 §8）
+--   均已在初始 schema 中预留。此处仅补索引以支撑门禁 ⑦ 的查询模式。
+--
+-- 兼容性：
+--   - 纯加法（CREATE INDEX IF NOT EXISTS），无表结构变更、无数据迁移。
+--   - **刻意不回填历史 outreach 的审批字段**：回填等于伪造审批记录，
+--     违反规范 §6「每次批准必须形成不可覆盖的 ApprovalRecord」。
+--   - 回滚：`DROP INDEX idx_approvals_lead_decision;` 零数据风险。
+--
+-- 门禁开关：
+--   门禁由 `env.APPROVAL_GATE_ENABLED` 控制，**默认关闭**。
+--   必须等本地审批 UI 就绪（Phase 2.9 阶段 3）后才能开启——
+--   否则用户没有审批入口，所有投递会被门禁 ⑦ 永久拒绝。
+-- ───────────────────────────────────────────────────────────────────
+
+-- ================================================================
+-- 门禁 ⑦ 查询模式：按 (workspace, lead, decision) 取最新一条 approved 记录
+-- ================================================================
+CREATE INDEX IF NOT EXISTS idx_approvals_lead_decision
+  ON approvals(workspace_id, lead_id, decision, approved_at DESC);

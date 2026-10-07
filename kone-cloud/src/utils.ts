@@ -50,6 +50,12 @@ export function errorResponse(code: string, message: string, requestId: string, 
     OUTREACH_NOT_FOUND: 404,
     CIRCUIT_OPEN: 423,
     RATE_LIMITED: 429,
+    /* Phase 2.9 云端二次门禁新增错误码（仅新增，不改动既有映射值） */
+    COMPANY_CONFLICT: 409,
+    APPROVAL_REQUIRED: 403,
+    DRAFT_VERSION_MISMATCH: 409,
+    EMAIL_GRADE_INSUFFICIENT: 403,
+    QUOTA_EXCEEDED: 429,
     INTERNAL_ERROR: 500,
   }
   const httpStatus = statusMap[code] ?? status

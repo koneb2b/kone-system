@@ -17,6 +17,12 @@ export interface Env {
   RESEND_API_KEY?: string
   // Phase 2 · P2-13: Resend webhook HMAC 签名密钥（Svix 签发，每 endpoint 独立）
   RESEND_WEBHOOK_SECRET?: string
+  /**
+   * Phase 2.9 云端二次门禁总开关。字符串 'true' 才启用，默认关闭。
+   * 必须等本地审批 UI 就绪后才能开启 —— 否则用户无审批入口，
+   * 所有投递会被门禁 ⑦ 永久拒绝（APPROVAL_REQUIRED）。
+   */
+  APPROVAL_GATE_ENABLED?: string
 }
 
 // ── Phase 2 · Webhook signature verification (Svix / Resend) ──
@@ -205,6 +211,18 @@ export default {
       // GET /dashboard/stats — aggregate stats
       if (path === '/dashboard/stats' && method === 'GET') {
         return await handleDashboardStats(env, workspace, requestId)
+      }
+
+      // ── Phase 2.9: 审批 → 二次门禁（AGENTS.md 宪法第 5 条）──
+
+      // POST /approvals — 写入不可覆盖的审批记录（规范 §6）
+      if (path === '/approvals' && method === 'POST') {
+        return await handleCreateApproval(request, env, workspace, requestId)
+      }
+
+      // GET /approvals — 查询审批记录（按 leadId 或最近 N 条）
+      if (path === '/approvals' && method === 'GET') {
+        return await handleListApprovals(request, env, workspace, requestId)
       }
 
       // ── Phase 2: Outreach 投递闭环 ──
@@ -545,6 +563,191 @@ async function handleDashboardStats(env: Env, workspace: { id: string }, request
 // Phase 2: Outreach 投递闭环
 // ───────────────────────────────────────────────────────────────
 
+// ───────────────────────────────────────────────────────────────
+// Phase 2.9: 审批记录（CLOUD-COLLABORATION-DELIVERY.md §6）
+// ───────────────────────────────────────────────────────────────
+
+// ── POST /approvals — 写入不可覆盖的审批记录 ──
+//
+// 规范 §6：每次批准必须形成不可覆盖的 ApprovalRecord；草稿修改后版本必须变化，
+// 旧批准不得自动授权新草稿发送。因此本表**只追加、不更新**——
+// 「哪条有效」由门禁 ⑦ 以「decision='approved' 且 approved_at 最新」+ draftVersion 严格相等 判定。
+async function handleCreateApproval(
+  request: Request,
+  env: Env,
+  workspace: { id: string },
+  requestId: string,
+): Promise<Response> {
+  const body = await parseJson<{
+    leadId: string
+    approverMachineId: string
+    decision: 'approved' | 'rejected' | 'needs_revision'
+    draftVersion: number
+    emailVerificationGrade: string
+    manualExceptionReason?: string
+    riskSnapshot?: unknown
+  }>(request)
+
+  if (!body) {
+    return errorResponse('VALIDATION_ERROR', 'Invalid JSON body', requestId)
+  }
+
+  // ── 门禁 ③ Schema / 字段校验 ──
+  if (!body.leadId || !body.approverMachineId || !body.decision) {
+    return errorResponse(
+      'VALIDATION_ERROR',
+      'Missing required fields: leadId, approverMachineId, decision',
+      requestId,
+    )
+  }
+  if (!['approved', 'rejected', 'needs_revision'].includes(body.decision)) {
+    return errorResponse('VALIDATION_ERROR', `Invalid decision: ${body.decision}`, requestId)
+  }
+  if (typeof body.draftVersion !== 'number' || !Number.isInteger(body.draftVersion) || body.draftVersion < 0) {
+    return errorResponse('VALIDATION_ERROR', 'draftVersion must be a non-negative integer', requestId)
+  }
+  if (!body.emailVerificationGrade) {
+    return errorResponse('VALIDATION_ERROR', 'Missing required field: emailVerificationGrade', requestId)
+  }
+
+  // ── 门禁 ② 租户隔离：lead 必须属于本 workspace ──
+  // 不区分「不存在」与「属于他人」，统一返回 NOT_FOUND，避免跨租户探测。
+  const lead = await env.DB.prepare(`SELECT id, status FROM leads WHERE workspace_id = ? AND id = ?`)
+    .bind(workspace.id, body.leadId)
+    .first<{ id: string; status: string }>()
+
+  if (!lead) {
+    return errorResponse('LEAD_NOT_FOUND', `Lead not found: ${body.leadId}`, requestId)
+  }
+
+  const approvalId = generateId()
+  const now = nowUTC()
+
+  await env.DB.prepare(
+    `INSERT INTO approvals (id, workspace_id, lead_id, approver_machine_id, decision, approved_at, draft_version, email_verification_grade, manual_exception_reason, risk_snapshot)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      approvalId,
+      workspace.id,
+      body.leadId,
+      body.approverMachineId,
+      body.decision,
+      now,
+      body.draftVersion,
+      body.emailVerificationGrade,
+      body.manualExceptionReason ?? null,
+      body.riskSnapshot ? JSON.stringify(body.riskSnapshot) : null,
+    )
+    .run()
+
+  // ── 回写 leads 业务状态 ──
+  // 注意：`approved` **只表示人工批准**，不表示云端已接受（规范 §2.1）。
+  // 真正的投递放行由 /outreach/queue 的门禁 ⑦ 依据本表记录判定，二者不可混同。
+  //   approved       → status='approved'，并记下 approval_id 供门禁 ⑦ 追溯
+  //   rejected       → status='rejected'，清除 approval_id
+  //   needs_revision → 退回 'pending_approval'，等待修订后重新批准
+  const nextStatus = body.decision === 'approved' ? 'approved' : body.decision === 'rejected' ? 'rejected' : 'pending_approval'
+  const nextApprovalId = body.decision === 'approved' ? approvalId : null
+
+  await env.DB.prepare(
+    `UPDATE leads SET status = ?, approval_id = ?, draft_version = ?, updated_at = ?
+     WHERE workspace_id = ? AND id = ?`,
+  )
+    .bind(nextStatus, nextApprovalId, body.draftVersion, now, workspace.id, body.leadId)
+    .run()
+
+  // ── 审计事件（追加式写入，规范 §9：可更新聚合状态，不得删除原始事件）──
+  await env.DB.prepare(
+    `INSERT INTO events (workspace_id, lead_id, type, actor, payload, occurred_at)
+     VALUES (?, ?, 'approval.created', ?, ?, ?)`,
+  )
+    .bind(
+      workspace.id,
+      body.leadId,
+      body.approverMachineId,
+      JSON.stringify({ approvalId, decision: body.decision, draftVersion: body.draftVersion }),
+      now,
+    )
+    .run()
+
+  if (body.decision === 'approved' || body.decision === 'rejected') {
+    await env.DB.prepare(
+      `INSERT INTO events (workspace_id, lead_id, type, actor, payload, occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        workspace.id,
+        body.leadId,
+        body.decision === 'approved' ? 'lead.approved' : 'lead.rejected',
+        body.approverMachineId,
+        JSON.stringify({ approvalId }),
+        now,
+      )
+      .run()
+  }
+
+  // ── 递增 sync token（Pages 看板实时刷新）──
+  await env.DB.prepare(
+    `INSERT INTO sync_tokens (workspace_id, version) VALUES (?, 1)
+     ON CONFLICT(workspace_id) DO UPDATE SET version = version + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
+  )
+    .bind(workspace.id)
+    .run()
+
+  return jsonResponse({
+    success: true,
+    data: {
+      approvalId,
+      leadId: body.leadId,
+      decision: body.decision,
+      draftVersion: body.draftVersion,
+      status: nextStatus,
+    },
+    requestId,
+  })
+}
+
+// ── GET /approvals — 查询审批记录 ──
+async function handleListApprovals(
+  request: Request,
+  env: Env,
+  workspace: { id: string },
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const leadId = url.searchParams.get('leadId')
+  const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200)
+
+  let query = `SELECT id, workspace_id, lead_id, approver_machine_id, decision, approved_at, draft_version, email_verification_grade, manual_exception_reason, risk_snapshot, created_at
+               FROM approvals WHERE workspace_id = ?`
+  const params: string[] = [workspace.id]
+
+  if (leadId) {
+    query += ` AND lead_id = ?`
+    params.push(leadId)
+  }
+
+  query += ` ORDER BY approved_at DESC LIMIT ?`
+  params.push(String(limit))
+
+  const result = await env.DB.prepare(query).bind(...params).all<{
+    id: string
+    workspace_id: string
+    lead_id: string
+    approver_machine_id: string
+    decision: string
+    approved_at: string
+    draft_version: number
+    email_verification_grade: string
+    manual_exception_reason: string | null
+    risk_snapshot: string | null
+    created_at: string
+  }>()
+
+  return jsonResponse({ success: true, data: { approvals: result.results, limit }, requestId })
+}
+
 // ── POST /outreach/queue — 将 approved lead 加入发送队列 ──
 async function handleQueueOutreach(request: Request, env: Env, workspace: { id: string }, requestId: string): Promise<Response> {
   const body = await parseJson<{
@@ -553,6 +756,10 @@ async function handleQueueOutreach(request: Request, env: Env, workspace: { id: 
     body: string
     scheduledAt?: string
     sequenceStage?: number
+    /* Phase 2.9：门禁 ⑦⑧ 所需的审批上下文（规范 §7.1 必需字段） */
+    draftVersion?: number
+    approvalId?: string
+    campaignId?: string
   }>(request)
   if (!body) {
     return errorResponse('VALIDATION_ERROR', 'Invalid JSON body', requestId)
@@ -587,6 +794,124 @@ async function handleQueueOutreach(request: Request, env: Env, workspace: { id: 
 
   if (lead.status !== 'approved' && lead.status !== 'queued') {
     return errorResponse('LEAD_NOT_APPROVED', `Lead must be approved to queue outreach (current: ${lead.status})`, requestId)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 云端二次门禁 ⑤⑥⑦⑧⑨ —— CLOUD-COLLABORATION-DELIVERY.md §8
+  //
+  // AGENTS.md 宪法第 5 条：「高分、分阶段任务或 cloud_send 功能永不授权投递。
+  // 审批 + 服务端二次门禁成功是强制前提。」本块是该宪法条款的落地。
+  //
+  // 顺序**不可调换**：
+  //   · ⑦ 审批校验必须在 ⑤⑥ 之后 —— 否则可用无效审批做撞单/抑制探测；
+  //   · ⑦ 必须在 ⑨ 之前 —— 否则会为无效请求消耗日配额。
+  //
+  // 开关：`APPROVAL_GATE_ENABLED`（默认关闭）。
+  // 必须等本地审批 UI 就绪后才能开启，否则用户无审批入口，投递会被永久拒绝。
+  // ═══════════════════════════════════════════════════════════════════
+  const gateEnabled = (env.APPROVAL_GATE_ENABLED ?? 'false') === 'true'
+
+  if (gateEnabled) {
+    // ── ⑤ 公司与联系人撞单、保护期校验 ──
+    const leadCompany = await env.DB.prepare(
+      `SELECT c.normalized_domain AS domain
+       FROM leads l JOIN companies c ON c.id = l.company_id
+       WHERE l.workspace_id = ? AND l.id = ?`,
+    ).bind(workspace.id, body.leadId).first<{ domain: string }>()
+
+    if (leadCompany?.domain) {
+      const company = await env.DB.prepare(
+        `SELECT owner_machine_id, protection_until FROM companies WHERE workspace_id = ? AND normalized_domain = ?`,
+      ).bind(workspace.id, leadCompany.domain).first<{ owner_machine_id: string | null; protection_until: string | null }>()
+
+      if (company?.owner_machine_id && company.protection_until && company.protection_until > nowUTC()) {
+        return errorResponse(
+          'COMPANY_CONFLICT',
+          `Domain ${leadCompany.domain} is claimed by another member during protection period`,
+          requestId,
+        )
+      }
+    }
+
+    // ── ⑥ 全局抑制检查（Fail-Closed，优先级最高）──
+    const recipient = await env.DB.prepare(
+      `SELECT c.normalized_email AS email
+       FROM leads l JOIN contacts c ON c.id = l.contact_id
+       WHERE l.workspace_id = ? AND l.id = ?`,
+    ).bind(workspace.id, body.leadId).first<{ email: string }>()
+
+    if (recipient?.email) {
+      const suppressed = await env.DB.prepare(
+        `SELECT id FROM suppressions WHERE normalized_email = ? AND (expires_at IS NULL OR expires_at > ?)`,
+      ).bind(recipient.email, nowUTC()).first()
+      if (suppressed) {
+        return errorResponse('SUPPRESSED', `Email ${recipient.email} is in global suppression list`, requestId)
+      }
+    }
+
+    // ── ⑦ 审批记录 + 审批人 + 草稿版本（宪法第 5 条核心）──
+    const approval = await env.DB.prepare(
+      `SELECT id, approver_machine_id, draft_version, email_verification_grade, manual_exception_reason
+       FROM approvals
+       WHERE workspace_id = ? AND lead_id = ? AND decision = 'approved'
+       ORDER BY approved_at DESC LIMIT 1`,
+    ).bind(workspace.id, body.leadId).first<{
+      id: string
+      approver_machine_id: string
+      draft_version: number
+      email_verification_grade: string
+      manual_exception_reason: string | null
+    }>()
+
+    if (!approval) {
+      return errorResponse(
+        'APPROVAL_REQUIRED',
+        'No approved approval record for this lead. Human approval is mandatory before delivery (AGENTS.md §5).',
+        requestId,
+      )
+    }
+
+    // 草稿版本必须**严格相等** —— 旧批准不得授权新草稿（规范 §6）
+    if (typeof body.draftVersion !== 'number' || approval.draft_version !== body.draftVersion) {
+      return errorResponse(
+        'DRAFT_VERSION_MISMATCH',
+        `Approved draft version ${approval.draft_version} does not match submitted ${body.draftVersion ?? '(missing)'}; re-approval required`,
+        requestId,
+      )
+    }
+
+    // ── ⑧ 邮箱等级与人工例外审计校验 ──
+    const LOW_GRADES = ['invalid', 'risky', 'unverified']
+    if (LOW_GRADES.includes(approval.email_verification_grade) && !approval.manual_exception_reason) {
+      return errorResponse(
+        'EMAIL_GRADE_INSUFFICIENT',
+        `Email grade "${approval.email_verification_grade}" requires a manual exception reason on the approval record`,
+        requestId,
+      )
+    }
+
+    // ── ⑨ 发信配额与熔断检查 ──
+    const quota = await env.DB.prepare(
+      `SELECT today_key, sent_today, circuit_open_until FROM delivery_quota WHERE workspace_id = ?`,
+    ).bind(workspace.id).first<{ today_key: string; sent_today: number; circuit_open_until: string | null }>()
+
+    if (quota?.circuit_open_until && quota.circuit_open_until > nowUTC()) {
+      return errorResponse(
+        'CIRCUIT_OPEN',
+        `Delivery circuit is open until ${quota.circuit_open_until}; please retry later`,
+        requestId,
+      )
+    }
+
+    const DAILY_SEND_LIMIT = 200
+    const todayKey = nowUTC().slice(0, 10)
+    if (quota && quota.today_key === todayKey && quota.sent_today >= DAILY_SEND_LIMIT) {
+      return errorResponse(
+        'QUOTA_EXCEEDED',
+        `Daily delivery quota (${DAILY_SEND_LIMIT}) reached; it resets at the next UTC day`,
+        requestId,
+      )
+    }
   }
 
   // Create outreach record
