@@ -342,6 +342,27 @@ export type FileExportPdfRequest = {
   exhibitionFootprints?: string[]
   decisionMakers?: Array<Record<string, unknown>>
   strategies?: Array<{ scenario: string; subject: string; body: string }>
+  /* ── 客户资料可信度（2026-10-09 新增）──────────────────────────────
+     用户诉求是「真实可靠的客户信息」，而非仅堆字段。
+     故白皮书需能回答：这条数据**从哪来、可不可信、什么时候取的**。
+     以下字段用于渲染「综合评分」「数据来源与可信度」两个区块。 */
+  /** 确定性匹配分（0-100），与列表一致 */
+  matchScore?: number
+  /** 机会分拆分（ICP 契合 / 意向 / 证据 / 风险扣分 / 终值） */
+  opportunityScore?: Record<string, unknown>
+  /** 数据来源类型（如 linkedin_search / google_maps / anysearch） */
+  dataSourceType?: string
+  /** 顶层联系人（企业通用联系口） */
+  contact?: string
+  contactTitle?: string
+  /** 顶层邮箱与电话（决策人之外的企业级联系方式） */
+  email?: string
+  phone?: string
+  industry?: string
+  /** 风险标记（如域名未验证、邮箱为 catch-all） */
+  riskFlags?: string[]
+  /** 证据摘要（命中原因 / 来源链接） */
+  evidence?: string
 }
 
 export type FileExportPdfData = {

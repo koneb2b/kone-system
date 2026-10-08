@@ -558,6 +558,15 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
         exhibitionFootprints: leadMeta.exhibitionFootprints,
         decisionMakers: leadMeta.decisionMakers as any,
         strategies,
+        /* 可信度与来源（2026-10-09）：白皮书需回答"数据从哪来、可不可信"。
+           注意：`leadMeta` 是分析抽屉用的精简类型，仅含以下字段
+           （完整 LeadItem 的 email/phone/riskFlags 等在此不可得，
+             白皮书对应区块会自动显示「—」，不臆造数据）。 */
+        matchScore: typeof leadMeta.matchScore === 'number' ? leadMeta.matchScore : undefined,
+        dataSourceType: leadMeta.source,
+        contact: leadMeta.contact,
+        contactTitle: leadMeta.contactTitle,
+        industry: leadMeta.industry,
       })
       if (result.canceled) return
       toast({
