@@ -16,6 +16,41 @@
 
 ---
 
+## 0. 部署进展（2026-10-08 已自动完成）
+
+以下步骤已由 AI 使用已登录的 Cloudflare 账号（`hek99481@gmail.com`）**自动执行完毕**：
+
+| # | 步骤 | 结果 |
+|---|---|---|
+| 0.1 | `wrangler d1 create kone-leads` | ✅ `fab350bd-1772-40ea-8095-7886bdee5024`（WNAM） |
+| 0.2 | 补入 `database_id` 到 `wrangler.toml` | ✅ 修复了配置缺口（此前缺失导致从未部署成功） |
+| 0.3 | `wrangler d1 migrations apply --remote` | ✅ 5 个 migration 全部应用（001–005） |
+| 0.4 | `wrangler deploy` | ✅ `https://kone-cloud.hek99481.workers.dev` |
+| 0.5 | 绑定校验 | ✅ D1 `kone-leads` / `SCHEMA_VERSION=1.0.0` / `APPROVAL_GATE_ENABLED=false` |
+| 0.6 | 流量校验 | ✅ Version `95de6db9…` 100% 流量 |
+
+### ⚠️ 阻塞项：`*.workers.dev` 在国内网络被 DNS 污染
+
+实测（2026-10-08）：
+
+```
+nslookup kone-cloud.hek99481.workers.dev
+→ 2a03:2880:f11c:8083:face:b00c:0:25de   （Meta/Facebook IPv6 段，非 Cloudflare）
+→ 211.104.160.39                          （韩国 IP，非 Cloudflare）
+curl https://kone-cloud.hek99481.workers.dev/healthz → 000
+```
+
+- 换用 `1.1.1.1`（超时）与 `8.8.8.8`（同样返回污染结果）**均无法绕过** → 属网络层拦截。
+- `wrangler dev --remote` 建立隧道也失败（`fetch failed`）。
+- **结论：国内网络环境必须绑定自定义域名**（如 `wrangler.toml` 中预留的
+  `outreach.kone-cloud.com`），`workers.dev` 默认域名不可用。
+  这与项目原本的设计方向一致，但此前未作为**硬约束**记录。
+
+> **因此本清单第 5 节的 HTTP 验证，需在绑定自定义域名后、或在可访问
+> `workers.dev` 的网络环境中执行。**
+
+---
+
 ## 1. 环境准备
 
 | # | 检查项 | 命令 / 操作 | 期望 | ✅ |
