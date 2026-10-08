@@ -460,18 +460,58 @@ export function LeadsTable({
               if (isExporting) return
               try {
                 setIsExporting(true)
+                // 导出列扩展：原为 8 列（公司/行业/匹配度/联系人/职位/邮箱/电话/网站），
+                // **完全不含决策人** —— 而"核心关键人"恰是触达闭环最关键的数据
+                // （WhatsApp 消费 phone、Email 消费 email，均取自决策人层级更准）。
+                // 现补齐：国家 / 邮箱等级 / 决策人（最多 3 位，逐字段展开）/ 数据来源。
+                // 决策人用固定槽位展开，保证 CSV 是规整的平面表（便于 Excel 透视/筛选）。
+                const DM_SLOTS = 3
+                const dmHeaders = Array.from({ length: DM_SLOTS }, (_, i) => [
+                  `决策人${i + 1}姓名`,
+                  `决策人${i + 1}职位`,
+                  `决策人${i + 1}邮箱`,
+                  `决策人${i + 1}邮箱等级`,
+                  `决策人${i + 1}电话`,
+                ]).flat()
+
                 const rows = [
-                  ['公司名称', '行业', '匹配度', '联系人', '职位', '邮箱', '电话', '网站'],
-                  ...displayLeads.map((lead) => [
-                    lead.company,
-                    lead.industry,
-                    formatMatchScoreForExport(lead.matchScore),
-                    lead.contact,
-                    lead.contactTitle,
-                    lead.email,
-                    lead.phone,
-                    lead.website || '',
-                  ]),
+                  [
+                    '公司名称',
+                    '行业',
+                    '国家',
+                    '匹配度',
+                    '联系人',
+                    '职位',
+                    '邮箱',
+                    '邮箱等级',
+                    '电话',
+                    '网站',
+                    ...dmHeaders,
+                    '数据来源',
+                  ],
+                  ...displayLeads.map((lead) => {
+                    const dms = lead.decisionMakers ?? []
+                    const dmCells = Array.from({ length: DM_SLOTS }, (_, i) => {
+                      const dm = dms[i]
+                      return dm ? [dm.name, dm.title, dm.email, dm.emailGrade ?? '', dm.phone] : ['', '', '', '', '']
+                    }).flat()
+
+                    return [
+                      lead.company,
+                      lead.industry,
+                      lead.country || '',
+                      formatMatchScoreForExport(lead.matchScore),
+                      lead.contact,
+                      lead.contactTitle,
+                      lead.email,
+                      // 顶层邮箱等级：取首个决策人的等级作为参考（无则留空）
+                      dms[0]?.emailGrade ?? '',
+                      lead.phone,
+                      lead.website || '',
+                      ...dmCells,
+                      lead.dataSourceType || '',
+                    ]
+                  }),
                 ]
                 const csvContent = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n')
                 const response = await saveExportFile({

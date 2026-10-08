@@ -58,6 +58,13 @@ const normalizeDecisionMakers = (raw?: unknown): DecisionMaker[] | undefined => 
     const rec = dm as Record<string, unknown>
     const name = String(rec.name || '').trim()
     if (!name) continue
+    // emailGrade / phoneValid 由采集层 `contact-validation.ts` 生成，
+    // 此前**未在此映射** → 两个字段在存入 leads-store 时被静默丢弃，
+    // 导致导出与 Agent 触达都拿不到"这个邮箱/电话可信吗"的判断依据。
+    // （`DecisionMaker` 类型本就包含这两项，属映射遗漏。）
+    const emailGrade = String(rec.emailGrade || '').trim()
+    const phoneValidRaw = rec.phoneValid
+
     sanitized.push({
       name,
       title: String(rec.title || '').trim() || '未知职位',
@@ -68,6 +75,8 @@ const normalizeDecisionMakers = (raw?: unknown): DecisionMaker[] | undefined => 
       confidenceScore: Number.isFinite(Number(rec.confidenceScore))
         ? Math.max(0, Math.min(100, Number(rec.confidenceScore)))
         : 0,
+      emailGrade: emailGrade || undefined,
+      phoneValid: typeof phoneValidRaw === 'boolean' ? phoneValidRaw : undefined,
     })
   }
   return sanitized.length > 0 ? sanitized : undefined
