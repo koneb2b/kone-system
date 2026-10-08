@@ -23,28 +23,13 @@ type VerifyDeps = {
   fetchImpl: typeof fetch
 }
 
-const BASIC_FEATURES = [
-  'search_basic',
-  'search_deep',
-  'analysis_basic',
-  'analysis_advanced',
-  'lead_export',
-  'local_autopilot',
-]
-/* 试用版能力集 —— **必须**与以下两处保持一致（授权分层 SSOT 三元组）：
-     1. `electron/services/license-service.ts` 的 `TRIAL_FEATURES`
-     2. `src/lib/feature-gate.ts` 的 `FEATURE_ALIASES.trial`
-   历史缺陷：本文件曾把 `trial` 与 `basic` 合并到同一分支，导致 Trial 获得
-   全部 BASIC_FEATURES（含 local_autopilot / search_deep / analysis_advanced），
+/* 能力集**不再在本文件手写** —— 统一由 `src/shared/license-features.ts` 提供（SSOT）。
+   历史缺陷：本文件曾是三份副本之一，`TRIAL_FEATURES` 修正后本处未同步，
+   导致 Trial 获得全部 BASIC 能力（含 local_autopilot），
    可绕过渲染层升级墙**直连 IPC 启动付费智能体**（商业泄漏）。
-   修复时只同步了上述 1、2 两处，遗漏本文件 → 主进程仍放行。
-   **今后修改任一处，必须同步全部三处。** */
-const TRIAL_FEATURES = ['search_basic', 'lead_export']
-// `export_full`（完整导出）属付费高级能力，Basic **不含**（与 feature-gate.ts 的
-// 「basic 仍无完整导出」注释一致）。此处显式列出而非仅依赖 BASIC_FEATURES 展开，
-// 避免上一步从 BASIC 移除 export_full 时连带把 Premium 的该能力也删掉（回归）。
-const PREMIUM_FEATURES = [...BASIC_FEATURES, 'export_full', 'cloud_send', 'team_collaboration']
-const ENTERPRISE_FEATURES = ['enterprise', ...PREMIUM_FEATURES]
+   收敛为单一 SSOT 后，此类漂移在结构上不再可能发生。
+   `npm run verify:license-gate` 会断言本文件确实引用 SSOT 而非自建副本。 */
+import { ENTERPRISE_FEATURES, getFeaturesForPlan } from '../../src/shared/license-features'
 const EXPORT_ROW_LIMIT = 100
 const DEV_MOCK_LICENSE_KEY = 'DEV-ENTERPRISE-UNLOCKED'
 
@@ -98,19 +83,13 @@ export const createLicenseGuard = (deps: GuardDeps) => {
     const plan = String(claims?.plan || '')
       .trim()
       .toLowerCase()
-    if (plan === 'enterprise') {
-      ENTERPRISE_FEATURES.forEach((feature) => normalized.add(feature))
-    } else if (plan === 'premium' || plan === 'pro') {
-      normalized.add('premium')
-      PREMIUM_FEATURES.forEach((feature) => normalized.add(feature))
-    } else if (plan === 'basic') {
-      normalized.add('basic')
-      BASIC_FEATURES.forEach((feature) => normalized.add(feature))
-    } else if (plan === 'trial') {
-      // Trial **不得**与 basic 合并：宪法与 kone-PRD §6.0 要求「Trial 仅展示升级引导」，
-      // 授权分层必须在**主进程**强制，绝不依赖渲染层门禁。
-      normalized.add('trial')
-      TRIAL_FEATURES.forEach((feature) => normalized.add(feature))
+    // 套餐 → 能力集映射统一走 SSOT 的 `getFeaturesForPlan`。
+    // 此前在本处手写 if/else 分支，曾把 `trial` 与 `basic` 合并，
+    // 使 Trial 获得全部 BASIC 能力（含 local_autopilot）→ 商业泄漏。
+    // 收敛后分支条件不再分散，`normalized.add(plan)` 仍保留以标记套餐本身。
+    if (plan) {
+      normalized.add(plan)
+      getFeaturesForPlan(plan).forEach((feature) => normalized.add(feature))
     }
 
     return normalized

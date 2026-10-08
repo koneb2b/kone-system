@@ -15,6 +15,24 @@ const repoRoot = path.join(__dirname, '..', '..')
 const gatePath = path.join(repoRoot, 'src', 'lib', 'feature-gate.ts')
 const realRequire = Module.createRequire(__filename)
 
+// 套餐能力集 SSOT（`src/shared/license-features.ts`）。
+// `realRequire` 基于**本测试文件**位置解析，故 feature-gate 里的相对路径
+// （`../shared/license-features`）会被错误解析到 tests/shared/。
+// 这里显式按仓库根加载**真实 SSOT**（转译后执行），
+// 而不是内联一份副本——否则测试会与真实能力集脱钩，失去回归防护意义。
+const loadSharedFeatures = () => {
+  const sharedPath = path.join(repoRoot, 'src', 'shared', 'license-features.ts')
+  const js = ts.transpileModule(fs.readFileSync(sharedPath, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    fileName: sharedPath,
+  }).outputText
+  const mod = { exports: {} }
+  const ctx = vm.createContext({ module: mod, exports: mod.exports, require: realRequire })
+  new vm.Script(js, { filename: sharedPath }).runInContext(ctx)
+  return mod.exports
+}
+const sharedFeatures = loadSharedFeatures()
+
 const loadGate = () => {
   // Vite 的 import.meta.env 在 CJS/vm 下非法 → 预处理为静态桩
   const source = fs
@@ -31,6 +49,8 @@ const loadGate = () => {
     require: (id) => {
       if (id === 'react') return { useEffect: () => {}, useMemo: (fn) => fn(), useState: (v) => [v, () => {}] }
       if (id === '@/lib/electron-api') return { getLicenseStatus: async () => null }
+      // 能力集 SSOT：按仓库根解析真实文件（realRequire 基于测试文件位置，相对路径会错）
+      if (id.endsWith('shared/license-features')) return sharedFeatures
       return realRequire(id)
     },
     __dirname: path.dirname(gatePath),
@@ -92,13 +112,54 @@ test('高级版：完整导出（maxRows null）', () => {
   assert.equal(exp.fullExport, true)
 })
 
-test('源码守护：license-service 的 TRIAL_FEATURES 不得含付费专属能力', () => {
-  const src = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'license-service.ts'), 'utf8')
-  const match = src.match(/const TRIAL_FEATURES = \[([\s\S]*?)\]/)
-  assert.ok(match, '未找到 TRIAL_FEATURES 定义')
+test('源码守护：SSOT 的 TRIAL_FEATURES 不得含付费专属能力', () => {
+  // 能力集已收敛到 `src/shared/license-features.ts`（单一事实源）。
+  // 守护目标随之迁移——不再扫描某个消费方，而是扫描 SSOT 本身。
+  const ssot = fs.readFileSync(path.join(repoRoot, 'src', 'shared', 'license-features.ts'), 'utf8')
+  const match = ssot.match(/export const TRIAL_FEATURES = \[([\s\S]*?)\]/)
+  assert.ok(match, '未找到 SSOT 的 TRIAL_FEATURES 定义')
   for (const forbidden of ['search_deep', 'analysis_basic', 'analysis_advanced', 'export_full', 'local_autopilot']) {
     assert.ok(!match[1].includes(`'${forbidden}'`), `TRIAL_FEATURES 不得含 ${forbidden}（商业泄漏/授权绕过）`)
   }
+})
+
+test('源码守护：能力集消费方必须引用 SSOT，不得再手写副本', () => {
+  // 这是"防漂移闭环"的核心断言。
+  // 历史缺陷：能力集曾有 **4 份手写副本**（license-service / feature-gate /
+  // license-guard 各一份，feature-gate 内还有第二份 ENTERPRISE_FEATURES），
+  // 修正一处后其余未同步 → Trial 拿到 local_autopilot 等付费能力（商业泄漏），
+  // 且渲染层与主进程对 basic 是否含 export_full 的判断互相矛盾。
+  // 收敛为 SSOT 后，本测试确保消费方**持续**引用它，而不是某天又抄回一份。
+  const consumers = [
+    'electron/services/license-service.ts',
+    'electron/security/license-guard.ts',
+    'src/lib/feature-gate.ts',
+  ]
+  for (const rel of consumers) {
+    const src = fs.readFileSync(path.join(repoRoot, rel), 'utf8')
+    assert.ok(
+      /from '[^']*shared\/license-features'/.test(src),
+      `${rel} 必须 import 能力集 SSOT（src/shared/license-features），不得手写副本`,
+    )
+    // 反向断言：不得再出现能力集字面量（防止"import 了但还是抄了一份"）
+    assert.ok(
+      !/const (TRIAL|BASIC|PREMIUM|ENTERPRISE)_FEATURES\s*(:\s*\w+\[\])?\s*=\s*\[/.test(src),
+      `${rel} 不得再定义 TRIAL/BASIC/PREMIUM/ENTERPRISE_FEATURES 字面量（应引用 SSOT）`,
+    )
+  }
+})
+
+test('源码守护：AGENT.LIST 必须与 AGENT.CONTROL 使用同一 feature 门禁', () => {
+  // 宪法：「Trial 必须熔断拦截，严禁渲染任何智能体卡片或**暴露运行指标**」。
+  // 历史缺陷：AGENT.CONTROL 有 registerSecureFeatureIpc(...,'local_autopilot')，
+  // 但 AGENT.LIST 无任何门禁 → 「用得了被拦、看得到没管」，
+  // Trial 可直连 IPC 读取全部智能体的 dailyLimit/status 等运行指标。
+  const src = fs.readFileSync(path.join(repoRoot, 'electron', 'services', 'agent-service.ts'), 'utf8')
+  assert.ok(
+    /AGENT\.LIST[\s\S]{0,500}?requireFeature\('local_autopilot'/.test(src),
+    "AGENT.LIST 必须带 requireFeature('local_autopilot') 门禁（与 AGENT.CONTROL 一致）",
+  )
+  assert.ok(/AGENT\.CONTROL[\s\S]{0,300}?'local_autopilot'/.test(src), "AGENT.CONTROL 必须带 'local_autopilot' 门禁")
 })
 
 test('源码守护：EXPORT_PDF 门禁不得为付费专属（其处理器含 isTrial 配额，即 §零.3 的 3 次 PLG 钩子）', () => {

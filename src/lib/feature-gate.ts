@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getLicenseStatus } from '@/lib/electron-api'
+// 套餐能力集 SSOT —— 渲染层与主进程共用同一份定义，杜绝副本漂移。
+// 注：此处用**相对路径**而非 `@/` 别名。本文件会被
+// `tests/business-logic/feature-gate-tier.business.test.js` 用 Node 直接加载
+// （vm + 自定义 require，仅 mock 了 react 与 @/lib/electron-api），
+// 而 Node 不解析 tsconfig 的路径别名。改用相对路径后测试可直接解析。
+import { TRIAL_FEATURES, BASIC_FEATURES, PREMIUM_FEATURES, ENTERPRISE_FEATURES } from '../shared/license-features'
 
 export type FeatureKey =
   | 'search_basic'
@@ -21,17 +27,9 @@ type LicenseStatusLike = {
   plan?: string
 }
 
-const ENTERPRISE_FEATURES: FeatureKey[] = [
-  'search_basic',
-  'search_deep',
-  'lead_export',
-  'export_full',
-  'analysis_basic',
-  'analysis_advanced',
-  'local_autopilot',
-  'cloud_send',
-  'team_collaboration',
-]
+// 此处原有一份 `ENTERPRISE_FEATURES` 局部副本（供下方 DEV fallback 使用）——
+// 已删除，统一使用 `@/shared/license-features` 的 SSOT。
+// 副本的存在正是"能力集漂移"的温床：本文件曾是四份副本之一。
 
 const DEV_ENTERPRISE_FALLBACK: LicenseStatusLike = {
   status: 'active',
@@ -89,36 +87,14 @@ const FEATURE_ALIASES: Record<string, string[]> = {
   search: ['search_basic'],
   analysis: ['analysis_basic'],
   export: ['lead_export'],
-  /* 试用版能力集（对齐 README「版本能力对照」试用列 + kone-PRD §5.1.2 套餐边界）：
-     仅本地搜索与 ICP 评分（受 10 条/次、15 秒间隔限制）、本地 CSV 导出（限 100 行）。
-     **不得**含 search_deep / analysis_basic / analysis_advanced / export_full——否则
-     `getSearchLimit`/`getExportLimit` 的试用限额分支永不触发，试用用户将获得与付费版
-     等同的完整能力（商业泄漏）。 */
-  trial: ['search_basic', 'lead_export'],
-  /* basic = 付费基础版：解除搜索限额、开放 AI 分析；仍无完整导出与云端能力 */
-  basic: ['search_basic', 'search_deep', 'analysis_basic', 'analysis_advanced', 'lead_export', 'local_autopilot'],
-  premium: [
-    'search_basic',
-    'search_deep',
-    'analysis_basic',
-    'analysis_advanced',
-    'lead_export',
-    'export_full',
-    'local_autopilot',
-    'cloud_send',
-    'team_collaboration',
-  ],
-  enterprise: [
-    'search_basic',
-    'search_deep',
-    'analysis_basic',
-    'analysis_advanced',
-    'lead_export',
-    'export_full',
-    'local_autopilot',
-    'cloud_send',
-    'team_collaboration',
-  ],
+  /* 套餐能力集**不再在本文件手写** —— 统一取自 `src/shared/license-features.ts`（SSOT）。
+     历史缺陷：本文件曾是三份副本之一，与主进程 `license-guard.ts` 出现漂移
+     （本处认为 basic 无完整导出，主进程却给了 export_full）。
+     收敛为单一 SSOT 后，渲染层与主进程的能力集在结构上不可能再不一致。 */
+  trial: [...TRIAL_FEATURES],
+  basic: [...BASIC_FEATURES],
+  premium: [...PREMIUM_FEATURES],
+  enterprise: [...ENTERPRISE_FEATURES],
 }
 
 let cachedStatus: LicenseStatusLike | null = null
