@@ -3,6 +3,18 @@ main = "src/worker.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# ── Custom Domain（2026-10-08 新增）──
+# 为什么必须绑自定义域名：`*.workers.dev` 在国内网络被 DNS 污染
+# （实测解析到 Meta IP 段 2a03:2880:... ，curl 返回 000），国内客户端无法连接。
+# 绑定账号自有域名下的子域名可绕开该问题：aigctohuman.com 已由 Cloudflare 托管，
+# 实测解析到真实 Cloudflare IP（104.21.38.188 / 172.67.137.95），未被污染。
+# custom_domain = true → wrangler deploy 自动创建 DNS 记录并绑定。
+# ⚠️ TOML 语法：顶层键必须位于任何 [table] / [[array-of-tables]] 之前，
+#    否则会被解析进上一个表（曾因此报 `Unexpected fields found in d1_databases[0]: "routes"`）。
+routes = [
+  { pattern = "kone-cloud.aigctohuman.com", custom_domain = true }
+]
+
 # ── Non-secret variables (safe to commit) ──
 [vars]
 SCHEMA_VERSION = "1.0.0"

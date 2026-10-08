@@ -65,6 +65,47 @@ Webhook 用于接收「送达 / 退信 / 投诉 / 回复」回执。配置步骤
 > 说明：Resend 服务器从**海外**回调本 Worker，**不受国内 DNS 污染影响**，
 > 因此用 `workers.dev` 地址也能收到回执；但本机无法直接访问该地址验证。
 
+### 0.9 ✅ 自定义域名绑定 —— 国内可直连（关键突破）
+
+**问题**：`*.workers.dev` 在国内被 DNS 污染，客户端无法连接。
+
+**解决**：绑定账号自有域名 `aigctohuman.com` 的子域名。
+该域名已由 Cloudflare 托管，实测解析到**真实 Cloudflare IP**
+（`104.21.38.188` / `172.67.137.95`），**未被污染**。
+
+```toml
+# wrangler.toml 顶层（必须在任何 [table] 之前，否则被解析进上个表）
+routes = [
+  { pattern = "kone-cloud.aigctohuman.com", custom_domain = true }
+]
+```
+
+**验证结果**：
+```
+GET https://kone-cloud.aigctohuman.com/healthz
+→ {"success":true,"data":{"status":"ok","schemaVersion":"1.0.0"}}  HTTP 200 ✅
+```
+
+> 踩坑记录：首次部署报
+> `Unexpected fields found in d1_databases[0] field: "routes"` ——
+> TOML 中表头之后的所有键都归属该表，`routes` 必须放在**顶层**（所有 `[[...]]` 之前）。
+
+### 0.10 ✅ 工作区与 API Token 已创建
+
+| 项 | 值 |
+|---|---|
+| 工作区 ID | `ws_kone_1791469852` |
+| Worker URL（客户端配置用） | `https://kone-cloud.aigctohuman.com` |
+| API Token | 见交付私密渠道（**不写入仓库**） |
+
+**鉴权验证**：
+```
+GET /v1/dashboard/stats  (Bearer <token>)
+→ {"success":true,"data":{"leads":{...},"outreach":{...},"syncVersion":0}}  HTTP 200 ✅
+```
+→ 同时印证了 [1.3.14] 修复的 P0-1：`dashboardStats` 返回字段确为 camelCase
+（`pendingApproval` / `syncVersion`），前端可直接消费。
+
 ### ⚠️ 阻塞项：`*.workers.dev` 在国内网络被 DNS 污染
 
 实测（2026-10-08）：
