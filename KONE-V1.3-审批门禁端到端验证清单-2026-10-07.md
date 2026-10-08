@@ -106,6 +106,28 @@ GET /v1/dashboard/stats  (Bearer <token>)
 → 同时印证了 [1.3.14] 修复的 P0-1：`dashboardStats` 返回字段确为 camelCase
 （`pendingApproval` / `syncVersion`），前端可直接消费。
 
+### 0.11 ✅ 端到端链路真实验证通过（2026-10-08）
+
+在**真实云端环境**（`kone-cloud.aigctohuman.com`）跑通完整链路：
+
+| 步骤 | 请求 | 结果 |
+|---|---|---|
+| 1 | `POST /v1/leads` | ✅ `{"id":"id_1a11bfba725_…","status":"scored","approvalRequired":true}` |
+| 2 | `POST /v1/approvals` | ✅ `{"approvalId":"id_1a11bfbe8eb_…","status":"approved"}` |
+| 3 | `POST /v1/outreach/queue` | ✅ `{"status":"pending","queued":true}` |
+| 4 | `GET /v1/dashboard/stats` | ✅ `leads.total=1, leads.queued=1, outreach.total=1, outreach.pending=1, syncVersion=3` |
+
+**验证意义**：
+1. **审批链路（[1.4.0] 新增）在真实环境可用** —— 审批 API 写入成功并正确回写 lead 状态。
+2. **`approvalRequired: true`** 说明云端在创建线索时就正确提示"需要审批"。
+3. **`syncVersion: 3`** 精确对应三次变更（创建 / 审批 / 入队），证明 sync token 机制正常。
+4. **看板统计口径正确** —— 印证 [1.3.14] 修复的 P0-1（字段映射）真实生效。
+
+### 0.12 ✅ Secrets 三项齐全
+`CRON_SECRET` / `RESEND_API_KEY` / `RESEND_WEBHOOK_SECRET` 均已配置
+（第三项因 wrangler `fetch failed`，改用 **Cloudflare API 直接 PUT** 成功——
+记录该备用路径：`PUT /accounts/{id}/workers/scripts/{name}/secrets`）。
+
 ### ⚠️ 阻塞项：`*.workers.dev` 在国内网络被 DNS 污染
 
 实测（2026-10-08）：
