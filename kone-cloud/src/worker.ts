@@ -23,6 +23,14 @@ export interface Env {
    * 所有投递会被门禁 ⑦ 永久拒绝（APPROVAL_REQUIRED）。
    */
   APPROVAL_GATE_ENABLED?: string
+  /**
+   * 发信域名（如 `aigctohuman.com`）。用于构造 from 地址：
+   * `Kone AI <noreply@${SENDER_DOMAIN}>`。
+   * 必须在 Resend 完成域名验证，否则投递会被拒（域名未验证）。
+   * 未设置时回落为占位符 `kone.example`（该域名不存在，投递必然失败）——
+   * 这是**有意的显式失败**，避免用未验证域名静默发信。
+   */
+  SENDER_DOMAIN?: string
 }
 
 // ── Phase 2 · Webhook signature verification (Svix / Resend) ──
@@ -1165,7 +1173,11 @@ async function handleCronSend(request: Request, env: Env, requestId: string): Pr
     try {
       const resendData = await sendEmailViaResend(
         {
-          from: 'Kone AI <noreply@kone.example>',
+          // 发信地址必须用已在 Resend 验证的自有域名（SENDER_DOMAIN）。
+          // 此前硬编码占位符 `kone.example`（该域名不存在）→ 投递必然被拒，
+          // 导致「配置了 SENDER_DOMAIN 却毫无作用」（同类"预留未接"缺陷第 4 次）。
+          // 未配置时回落占位符 → 显式失败，避免用未验证域名静默发信。
+          from: `Kone AI <noreply@${env.SENDER_DOMAIN ?? 'kone.example'}>`,
           to: [outreach.recipient_email],
           subject: outreach.subject,
           html: outreach.body,
