@@ -245,10 +245,12 @@ export const getDashboardStats = async (store: ConfigStore): Promise<DashboardSt
 export const testConnection = async (
   store: ConfigStore,
 ): Promise<{ ok: boolean; message: string; latencyMs: number }> => {
-  const config = getCloudflareConfig(store)
-
   const started = Date.now()
   try {
+    // 配置校验移入 try 内：getCloudflareConfig 在配置缺失时会抛错，
+    // 此前位于 try 之外 → 异常穿透，调用方拿不到结构化错误信息。
+    const config = getCloudflareConfig(store)
+
     // 1. Health check (no auth)
     const health = await fetchWithTimeout(`${config.url}/healthz`, { method: 'GET' })
     if (!health.ok) {
@@ -256,13 +258,23 @@ export const testConnection = async (
     }
 
     // 2. Authenticated dashboard (validates API key)
-    await fetchWithTimeout(`${config.url}/v1/dashboard/stats`, {
+    const authed = await fetchWithTimeout(`${config.url}/v1/dashboard/stats`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'X-Schema-Version': CLOUDFLARE_SCHEMA_VERSION,
       },
     })
+
+    // 此前未检查响应状态 → API Key 错误（401/403）也会返回 ok:true，
+    // 造成"显示连接成功但实际不可用"的假阳性。现按状态码给出可行动提示。
+    if (!authed.ok) {
+      const hint =
+        authed.status === 401 || authed.status === 403
+          ? 'API Key 无效或权限不足，请核对 Worker API Token'
+          : `鉴权请求失败（HTTP ${authed.status}）`
+      return { ok: false, message: hint, latencyMs: Date.now() - started }
+    }
 
     return { ok: true, message: 'Cloudflare 云端引擎连通正常', latencyMs: Date.now() - started }
   } catch (error: unknown) {
@@ -803,7 +815,22 @@ export const registerCloudflareHandlers = (ipcMain: Electron.IpcMain, store: Con
       requestRule: { type: 'any' },
       responseRule: { type: 'any' },
     },
-    async () => ({ success: true, data: await testConnection(store) }),
+    async () => {
+      // 与其他 handler 保持一致：捕获异常并返回结构化错误。
+      // 此前无 try/catch，而 testConnection 内部的 getCloudflareConfig 位于其 try 之外，
+      // 配置缺失时会抛出异常穿透到 IPC 层（前端只能看到 "[object Object]"）。
+      try {
+        return { success: true, data: await testConnection(store) }
+      } catch (err) {
+        return {
+          success: false,
+          error: {
+            code: 'TEST_CONNECTION_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
+    },
   )
 
   // [V1.3.8] cloud:cloudflare-dashboard-stats — 云端触达看板聚合统计

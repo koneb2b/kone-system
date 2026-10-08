@@ -102,7 +102,19 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: str
 
 export const unwrapIpc = <T>(response: IpcResponse<T> | undefined | null, fallbackMessage = 'IPC 调用失败'): T => {
   if (!response?.success) {
-    throw new ElectronApiError(response?.error || fallbackMessage, response?.code, { meta: response?.meta })
+    // 兼容两种 error 形态：
+    //   1) 契约声明的 `error?: string`
+    //   2) 部分 service（如 cloudflare-service）实际返回 `error: { code, message }`
+    // 若不兼容处理，对象会被塞进 Error.message → 界面显示 "[object Object]"，
+    // 用户看不到真实失败原因（曾导致云端连接失败时无法排障）。
+    const raw = response?.error as unknown
+    const message =
+      typeof raw === 'string'
+        ? raw
+        : raw && typeof raw === 'object' && typeof (raw as { message?: unknown }).message === 'string'
+          ? (raw as { message: string }).message
+          : fallbackMessage
+    throw new ElectronApiError(message, response?.code, { meta: response?.meta })
   }
   return response.data as T
 }
