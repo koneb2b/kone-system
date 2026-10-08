@@ -128,6 +128,47 @@ GET /v1/dashboard/stats  (Bearer <token>)
 （第三项因 wrangler `fetch failed`，改用 **Cloudflare API 直接 PUT** 成功——
 记录该备用路径：`PUT /accounts/{id}/workers/scripts/{name}/secrets`）。
 
+### 0.13 ✅ 真实投递 + Webhook 回执全链路打通（2026-10-08）
+
+**投递**（修复 `SENDER_DOMAIN` 硬编码缺陷后）：
+```
+POST /cron/send → {"sentCount":2,"failedCount":0,"resent":[...],"failed":[]}
+```
+
+**回执**（重建 webhook 并更新签名密钥后）：
+```
+webhook_events 收到真实事件：email.delivered @ 2026-10-08T15:33:41.259Z
+outreach.delivered_at 已正确回写：2026-10-08T15:33:41.259Z
+```
+
+**至此完整链路全部在真实环境验证通过**：
+```
+创建线索 → 人工审批 → 云端门禁 → 入队 → 真实发信 → 送达回执 → 状态回写
+   ✅        ✅         ✅        ✅      ✅         ✅         ✅
+```
+
+### 排障记录：Webhook 密钥不匹配
+
+**现象**：Resend 面板显示 120 件事件，但 `webhook_events` 表为空。
+
+**排查过程**（逐环验证，确认代码无问题）：
+| 检查项 | 结果 |
+|---|---|
+| `rawBody = await request.text()`（原始字节） | ✅ |
+| Header 名 `svix-id` / `svix-timestamp` / `svix-signature` | ✅ |
+| 签名格式解析（`v1,<base64>` 逗号分隔） | ✅ |
+| `parseSvixSecret`（去 `whsec_` + base64 解码） | ✅ |
+| 时间容差 ±300 秒 | ✅ |
+| 手工用密钥签名测试 | ✅ 200 通过 |
+
+→ **结论：代码正确，是密钥不匹配**（Resend 每次 401 后自动重试，累计 120 件）。
+
+**修复**：重建 webhook endpoint，使用新签名密钥，立即恢复正常。
+
+> 教训：手工用"自己的算法"生成签名做测试属于**循环验证**，
+> 只能证明代码自洽，**不能证明与第三方的签名一致**。
+> 真正的验证必须用**对方发来的真实请求**。
+
 ### ⚠️ 阻塞项：`*.workers.dev` 在国内网络被 DNS 污染
 
 实测（2026-10-08）：
