@@ -29,10 +29,21 @@ const BASIC_FEATURES = [
   'analysis_basic',
   'analysis_advanced',
   'lead_export',
-  'export_full',
   'local_autopilot',
 ]
-const PREMIUM_FEATURES = [...BASIC_FEATURES, 'cloud_send', 'team_collaboration']
+/* 试用版能力集 —— **必须**与以下两处保持一致（授权分层 SSOT 三元组）：
+     1. `electron/services/license-service.ts` 的 `TRIAL_FEATURES`
+     2. `src/lib/feature-gate.ts` 的 `FEATURE_ALIASES.trial`
+   历史缺陷：本文件曾把 `trial` 与 `basic` 合并到同一分支，导致 Trial 获得
+   全部 BASIC_FEATURES（含 local_autopilot / search_deep / analysis_advanced），
+   可绕过渲染层升级墙**直连 IPC 启动付费智能体**（商业泄漏）。
+   修复时只同步了上述 1、2 两处，遗漏本文件 → 主进程仍放行。
+   **今后修改任一处，必须同步全部三处。** */
+const TRIAL_FEATURES = ['search_basic', 'lead_export']
+// `export_full`（完整导出）属付费高级能力，Basic **不含**（与 feature-gate.ts 的
+// 「basic 仍无完整导出」注释一致）。此处显式列出而非仅依赖 BASIC_FEATURES 展开，
+// 避免上一步从 BASIC 移除 export_full 时连带把 Premium 的该能力也删掉（回归）。
+const PREMIUM_FEATURES = [...BASIC_FEATURES, 'export_full', 'cloud_send', 'team_collaboration']
 const ENTERPRISE_FEATURES = ['enterprise', ...PREMIUM_FEATURES]
 const EXPORT_ROW_LIMIT = 100
 const DEV_MOCK_LICENSE_KEY = 'DEV-ENTERPRISE-UNLOCKED'
@@ -92,9 +103,14 @@ export const createLicenseGuard = (deps: GuardDeps) => {
     } else if (plan === 'premium' || plan === 'pro') {
       normalized.add('premium')
       PREMIUM_FEATURES.forEach((feature) => normalized.add(feature))
-    } else if (plan === 'basic' || plan === 'trial') {
-      normalized.add(plan)
+    } else if (plan === 'basic') {
+      normalized.add('basic')
       BASIC_FEATURES.forEach((feature) => normalized.add(feature))
+    } else if (plan === 'trial') {
+      // Trial **不得**与 basic 合并：宪法与 kone-PRD §6.0 要求「Trial 仅展示升级引导」，
+      // 授权分层必须在**主进程**强制，绝不依赖渲染层门禁。
+      normalized.add('trial')
+      TRIAL_FEATURES.forEach((feature) => normalized.add(feature))
     }
 
     return normalized

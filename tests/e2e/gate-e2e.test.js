@@ -110,13 +110,14 @@ test('G3-L1: Trial user AGENT.LIST returns agents with trial-level limits', asyn
   const store = createStoreMock({})
   registerAgentHandlers(ipcMain, store)
 
+  // 宪法：Trial 必须熔断拦截，严禁暴露任何智能体或其运行指标（dailyLimit 等）。
+  // 授权分层须在**主进程**强制，绝不依赖渲染层门禁。
+  // 历史缺陷：license-guard 曾把 trial 与 basic 合并分支，Trial 因此拿到
+  // local_autopilot，可直连 IPC 读取全部智能体指标（商业泄漏）。
   const result = await ipcMain.getHandler(IPC_CHANNELS.AGENT.LIST)(createEventMock())
-  assert.equal(result.success, true, `Expected success, got: ${JSON.stringify(result)}`)
-  assert.ok(result.data?.agents, `Expected data.agents, got: ${JSON.stringify(result.data)}`)
-  const wp = result.data.agents.find((a) => a.agentType === 'whatsapp')
-  assert.ok(wp, 'whatsapp agent not found in list')
-  // Trial limit for whatsapp = 3
-  assert.equal(wp.dailyLimit, 3, `whatsapp trial dailyLimit should be 3, got ${wp.dailyLimit}`)
+  assert.equal(result.success, false, `Trial 调用 AGENT.LIST 必须 Fail-Closed，got: ${JSON.stringify(result)}`)
+  assert.equal(result.code, 403, `Trial 无 local_autopilot → 403，got ${result.code}`)
+  assert.ok(!result.data?.agents, 'Trial 不得获取任何智能体数据（宪法：Trial 仅展示升级引导）')
 })
 
 // ─────────────────────────────────────────────────────
@@ -344,38 +345,29 @@ test('G7-AFC: AGENT.CONTROL enforces daily limits (trial = 3/day)', async () => 
   const store = createStoreMock({})
   registerAgentHandlers(ipcMain, store)
 
-  // First, verify agent list shows trial limits
+  // 宪法约束（AGENTS.md「本地 Autopilot 伴随巡航运行规范」）：
+  //   「Trial 用户访问 /agents 路由时，必须熔断拦截，严禁渲染任何智能体卡片
+  //     或**暴露运行指标**」+ kone-PRD §6.0「Trial 仅展示升级引导」。
+  // 授权分层必须在**主进程**强制，绝不依赖渲染层门禁。
+  //
+  // 因此 Trial 调用 AGENT.LIST / AGENT.CONTROL 均须 Fail-Closed 返回 403。
+  // （历史缺陷：license-guard 曾把 trial 与 basic 合并分支 → Trial 拿到
+  //   全部 BASIC_FEATURES（含 local_autopilot），可绕过渲染层直连 IPC。）
   const listResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.LIST)({ sender: { send() {} } })
-  assert.equal(listResult.success, true)
-  const wp = listResult.data.agents.find((a) => a.agentType === 'whatsapp')
-  assert.ok(wp, 'whatsapp agent not found')
-  assert.equal(wp.dailyLimit, 3, 'Trial whatsapp dailyLimit must be 3')
+  assert.equal(listResult.success, false, 'Trial 调用 AGENT.LIST 必须失败（Trial 仅展示升级引导）')
+  assert.equal(listResult.code, 403, 'Trial 无 local_autopilot → 403 Fail-Closed')
 
-  // AGENT.CONTROL with invalid action must return 400
-  const invalidResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)(
+  const controlResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)(
     {
       sender: { send() {} },
     },
     {
       agentId: 'agent-whatsapp',
-      action: 'invalid',
-    },
-  )
-  assert.equal(invalidResult.success, false, 'Invalid action must fail')
-  assert.equal(invalidResult.code, 400, 'Invalid action must return 400')
-
-  // AGENT.CONTROL with non-existent agent must return 404
-  const missingResult = await ipcMain.getHandler(IPC_CHANNELS.AGENT.CONTROL)(
-    {
-      sender: { send() {} },
-    },
-    {
-      agentId: 'agent-nonexistent',
       action: 'start',
     },
   )
-  assert.equal(missingResult.success, false, 'Non-existent agent must fail')
-  assert.equal(missingResult.code, 404, 'Non-existent agent must return 404')
+  assert.equal(controlResult.success, false, 'Trial 调用 AGENT.CONTROL 必须失败')
+  assert.equal(controlResult.code, 403, 'Trial 无 local_autopilot → 403 Fail-Closed')
 })
 
 // ─────────────────────────────────────────────────────

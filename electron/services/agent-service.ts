@@ -1162,15 +1162,24 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
 
   registerIpc(IPC_CHANNELS.AGENT.LIST, agentListContract, async (_event) => {
     try {
+      // 宪法约束：「Trial 用户必须熔断拦截，严禁渲染任何智能体卡片或**暴露运行指标**」。
+      // 此前本通道无 feature 门禁 → Trial 可绕过渲染层升级墙、直连 IPC 读取全部
+      // 智能体及其 dailyLimit/status 等运行指标。与 AGENT.CONTROL 使用同一 feature 键，
+      // 保证「看得到」与「用得了」的授权边界一致。
+      // requireFeature 在无权时抛 403（下方 catch 转为结构化错误）。
+      licenseGuard.requireFeature('local_autopilot', '查看 AI 销售团队')
+
       const claims = licenseGuard.getStoredClaims?.()
       applyLicenseLimits(claims, store)
       const entries = Array.from(agents.values())
       return { success: true, data: { agents: entries } }
     } catch (error) {
+      // 授权拒绝（403）需原样透传，便于前端区分「无权限」与「服务端故障」
+      const guardCode = (error as { code?: number } | null)?.code
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to list agents',
-        code: 500,
+        code: guardCode === 403 ? 403 : 500,
       }
     }
   })
