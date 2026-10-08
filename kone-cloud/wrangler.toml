@@ -20,6 +20,10 @@ APPROVAL_GATE_ENABLED = "false"
 [[d1_databases]]
 binding = "DB"
 database_name = "kone-leads"
+# [V1.4.3] 2026-10-08 补入。此前缺失本字段，导致 wrangler 无法解析配置
+# （`d1_databases[0] bindings must have a "database_id" field`），
+# 即云端从未真正部署过。由 `wrangler d1 create kone-leads` 生成。
+database_id = "fab350bd-1772-40ea-8095-7886bdee5024"
 
 # ── Queue Binding (Phase 2: outreach delivery) ──
 # [[queues.producers]]
