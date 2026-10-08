@@ -542,7 +542,7 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
   }
 
   const handleExportPdf = async () => {
-    if (!leadMeta || pdfExporting) return
+    if (!leadMeta || !lead || pdfExporting) return
     setPdfExporting(true)
     try {
       const strategies = Object.entries(strategyData).map(([key, data]) => ({
@@ -559,14 +559,20 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
         decisionMakers: leadMeta.decisionMakers as any,
         strategies,
         /* 可信度与来源（2026-10-09）：白皮书需回答"数据从哪来、可不可信"。
-           注意：`leadMeta` 是分析抽屉用的精简类型，仅含以下字段
-           （完整 LeadItem 的 email/phone/riskFlags 等在此不可得，
-             白皮书对应区块会自动显示「—」，不臆造数据）。 */
-        matchScore: typeof leadMeta.matchScore === 'number' ? leadMeta.matchScore : undefined,
-        dataSourceType: leadMeta.source,
-        contact: leadMeta.contact,
-        contactTitle: leadMeta.contactTitle,
-        industry: leadMeta.industry,
+           此处直接用**完整 `lead`（LeadItem）**而非 `leadMeta` ——
+           `leadMeta` 只是它的精简派生，不含 email / phone / riskFlags /
+           opportunityScore，用它会导致白皮书对应区块全是「—」。
+           完整 lead 就在本组件作用域内，无需额外取数。 */
+        matchScore: typeof lead.matchScore === 'number' ? lead.matchScore : undefined,
+        opportunityScore: lead.opportunityScore as any,
+        dataSourceType: lead.dataSourceType || lead.source,
+        contact: lead.contact,
+        contactTitle: lead.contactTitle,
+        email: lead.email,
+        phone: lead.phone,
+        industry: lead.industry,
+        riskFlags: lead.riskFlags,
+        evidence: lead.snippet,
       })
       if (result.canceled) return
       toast({
