@@ -9,7 +9,7 @@
 
 import { IPC_CHANNELS } from '../ipc/channels'
 import { registerIpc, registry } from '../ipc/registry'
-import { pollOutreachStatus, isCloudflareConfigured } from './cloudflare-service'
+import { pollOutreachStatus, isCloudflareConfigured, testConnection } from './cloudflare-service'
 import type { ConfigStore } from './config-service'
 import type { AgentStatus } from '../../src/shared/ipc-contracts'
 
@@ -195,8 +195,23 @@ export const registerOutreachSyncHandlers = (
         const result = await syncOutreachStatus(store, getWindow())
         return { success: true, data: result }
       }
-      // 否则走原有的测试连接逻辑（由 cloudflare-service 注册）
-      return { success: false, error: { code: 'INVALID_ACTION', message: 'Unknown action' } }
+      // 非 sync action → 走「测试连接」逻辑。
+      //
+      // 此前此处直接返回 `Unknown action`，但注释写的是"走原有的测试连接逻辑"——
+      // 注释与实现不符。由于本 handler 后注册、覆盖了 cloudflare-service 注册的同名通道，
+      // 导致设置页「测试连接」**永远失败并返回 Unknown action**。
+      // 现改为真实转发，与注释一致。
+      try {
+        return { success: true, data: await testConnection(store) }
+      } catch (err) {
+        return {
+          success: false,
+          error: {
+            code: 'TEST_CONNECTION_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
     },
   )
 
