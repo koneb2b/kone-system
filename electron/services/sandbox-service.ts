@@ -53,7 +53,7 @@ const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item
   await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
 }
 
-const performHealthCheck = async (entry: AccountEntry) => {
+const performHealthCheck = async (entry: AccountEntry, store: ConfigStore) => {
   try {
     const partition = getSessionPartition(entry.accountId)
     const ses = session.fromPartition(partition)
@@ -89,7 +89,26 @@ const performHealthCheck = async (entry: AccountEntry) => {
         entry.errorMessage = 'WhatsApp Web 会话未建立'
       }
     } else {
-      entry.status = 'connected'
+      // 邮箱账号（email_smtp / email_imap）没有浏览器会话可查，
+      // 退而校验 `user_config` 中的主机配置是否已填写（Fail-Closed）。
+      //
+      // 此前**无条件置 'connected'** —— 只要注册过账号条目就显示"已连接"，
+      // 即便 SMTP/IMAP 从未配置，账号列表也给出虚假的"已连接"信号，
+      // 与宪法「不得假成功」的要求相悖。
+      // 注：此处只校验配置**存在性**；真实连通性由「测试连接」与
+      // Email Agent 执行前的 DNS 健康检查（email-agent.ts）负责。
+      const cfg = (store.get('user_config') ?? {}) as { smtpHost?: string; imapHost?: string }
+      const host = entry.accountType === 'email_smtp' ? cfg.smtpHost : cfg.imapHost
+      if (String(host ?? '').trim()) {
+        entry.status = 'connected'
+        entry.errorMessage = undefined
+      } else {
+        entry.status = 'disconnected'
+        entry.errorMessage =
+          entry.accountType === 'email_smtp'
+            ? '未配置 SMTP 主机，请在「邮箱」设置中补全后重试'
+            : '未配置 IMAP 主机，请在「邮箱」设置中补全后重试'
+      }
     }
 
     entry.lastCheckedAt = new Date().toISOString()
@@ -115,7 +134,7 @@ const broadcastStatusUpdate = (sender: Electron.WebContents, updated: AccountEnt
   })
 }
 
-const startHealthCheckPoller = (sender: Electron.WebContents) => {
+const startHealthCheckPoller = (sender: Electron.WebContents, store: ConfigStore) => {
   if (healthCheckTimer) return
 
   healthCheckTimer = setInterval(async () => {
@@ -133,7 +152,7 @@ const startHealthCheckPoller = (sender: Electron.WebContents) => {
       }
 
       await runLimitedConcurrency(entries, MAX_CONCURRENT_HEALTH_CHECKS, async (entry) => {
-        const updated = await performHealthCheck(entry)
+        const updated = await performHealthCheck(entry, store)
         accounts.set(updated.accountId, updated)
         if (!sender.isDestroyed()) {
           broadcastStatusUpdate(sender, updated)
@@ -230,15 +249,22 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
         accountType,
         label: String(p.label || '').trim() || `${accountType} 账号`,
         email: p.credentials?.email || undefined,
-        status: 'connected',
+        // 初始状态**不谎报** connected：先置 disconnected，紧接着做一次真实健康检查
+        // 并以检查结果覆盖。此前无条件置 'connected'，而轮询间隔 30s，
+        // 意味着注册后最长 30 秒内账号列表会显示一个未经验证的"已连接"。
+        status: 'disconnected',
         connectedAt: new Date().toISOString(),
         lastCheckedAt: new Date().toISOString(),
         credentials: p.credentials,
       }
 
       accounts.set(accountId, entry)
+
+      // 立即执行一次健康检查（不等待 30s 轮询），使返回的 status 反映真实情况
+      await performHealthCheck(entry, store)
+
       if (rollcallSender && !rollcallSender.isDestroyed()) {
-        startHealthCheckPoller(rollcallSender)
+        startHealthCheckPoller(rollcallSender, store)
       }
 
       return {
@@ -246,6 +272,7 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
         data: {
           accountId: entry.accountId,
           status: entry.status,
+          errorMessage: entry.errorMessage,
         },
       }
     } catch (error) {
@@ -332,7 +359,7 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
       }))
 
       if (rollcallSender && !rollcallSender.isDestroyed() && accounts.size > 0) {
-        startHealthCheckPoller(rollcallSender)
+        startHealthCheckPoller(rollcallSender, store)
       }
 
       return { success: true, data: { accounts: sessionEntries } }

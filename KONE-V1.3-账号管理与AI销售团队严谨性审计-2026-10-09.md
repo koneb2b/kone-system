@@ -31,12 +31,32 @@
 | 6 | UI 无假数据 | ✅ 经 `accountGetList` 渲染真实列表；空态为引导卡 | `accounts-management.tsx:152-164,352-365` |
 | 7 | 凭据加密 | ✅ SMTP/IMAP 密码经 `safeStorage`；cookie 存 Electron 持久分区 | `secret-manager.ts:24-65`；`sandbox-service.ts:24,38` |
 
-### 🟡 D-1（待确认）：`ACCOUNT.CONNECT` 语义
-`CONNECT` 仅创建内存条目并**直接置 `status:'connected'`**，无真实登录流程
-（`sandbox-service.ts:201,233`）。
+### ✅ D-1（已修复）：`ACCOUNT.CONNECT` 不再谎报状态
 
-**这不是 bug，但语义需明确**：当前设计应是"用户在外部浏览器完成登录后，在软件内注册账号条目"。
-建议在 UI 文案或代码注释中写明这一点，避免误解为"点一下就能自动登录"。
+**初判**：`CONNECT` 仅创建内存条目并直接置 `status:'connected'`，无真实登录流程。
+
+**复核后确认这确实是个缺陷（而非仅语义模糊）**：
+- 轮询间隔 `HEALTH_POLL_INTERVAL_MS = 30_000` → 注册后**最长 30 秒**内，
+  账号列表会显示一个**未经任何验证**的"已连接"。
+- 且邮箱类型在健康检查里走 `else { entry.status = 'connected' }` ——
+  **无条件置 connected**，即便 SMTP/IMAP 从未配置也显示"已连接"。
+
+这违反宪法「不得假成功」。
+
+**修复**（`sandbox-service.ts`）：
+1. **CONNECT 初始状态改为 `disconnected`**，并**立即执行一次 `performHealthCheck`**
+   （不再等 30s 轮询），使返回值反映真实情况；同时回传 `errorMessage` 供 UI 提示。
+2. **邮箱类型的健康检查不再无条件置 connected**：改为校验
+   `user_config.smtpHost` / `imapHost` 是否已配置（Fail-Closed）；
+   未配置 → `disconnected` + 可行动提示（"请在「邮箱」设置中补全后重试"）。
+   注：此处只校验配置**存在性**；真实连通性由「测试连接」与 Email Agent
+   执行前的 DNS 健康检查（`email-agent.ts:91-163`）负责。
+3. `performHealthCheck` / `startHealthCheckPoller` 增加 `store` 参数
+   （原为模块级函数，无法读取配置）。
+
+**保留的既有优点**：`CONNECT` 本就有 license 门禁
+（`team_collaboration` / `search_basic`）与基础版单邮箱限制，
+且 LinkedIn/Facebook/WhatsApp 的健康检查本就查真实 cookie + 过期时间。
 
 ---
 
