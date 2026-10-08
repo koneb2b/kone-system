@@ -29,6 +29,42 @@
 | 0.5 | 绑定校验 | ✅ D1 `kone-leads` / `SCHEMA_VERSION=1.0.0` / `APPROVAL_GATE_ENABLED=false` |
 | 0.6 | 流量校验 | ✅ Version `95de6db9…` 100% 流量 |
 
+### 0.7 Secrets 配置与发信验证（2026-10-08 已完成）
+
+| # | 项目 | 结果 |
+|---|---|---|
+| 0.7.1 | `wrangler secret put RESEND_API_KEY` | ✅ 已加密写入 Cloudflare |
+| 0.7.2 | `wrangler secret put CRON_SECRET` | ✅ 已生成随机值并写入 |
+| 0.7.3 | `wrangler secret list` | ✅ 两项均已登记 |
+| 0.7.4 | **真实发信验证** | ✅ 通过 Resend API 发出测试邮件，返回 ID `01a11be5-…` |
+
+**发信验证细节**：使用 Resend 的 `onboarding@resend.dev` 测试发信地址，
+向账号自有邮箱 `koneb2b@163.com` 发送，Resend 接受并返回邮件 ID →
+**证明发信链路（API Key + 网络 + 权限）完全可用**。
+
+> ⚠️ **Resend 账号约束（重要）**：
+> 1. 账号注册邮箱为 **`koneb2b@163.com`**（非 gmail）。
+> 2. 未验证域名时，**只能发到账号自有邮箱**；发给其他收件人必须先在
+>    `resend.com/domains` **验证自有域名**，并把 `from` 改为该域名下的地址。
+> 3. 当前 API Key 权限为 `restricted_api_key`（**仅发送邮件**）——这是最小权限的良好实践，
+>    但意味着**无法通过 API 查询域名/邮件状态**，需在控制台查看。
+>
+> → **正式交付前必须完成：验证发信域名**（与 `wrangler.toml` 中预留的
+> `SENDER_DOMAIN` 对应）。
+
+### 0.8 待配置：`RESEND_WEBHOOK_SECRET`
+
+Webhook 用于接收「送达 / 退信 / 投诉 / 回复」回执。配置步骤：
+1. 在 Resend 控制台 → Webhooks → Add Endpoint
+2. URL 填：`https://kone-cloud.hek99481.workers.dev/webhooks/resend`
+   （或绑定自定义域名后使用自有域名 —— **推荐**）
+3. 事件勾选：`email.delivered` / `email.bounced` / `email.complained`
+4. 复制生成的 **Signing Secret**（`whsec_` 开头）
+5. 执行 `wrangler secret put RESEND_WEBHOOK_SECRET`
+
+> 说明：Resend 服务器从**海外**回调本 Worker，**不受国内 DNS 污染影响**，
+> 因此用 `workers.dev` 地址也能收到回执；但本机无法直接访问该地址验证。
+
 ### ⚠️ 阻塞项：`*.workers.dev` 在国内网络被 DNS 污染
 
 实测（2026-10-08）：
