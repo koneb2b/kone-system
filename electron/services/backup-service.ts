@@ -263,8 +263,19 @@ export function verifyBackup(backupPath: string): boolean {
     const computedChecksum = computeChecksum(data)
 
     if (storedChecksum !== computedChecksum) {
-      console.error(`[BackupService] Checksum mismatch for ${backupPath}`)
-      return false
+      // 向后兼容 DATA-14 之前的备份：当时用 MD5 生成校验和，升级后 SHA-256 校验必然失败，
+      // 会导致用户**无法恢复升级前的历史备份**（数据可恢复性缺陷）。
+      // 此处对旧备份回退尝试 MD5；两者都不匹配才判定为损坏。
+      // 安全性权衡：MD5 强度较低，但仅在「SHA-256 不匹配」时作为兼容路径尝试，
+      // 且备份文件位于本机用户目录、攻击面有限；拒绝旧备份的代价（数据不可恢复）更高。
+      const legacyMd5 = crypto.createHash('md5').update(data, 'utf-8').digest('hex')
+      if (storedChecksum !== legacyMd5) {
+        console.error(`[BackupService] Checksum mismatch for ${backupPath}`)
+        return false
+      }
+      console.warn(
+        `[BackupService] 接受旧版 MD5 校验和（DATA-14 之前的备份）：${backupPath}。建议恢复后重新创建备份以升级为 SHA-256。`,
+      )
     }
 
     // Verify JSON structure
