@@ -17,6 +17,44 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.4] — 2026-10-09 · AGENT.* 通道门禁补缺与分类治理
+
+**背景**：复核「账号管理与 AI 销售团队审计报告」遗留建议 #2 时发现**真实商业泄漏缺口**——
+`AGENT.GET_LOG` 全链路**无任何 feature 门禁**，而其数据由 `hydrateAgentPersistence`
+在启动时**无条件**从 `user_config.agent_logs` 恢复（与授权状态**解耦**）。
+后果：Trial / 降级用户可绕过渲染层**直连 IPC** 读取完整历史触达日志（含 company/detail）。
+宪法明确「Trial 必须熔断拦截，严禁渲染任何智能体卡片或**暴露运行指标**」，日志同属运行指标。
+
+**修复**：
+
+1. **补门禁**（`electron/services/agent-service.ts`）——`AGENT.GET_LOG` 与 `AGENT.LIST` /
+   `AGENT.CONTROL` 使用同一 feature 键 `local_autopilot`（「查看 AI 销售团队」），
+   且授权拒绝 **403 原样透传**，便于前端区分「无权限」与「服务端故障」。
+
+2. **修正报告建议的过度约束风险**——遗留建议 #2 字面表述（"所有 `AGENT.*` 通道 feature 键一致"）
+   若照做会**误伤正确设计**：`AGENT.GET_STATUS`（线索级触达徽标，线索是 Trial 合法数据）、
+   `AGENT.SUPPRESS_*`（邮件合规退订登记，任何套餐都必须可用）**本就不该门禁**。
+   改为**显式分类清单**：`GUARDED` / `UNGUARDED`（每项附豁免理由）/ `PUSH_ONLY`。
+
+**新增守护测试**：`tests/business-logic/agent-gate-classification.business.test.js`（5 条）：
+① `GUARDED` 必须带 `requireFeature`；② `UNGUARDED` 必须**无**门禁（防过度约束）；
+③ `GUARDED` 不得退化为无门禁；④ **新增/未定级通道 → 直接失败**；⑤ 清单不得腐烂（不允许残留已删通道）。
+经**变异测试**双向验证有效：注入虚构通道 `AGENT.FAKE_NEW_CHANNEL` → 4 条失败并精确报出通道名；
+删除 `GET_LOG` 门禁 → 2 条失败。测试内**诚实标注静态断言边界**（验证"门禁代码在不在"，
+不验证"运行时确实 403"——后者由 `tests/e2e/permission-lock.test.js` 覆盖）。
+
+**测试环境修复**：`tests/e2e/agent-persistence.test.js` 因新增门禁而失败——该测试用手写
+**无签名** `license_claims` 且 `app.isPackaged = true`，真实 guard 校验失败抛 401。
+改为打桩 `license-guard` 模块（**修测试环境缺失，非改代码迎合测试**）：该测试职责是
+P1-2「日志跨重启幸存」，授权语义由 `permission-lock.test.js` 专门覆盖。
+
+**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 5a 条（AGENT.\* 通道门禁分类）。
+
+**验证**：typecheck 双侧 0 error；单测 **358/358**；`verify:consistency` 通过
+（文档交叉引用 165 处、IPC 契约通过、未新增通道）；lint 0 error。
+
+---
+
 ## [1.4.3] — 2026-10-09 · 知识库真正接入获客链路（Seller-Knowledge Injection）
 
 **背景**：审计发现知识库模块**并非 RAG**（embedding/向量检索零命中），且与获客链路

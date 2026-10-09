@@ -33,6 +33,25 @@ const electronMock = {
 const withElectronMock = () => {
   Module._load = (request, parent, isMain) => {
     if (request === 'electron') return electronMock
+    // license-guard 打桩：本测试关注的是**持久化幸存**（P1-2），不是授权判定。
+    // 真实 guard 会校验 claims 签名/机器码绑定，而这里用的是手写 claims（无签名），
+    // 且 electronMock.app.isPackaged = true 会让它直接 throw；若不打桩，
+    // `AGENT.GET_LOG` 的 requireFeature 会抛 401，测试因"授权环境缺失"而失败，
+    // 与它要验证的持久化能力无关。授权语义由 permission-lock.test.js 专门覆盖。
+    if (/license-guard(\.js)?$/.test(request)) {
+      return {
+        createLicenseGuard: () => ({
+          getStoredClaims: () => ({
+            status: 'active',
+            plan: 'basic',
+            expiresAt: Date.now() + 86400000,
+            features: ['local_autopilot'],
+          }),
+          requireFeature: () => ({ claims: null, featureSet: new Set() }),
+          requireAnyFeature: () => ({ claims: null, featureSet: new Set() }),
+        }),
+      }
+    }
     return originalLoad.call(this, request, parent, isMain)
   }
 }

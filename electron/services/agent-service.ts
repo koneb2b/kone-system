@@ -1235,14 +1235,23 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
 
   registerIpc(IPC_CHANNELS.AGENT.GET_LOG, agentGetLogContract, async (_event, agentId: unknown) => {
     try {
+      // 宪法约束：「Trial 必须熔断拦截，严禁渲染任何智能体卡片或**暴露运行指标**」。
+      // 与 AGENT.LIST 同构的缺陷：日志在启动时由 hydrateAgentPersistence **无条件**
+      // 从 user_config.agent_logs 恢复（与授权状态解耦），本通道此前又无门禁 →
+      // Trial / 降级用户可直连 IPC 读取完整历史触达日志（含 company/detail）。
+      // 日志同样属于「运行指标」，故与 AGENT.LIST / AGENT.CONTROL 使用同一 feature 键。
+      licenseGuard.requireFeature('local_autopilot', '查看 AI 销售团队')
+
       const id = String(agentId || '')
       const entry = agentLogs.get(id) || []
       return { success: true, data: { agentId: id, logEntries: entry } }
     } catch (error) {
+      // 授权拒绝（403）需原样透传，便于前端区分「无权限」与「服务端故障」
+      const guardCode = (error as { code?: number } | null)?.code
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to read agent logs',
-        code: 500,
+        code: guardCode === 403 ? 403 : 500,
       }
     }
   })
