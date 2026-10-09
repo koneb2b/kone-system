@@ -1,6 +1,7 @@
 'use client'
 
-import { formatErrorMessage, escapeCsvValue } from '@/lib/error-message'
+import { formatErrorMessage } from '@/lib/error-message'
+import { buildLeadExportCsv } from '@/lib/lead-export'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Search,
@@ -241,13 +242,6 @@ function MatchBar({ score }: { score?: number | null }) {
       <span className={`text-xs font-semibold tabular-nums ${textColor}`}>{score}%</span>
     </div>
   )
-}
-
-const serializeGeneratedStrategies = (strategies?: Record<string, string>) => {
-  if (!strategies) return ''
-  return Object.entries(strategies)
-    .map(([key, value]) => `${key}:\n${String(value ?? '')}`)
-    .join('\n\n')
 }
 
 const getRecommendedLanguage = (lead: LeadItem | null) => {
@@ -687,43 +681,13 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     if (isExporting) return
     try {
       setIsExporting(true)
-      const rows = [
-        [
-          '公司名称',
-          '联系人',
-          '职位',
-          '邮箱',
-          '电话',
-          '网站',
-          '国家',
-          '行业/产品',
-          '来源',
-          '匹配度',
-          '跟进状态',
-          '预估价值',
-          '跟进记录 (Snippet)',
-          'AI策略 (AI Strategies)',
-        ],
-        ...filteredLeads.map((lead) => [
-          lead.company,
-          lead.contact || '暂无/待解锁',
-          lead.contactTitle || '暂无/待解锁',
-          lead.email || '暂无/待解锁',
-          lead.phone || '暂无/待解锁',
-          lead.website || '',
-          lead.country,
-          lead.industry || '暂无/待解锁',
-          lead.source,
-          typeof lead.matchScore === 'number' ? lead.matchScore.toString() : '待评估',
-          lead.status,
-          lead.estimatedValue,
-          lead.snippet || '',
-          serializeGeneratedStrategies(lead.generatedStrategies),
-        ]),
-      ]
+      // 导出列定义统一收敛到 `@/lib/lead-export`（共享单一事实源）。
+      // 此前此处仅有 14 列且**完全不含决策人** —— 用户从「搜索结果」导出能拿到
+      // 核心关键人，从「线索管理」导出却一个都没有，同一份数据两种结果。
+      const content = buildLeadExportCsv(filteredLeads)
       const response = await saveExportFile({
         fileName: `kone-leads-export-${new Date().toISOString().slice(0, 10)}.csv`,
-        content: '\ufeff' + rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n'),
+        content,
       })
       if (response.canceled) {
         return
