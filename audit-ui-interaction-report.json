@@ -1,0 +1,1443 @@
+{
+  "modules": [
+    {
+      "id": "search",
+      "label": "智能获客",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "高质量 B2B 搜索语法与模板",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "立即开始 AI 获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "伴随式后台巡航",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "Solar Distributor德国太阳能分销商sol",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "Medical Supplier越南医疗设备供应商med",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "Auto Parts Buyer迪拜汽车零部件采购商au",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "Textile Manufacturer孟加拉纺织品制造",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索库总量0本地",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "查看全部",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "筛选",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "导出",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "查看分析",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "批准",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "驳回",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "发送至云端",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "查看分析",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "批准",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "驳回",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "发送至云端",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 0
+        }
+      ],
+      "errors": [],
+      "head": "海外客户智能搜索\n\nAI 驱动的全球 B2B 客户精准挖掘\n\n系统已联通\n智能全渠道盲搜输入框\nAI 全渠道盲搜\n\n系统会先自动解构意图、翻译并突变为高价值 B2B 英文词，再并发检索地图、网页与多源穿透数据。\n\n高质量 B2B 搜索语法与",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 15,
+        "smallTextSample": [
+          "10px:高级",
+          "10px:德国太阳能分销商",
+          "10px:solar energy distr",
+          "10px:越南医疗设备供应商"
+        ],
+        "smallTargetCount": 6,
+        "smallTargetSample": [
+          "20px:高质量 B2B 搜索语法与模板",
+          "14px:"
+        ],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-search.png"
+    },
+    {
+      "id": "leads",
+      "label": "线索管理",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "全部状态",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "全部来源",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "全部匹配度",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "全部线索",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "匹配度排序",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "客户资料下载",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "手动添加（即将开放）",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "全部 2",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "待跟进 1",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "联系中 1",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "已回复 0",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "已归档 0",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "待跟进",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "撰写开发信",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "联系中",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "撰写开发信",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 728
+        }
+      ],
+      "errors": [],
+      "head": "线索管理\n\n管理和跟踪所有客户线索\n\n系统已联通\n总线索数\n2\n本月新增\n2\n跟进中\n1\n已回复占比\n0%\n全部状态\n全部来源\n全部匹配度\n全部线索\n匹配度排序\n客户资料下载\n手动添加（即将开放）\n全部 2\n待跟进 1\n联系中 1\n已回复 ",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 2,
+        "smallTextSample": [
+          "10px:高级"
+        ],
+        "smallTargetCount": 2,
+        "smallTargetSample": [
+          "16px:"
+        ],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-leads.png"
+    },
+    {
+      "id": "data",
+      "label": "数据中心",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "近 30 天",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "刷新",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "导出报表",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "前往线索池",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "查看全部",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": -128
+        }
+      ],
+      "errors": [],
+      "head": "数据中心\n\n全面的业务数据分析与洞察\n\n系统已联通\n数据概览\n\n实时基于统一线索池统计\n\n近 30 天\n刷新\n导出报表\n总线索数\n2\n实时\n今日新增\n0\n-\n已触达客户\n1\n跟进中\n高分线索数\n1\n均值 83%\n海关数据覆盖\n0\n0%\n决策",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 4,
+        "smallTextSample": [
+          "10px:高级",
+          "10px:计算方式: (联系中 1 + 已回复",
+          "10px:计算方式: 已回复 0 / (联系中"
+        ],
+        "smallTargetCount": 0,
+        "smallTargetSample": [],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-data.png"
+    },
+    {
+      "id": "knowledge",
+      "label": "知识库",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "新增条目",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "按创建时间倒序",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "添加标签",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "+ 竞品替换",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "+ 直接报价",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "+ 工厂实力",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "+ 公司介绍",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 960
+        }
+      ],
+      "errors": [],
+      "head": "企业知识库\n\n构建您的私域 AI 大脑\n\n系统已联通\n企业知识库\n\n把卖点、客户画像、销售话术拆成可管理的知识条目，AI 会按条注入分析链路。标签可在下方自由扩展。\n\n有效条目 0/1\n新增条目\n保存知识库\n按创建时间倒序\n我的标签\n自定义",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 6,
+        "smallTextSample": [
+          "10px:高级",
+          "10px:内置"
+        ],
+        "smallTargetCount": 1,
+        "smallTargetSample": [
+          "20px:例如：产品卖点, 话术, ICP"
+        ],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-knowledge.png"
+    },
+    {
+      "id": "settings",
+      "label": "系统设置",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "基础配置 (API & 模型)",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "ICP 智能画像引擎",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "云端引擎",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "识别模型",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存密钥",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "测试连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存密钥",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "测试连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存密钥",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "测试连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存密钥",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "测试连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存基础配置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存全局配置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 510
+        }
+      ],
+      "errors": [],
+      "head": "系统设置\n\nAPI 密钥、搜索配置与账户管理\n\n系统已联通\nKone 系统设置\n\nAPI 与模型、ICP 策略、Kone 协同引擎\n\n开发预览环境：配置独立存放于 %APPDATA%\\kone-system，与正式安装版的配置互不相通\n\n配",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 2,
+        "smallTextSample": [
+          "10px:高级"
+        ],
+        "smallTargetCount": 0,
+        "smallTargetSample": [],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-settings.png"
+    },
+    {
+      "id": "accounts",
+      "label": "账号管理",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "配置邮箱",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "配置邮箱",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "连接",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 766
+        }
+      ],
+      "errors": [],
+      "head": "多账号沙箱管理\n\n独立持久化沙箱隔离，安全多开 LinkedIn / Facebook / WhatsApp / 企业邮箱\n\n系统已联通\n已绑定的账号沙箱\n\n每个账号享有独立持久化沙箱，Cookie 与本地存储完全隔离，复用本地真实住宅 I",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 2,
+        "smallTextSample": [
+          "10px:高级"
+        ],
+        "smallTargetCount": 0,
+        "smallTargetSample": [],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-accounts.png"
+    },
+    {
+      "id": "agents",
+      "label": "AI 销售团队",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 947
+        }
+      ],
+      "errors": [],
+      "head": "AI 销售团队\n\n3 大原生智能体协同工作：WhatsApp 拓客 · LinkedIn 买手 · 邮件三轮跟进\n\n系统已联通\n我的 AI 销售团队\n今日配额: 0/50\n\n3 大本地原生智能体协同工作，复用真实住宅 IP 与持久化沙箱登录",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 2,
+        "smallTextSample": [
+          "10px:高级"
+        ],
+        "smallTargetCount": 0,
+        "smallTargetSample": [],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-agents.png"
+    },
+    {
+      "id": "automation",
+      "label": "自动化序列",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "重试",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "前往设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "一键清洗",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "首次触达",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "二次跟进",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "价值案例",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "域名信誉检测",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "保存",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "提交至云端发送队列",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "刷新追踪",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 639
+        }
+      ],
+      "errors": [],
+      "head": "智能触达工作流\n\n客户清洗、模板配置与本地发信工作台（云端投递闭环为目标态）\n\n系统已联通\n云端触达看板暂未启用\n\nCloudflare 云端引擎未连接或调用失败：Cannot read properties of null (readin",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 5,
+        "smallTextSample": [
+          "10px:高级",
+          "10px:Step 1",
+          "10px:Step 2",
+          "10px:Step 3"
+        ],
+        "smallTargetCount": 0,
+        "smallTargetSample": [],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-automation.png"
+    },
+    {
+      "id": "team-dashboard",
+      "label": "团队协作",
+      "rendered": true,
+      "buttons": [
+        {
+          "text": "智能获客",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "线索管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "数据中心",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "知识库",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "系统设置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "账号管理",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "AI 销售团队",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "自动化序列高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "团队协作高级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "使用指南",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "续费 / 升级",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "刷新",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "检测",
+          "disabled": true,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "前往系统设置配置",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        },
+        {
+          "text": "",
+          "disabled": false,
+          "visible": true,
+          "aria": ""
+        }
+      ],
+      "interactions": [
+        {
+          "clicked": "智能获客",
+          "aliveAfter": true,
+          "textLenDelta": 829
+        }
+      ],
+      "errors": [],
+      "head": "团队协作看板\n\n实时团队线索协同与防撞单管理\n\n本地增强模式\n团队实时看板\n\n全员高分线索流 · 防撞单实时检测\n\n刷新\n防撞单检测\n检测\n全员高分线索流\n0 条高价值线索\n企业云端引擎尚未启用\n\n开启企业云端引擎，实现全员高分线索实时防撞",
+      "crashed": false,
+      "featurePresent": true,
+      "uiQuality": {
+        "smallTextCount": 2,
+        "smallTextSample": [
+          "10px:高级"
+        ],
+        "smallTargetCount": 1,
+        "smallTargetSample": [
+          "24px:"
+        ],
+        "horizontalOverflow": false
+      },
+      "screenshot": "ui-audit-team-dashboard.png"
+    }
+  ],
+  "sidebar": {
+    "found": true,
+    "navIds": [
+      "search",
+      "leads",
+      "data",
+      "knowledge",
+      "settings",
+      "accounts",
+      "agents",
+      "automation",
+      "team-dashboard"
+    ]
+  },
+  "summary": {
+    "modulesChecked": 9,
+    "modulesRendered": 9,
+    "modulesCrashed": 0,
+    "totalButtons": 191,
+    "disabledButtons": 8,
+    "invisibleButtons": 0,
+    "modulesWithConsoleErrors": []
+  }
+}

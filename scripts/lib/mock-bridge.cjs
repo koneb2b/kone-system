@@ -148,7 +148,7 @@ const buildMockBridgeSource = (opts = {}) => {
       system: { getDeviceStatus: () => ok({ machineId: 'probe-machine', trialDaysLeft: 30 }) },
       auth: { getSession: () => ok(null), login: () => ok(null), logout: () => ok(null) },
       accounts: { getList: () => ok({ accounts: [] }), list: () => ok({ accounts: [] }) },
-      agents: { list: () => ok({ agents: [] }), getLog: () => ok({ entries: [] }) },
+      agents: { getList: () => ok({ agents: [] }), getLog: () => ok({ entries: [] }) },
       secret: { check: () => ok({ configured: false }), set: () => ok(null) },
       search: { execute: () => ok(null) },
       cloud: { checkCollision: () => ok({ collided: false }) },
