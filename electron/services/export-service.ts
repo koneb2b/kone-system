@@ -86,13 +86,17 @@ export const buildPdfHtml = (payload: {
   /* ── 设计语言对齐项目 ───────────────────────────────────────────────
      配色取自 `src/index.css` 的 CSS 变量（此前白皮书用深蓝 #1e40af + 青 #0891b2，
      与项目主色**不符**）：
-       --primary / --brand-green : 92 65% 44%  → #5cb828（品牌绿）
+       --brand-green             : 92 65% 44%  → #5cb828（**品牌标识绿**）
+       --primary                 : 221 83% 53% → #2563eb（**UI 主色蓝**，2026-10-09 对齐）
        --deep-blue               : 210 100% 8% → #001529（深蓝黑）
        --sidebar-background      : 217 33% 17% → #1e293b
        --border                  : 214 32% 91% → #e2e8f0
        --muted-foreground        : 217 16% 46% → #64748b
        --radius                  : 0.75rem     → 12px
-     字体沿用项目字体栈（Microsoft YaHei / PingFang SC）。 */
+     字体沿用项目字体栈（Microsoft YaHei / PingFang SC）。
+
+     注意：白皮书是**对外交付文档**，属「品牌物料」场景，
+     故采用**品牌绿**作点缀（而非软件 UI 的蓝色主色）—— 二者场景不同，不混用。 */
   const BRAND = '#5cb828'
   const DEEP = '#001529'
   const INK = '#1e293b'

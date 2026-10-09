@@ -863,7 +863,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
               <SheetContent side="right" className="w-[420px] sm:w-[460px] overflow-y-auto">
                 <SheetHeader>
                   <SheetTitle className="flex items-center gap-2">
-                    <Download className="size-4 text-primary" />
+                    <Download className="size-4 text-blue-600" />
                     客户资料下载端
                   </SheetTitle>
                   <SheetDescription>
@@ -881,10 +881,14 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { label: 'WhatsApp', value: reachabilityStats.whatsapp, tone: 'text-emerald-600' },
-                        { label: '邮件', value: reachabilityStats.email, tone: 'text-sky-600' },
-                        { label: 'LinkedIn', value: reachabilityStats.linkedin, tone: 'text-indigo-600' },
-                        { label: '待补数据', value: reachabilityStats.none, tone: 'text-amber-600' },
+                        /* 配色跟随项目既有惯例（见 data-center 指标卡）：
+                           同类指标统一用 UI 主色蓝，不用彩虹配色 ——
+                           避免稀释「绿=成功 / 琥珀=警告」的状态语义。
+                           「待补数据」用中性灰：它是**待办提示**而非错误状态。 */
+                        { label: 'WhatsApp', value: reachabilityStats.whatsapp, tone: 'text-blue-600' },
+                        { label: '邮件', value: reachabilityStats.email, tone: 'text-blue-600' },
+                        { label: 'LinkedIn', value: reachabilityStats.linkedin, tone: 'text-blue-600' },
+                        { label: '待补数据', value: reachabilityStats.none, tone: 'text-slate-500' },
                       ].map((item) => (
                         <div
                           key={item.label}
@@ -909,7 +913,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                       <span className="text-xs font-semibold text-foreground">导出字段组</span>
                       <button
                         type="button"
-                        className="text-[11px] text-primary hover:underline"
+                        className="text-[11px] text-blue-600 hover:underline"
                         onClick={() =>
                           setExportGroups(
                             exportGroups.length === LEAD_EXPORT_GROUPS.length ? [] : DEFAULT_EXPORT_GROUPS,
@@ -959,7 +963,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                       {buildLeadExportHeaders(exportGroups).length > 6 ? ' …' : ''}
                     </div>
                     <Button
-                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                      className="w-full bg-blue-600 text-white hover:bg-blue-700"
                       onClick={() => void handleExport()}
                       disabled={isExporting || exportGroups.length === 0}
                       isLoading={isExporting}

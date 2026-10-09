@@ -8,18 +8,16 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-// 项目设计语言（对应 src/index.css）
+// 项目设计语言（对应 src/index.css，2026-10-09 对齐蓝色主视觉）
 const T = {
-  primary: '#5cb828', // --primary / --brand-green  92 65% 44%
+  primary: '#2563eb', // --primary  UI 主色蓝（blue-600）221 83% 53%
+  brandGreen: '#5cb828', // --brand-green 品牌标识绿（仅 Logo/图表用，不混入 UI 主色）
   deepBlue: '#001529', // --deep-blue  210 100% 8%
   border: '#e2e8f0',
   muted: '#f1f5f9',
   mutedFg: '#64748b',
   fg: '#0f172a',
-  emerald: '#059669',
-  sky: '#0284c7',
-  indigo: '#4f46e5',
-  amber: '#d97706',
+  slate500: '#64748b', // 中性（待补数据）
 }
 
 const groups = [
@@ -31,10 +29,10 @@ const groups = [
 ]
 
 const stats = [
-  { label: 'WhatsApp', value: 37, tone: T.emerald },
-  { label: '邮件', value: 52, tone: T.sky },
-  { label: 'LinkedIn', value: 18, tone: T.indigo },
-  { label: '待补数据', value: 11, tone: T.amber },
+  { label: 'WhatsApp', value: 37, tone: T.primary },
+  { label: '邮件', value: 52, tone: T.primary },
+  { label: 'LinkedIn', value: 18, tone: T.primary },
+  { label: '待补数据', value: 11, tone: T.slate500 },
 ]
 
 const html = `<!DOCTYPE html>

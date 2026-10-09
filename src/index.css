@@ -20,9 +20,17 @@
   --input: 214 32% 91%;
   --muted: 210 20% 96%;
   --muted-foreground: 217 16% 46%;
-  --ring: 92 65% 44%;
+  /* 焦点环跟随 UI 主色（原为品牌绿，与 --primary 一起对齐为蓝）。 */
+  --ring: 221 83% 53%;
 
-  --primary: 92 65% 44%;
+  /* `--primary` = **UI 主色**（非品牌标识色）。
+     用户 2026-10-09 明确：项目主视觉是**蓝色**（全项目 198 处 blue-* 字面量，
+     含 button.tsx 默认 variant 的 bg-blue-600）。而本值原为品牌绿
+     `92 65% 44%` —— 在 `@theme` 注册前它是死类名（无影响），
+     注册后会让全项目 48 处 bg-primary/text-primary 意外变绿，与既定视觉冲突。
+     故对齐为 Tailwind blue-600 `#2563eb` → `221 83% 53%`。
+     品牌标识绿请用 `--brand-green`（保留给 Logo / 图表语义，独立不混用）。 */
+  --primary: 221 83% 53%;
   --primary-foreground: 0 0% 100%;
   --radius: 0.75rem;
 }
