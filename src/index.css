@@ -27,6 +27,49 @@
   --radius: 0.75rem;
 }
 
+/* ---------------------------------------------------------------------------
+ * Tailwind v4 语义 token 注册（**根因修复**，2026-10-09）
+ *
+ * 背景：`:root` 早已定义 `--primary: 92 65% 44%`（品牌绿）等变量，但本项目使用
+ * `@import "tailwindcss" source(none)`（v4 CSS-first 模式），而**没有 `@theme` 块**、
+ * 也没有 `tailwind.config.js` 被加载。
+ *
+ * 后果（经探针实测确认，scripts/probe-design-tokens.cjs）：
+ *   bg-primary     → rgba(0,0,0,0)  透明（**死类名**）
+ *   text-primary   → rgb(29,40,58)  回落默认（**死类名**）
+ *   bg-background  → 透明
+ *   bg-muted       → 透明
+ * 唯 `bg-blue-600` 这类 Tailwind 内置色正常 → 于是全项目被迫硬编码蓝色
+ * （34 处 / 20 文件，含 button.tsx 默认 variant），造成「token 是绿、UI 到处是蓝」。
+ *
+ * 修复：用 `@theme inline` 将 CSS 变量注册为 Tailwind 语义 token，
+ * 使 `bg-primary` / `text-primary` / `bg-background` / `border-border` 等类
+ * **真正生效**。`inline` 表示直接引用变量值（保留 `hsl(var(--x))` 语义）。
+ *
+ * 注意：本块只**注册** token，不改变任何既有变量值 ——
+ * 因此原先能正常显示的 Tailwind 内置色（bg-blue-600 等）行为不变，
+ * 仅让此前失效的语义类恢复应有颜色。这是一处**低风险、高收益**的修复。
+ * ------------------------------------------------------------------------- */
+@theme inline {
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-ring: hsl(var(--ring));
+  --color-brand-green: hsl(var(--brand-green));
+  --color-deep-blue: hsl(var(--deep-blue));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
 body {
   background: linear-gradient(180deg, #f3f6f9 0%, #eef2f6 55%, #f8f9fa 100%) !important;
   color: hsl(217 33% 17%);

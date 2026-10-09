@@ -949,7 +949,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                   </div>
 
                   {/* 列预览 + 导出 */}
-                  <div className="space-y-3 border-t border-border pt-4">
+                  <div className="space-y-3 border-t border-border pt-4 pb-6">
                     <div className="text-[11px] text-muted-foreground">
                       将导出{' '}
                       <span className="font-semibold text-foreground">
@@ -959,7 +959,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
                       {buildLeadExportHeaders(exportGroups).length > 6 ? ' …' : ''}
                     </div>
                     <Button
-                      className="w-full"
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => void handleExport()}
                       disabled={isExporting || exportGroups.length === 0}
                       isLoading={isExporting}

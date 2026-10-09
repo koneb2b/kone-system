@@ -33,6 +33,8 @@
     "test:e2e": "npm run build:electron:dev && node --test tests/e2e/fallback-routing.test.js",
     "test:e2e-journey": "npm run build:electron:dev && node --test tests/e2e-journey.test.js",
     "test:e2e-smoke": "npm run build:electron:dev && node --test tests/e2e/permission-lock.test.js",
+    "test:visual": "concurrently -k \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && node scripts/probe-visual-all.cjs\"",
+    "test:visual:tokens": "concurrently -k \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && node scripts/probe-design-tokens.cjs\"",
     "test:gateway": "npm run build:electron:dev && node --test tests/license-gateway.test.js",
     "test:env": "npm run build:electron:dev && node --test tests/env-isolation.test.ts",
     "test:bypass": "npm run build:electron:dev && node --test tests/dev-bypass.test.ts",
