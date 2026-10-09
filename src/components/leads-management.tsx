@@ -1,7 +1,14 @@
 'use client'
 
 import { formatErrorMessage } from '@/lib/error-message'
-import { buildLeadExportCsv } from '@/lib/lead-export'
+import {
+  buildLeadExportCsv,
+  buildLeadExportHeaders,
+  buildReachabilityChannel,
+  DEFAULT_EXPORT_GROUPS,
+  LEAD_EXPORT_GROUPS,
+  type LeadExportGroupKey,
+} from '@/lib/lead-export'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Search,
@@ -57,6 +64,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Checkbox } from '@/components/ui/checkbox'
 import { AnalysisDrawer } from '@/components/analysis-drawer'
 import { LeadItem, LeadStatus, useLeadsStore } from '@/store/leads-store'
 import { analysisGenerate, ElectronApiError, saveExportFile } from '@/lib/electron-api'
@@ -366,6 +375,11 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null)
   const [focusReplyCoachInputKey, setFocusReplyCoachInputKey] = useState(0)
   const [isExporting, setIsExporting] = useState(false)
+  /* 客户资料下载端：字段组勾选（默认全选，行为与收敛前一致）。
+     让用户按需取舍列，并能在导出前看到「可触达渠道」分布，
+     直接回答「这批线索能不能进自动化触达」。 */
+  const [exportCenterOpen, setExportCenterOpen] = useState(false)
+  const [exportGroups, setExportGroups] = useState<LeadExportGroupKey[]>(DEFAULT_EXPORT_GROUPS)
   const [analyzingId, setAnalyzingId] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [emailComposerOpen, setEmailComposerOpen] = useState(false)
@@ -677,14 +691,43 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     }
   }
 
+  /* 可触达渠道分布 —— 导出前的「闭环」预览：
+     让用户一眼看出这批线索里有多少能进 WhatsApp / 邮件自动化、多少还是「—」（需补数据）。 */
+  const reachabilityStats = useMemo(() => {
+    let whatsapp = 0
+    let email = 0
+    let linkedin = 0
+    let none = 0
+    for (const lead of filteredLeads) {
+      const channel = buildReachabilityChannel(lead)
+      if (channel === '—') {
+        none += 1
+        continue
+      }
+      if (channel.includes('WhatsApp')) whatsapp += 1
+      if (channel.includes('邮件')) email += 1
+      if (channel.includes('LinkedIn')) linkedin += 1
+    }
+    return { whatsapp, email, linkedin, none, total: filteredLeads.length }
+  }, [filteredLeads])
+
   const handleExport = async () => {
     if (isExporting) return
+    if (exportGroups.length === 0) {
+      toast({
+        title: '请至少选择一个字段组',
+        description: '未勾选任何字段组，导出的文件将没有内容。',
+        variant: 'destructive',
+      })
+      return
+    }
     try {
       setIsExporting(true)
       // 导出列定义统一收敛到 `@/lib/lead-export`（共享单一事实源）。
       // 此前此处仅有 14 列且**完全不含决策人** —— 用户从「搜索结果」导出能拿到
       // 核心关键人，从「线索管理」导出却一个都没有，同一份数据两种结果。
-      const content = buildLeadExportCsv(filteredLeads)
+      // 现支持按「字段组」勾选导出（默认全选 = 与收敛前一致）。
+      const content = buildLeadExportCsv(filteredLeads, exportGroups)
       const response = await saveExportFile({
         fileName: `kone-leads-export-${new Date().toISOString().slice(0, 10)}.csv`,
         content,
@@ -694,7 +737,7 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
       }
       toast({
         title: '报表已生成',
-        description: '已导出线索明细到指定位置',
+        description: `已导出 ${filteredLeads.length} 条线索（${exportGroups.length} 个字段组）到指定位置`,
         variant: 'default',
         className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
       })
@@ -803,18 +846,131 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
               <ArrowUpDown className="size-3.5" />
               {sortField === 'matchScore' ? '匹配度排序' : '时间排序'}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs h-9"
-              data-testid="btn-export-csv"
-              onClick={() => void handleExport()}
-              disabled={isExporting}
-              isLoading={isExporting}
-            >
-              {!isExporting ? <Download className="size-3.5" /> : null}
-              {isExporting ? '导出中' : '导出'}
-            </Button>
+            <Sheet open={exportCenterOpen} onOpenChange={setExportCenterOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-9"
+                  data-testid="btn-export-csv"
+                  disabled={isExporting}
+                  isLoading={isExporting}
+                >
+                  {!isExporting ? <Download className="size-3.5" /> : null}
+                  {isExporting ? '导出中' : '客户资料下载'}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[420px] sm:w-[460px] overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle className="flex items-center gap-2">
+                    <Download className="size-4 text-primary" />
+                    客户资料下载端
+                  </SheetTitle>
+                  <SheetDescription>
+                    共 <span className="font-semibold text-foreground">{filteredLeads.length}</span> 条线索。
+                    按需勾选字段组后导出 CSV（UTF-8 BOM，Excel 可直接打开）。
+                  </SheetDescription>
+                </SheetHeader>
+
+                <div className="mt-5 space-y-5">
+                  {/* 可触达渠道分布 —— 闭环关键视图 */}
+                  <div className="rounded-xl border border-border bg-muted/30 p-3.5">
+                    <div className="mb-2.5 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground">可触达渠道分布</span>
+                      <span className="text-[10px] text-muted-foreground">依据 Agent 消费字段判定</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: 'WhatsApp', value: reachabilityStats.whatsapp, tone: 'text-emerald-600' },
+                        { label: '邮件', value: reachabilityStats.email, tone: 'text-sky-600' },
+                        { label: 'LinkedIn', value: reachabilityStats.linkedin, tone: 'text-indigo-600' },
+                        { label: '待补数据', value: reachabilityStats.none, tone: 'text-amber-600' },
+                      ].map((item) => (
+                        <div
+                          key={item.label}
+                          className="flex items-baseline justify-between rounded-lg bg-background px-2.5 py-2"
+                        >
+                          <span className="text-[11px] text-muted-foreground">{item.label}</span>
+                          <span className={`text-sm font-semibold tabular-nums ${item.tone}`}>{item.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {reachabilityStats.none > 0 && (
+                      <p className="mt-2.5 text-[10px] leading-relaxed text-muted-foreground">
+                        「待补数据」= 缺少电话/邮箱/LinkedIn，无法进入自动化触达。数据源本身不覆盖全部字段，
+                        建议先通过官网深探或人工补全后再触达。
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 字段组勾选 */}
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground">导出字段组</span>
+                      <button
+                        type="button"
+                        className="text-[11px] text-primary hover:underline"
+                        onClick={() =>
+                          setExportGroups(
+                            exportGroups.length === LEAD_EXPORT_GROUPS.length ? [] : DEFAULT_EXPORT_GROUPS,
+                          )
+                        }
+                      >
+                        {exportGroups.length === LEAD_EXPORT_GROUPS.length ? '全部取消' : '全部选择'}
+                      </button>
+                    </div>
+                    <div className="space-y-1.5">
+                      {LEAD_EXPORT_GROUPS.map((group) => {
+                        const checked = exportGroups.includes(group.key)
+                        return (
+                          <label
+                            key={group.key}
+                            className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border px-3 py-2.5 transition-colors hover:bg-muted/40"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              className="mt-0.5"
+                              onCheckedChange={(value) =>
+                                setExportGroups((prev) =>
+                                  value ? [...prev, group.key] : prev.filter((k) => k !== group.key),
+                                )
+                              }
+                            />
+                            <span className="flex-1">
+                              <span className="block text-xs font-medium text-foreground">{group.label}</span>
+                              <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                                {group.hint}
+                              </span>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 列预览 + 导出 */}
+                  <div className="space-y-3 border-t border-border pt-4">
+                    <div className="text-[11px] text-muted-foreground">
+                      将导出{' '}
+                      <span className="font-semibold text-foreground">
+                        {buildLeadExportHeaders(exportGroups).length}
+                      </span>{' '}
+                      列 ：{buildLeadExportHeaders(exportGroups).slice(0, 6).join('、')}
+                      {buildLeadExportHeaders(exportGroups).length > 6 ? ' …' : ''}
+                    </div>
+                    <Button
+                      className="w-full"
+                      onClick={() => void handleExport()}
+                      disabled={isExporting || exportGroups.length === 0}
+                      isLoading={isExporting}
+                    >
+                      {!isExporting ? <Download className="size-4" /> : null}
+                      {isExporting ? '导出中' : `导出 CSV（${filteredLeads.length} 条）`}
+                    </Button>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
             <Button
               size="sm"
               className="text-xs h-9 bg-blue-600 text-white hover:bg-blue-700"

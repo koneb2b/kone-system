@@ -177,3 +177,53 @@ test('SSOT 守护: 消费方不得再手写导出列字面量', () => {
     )
   }
 })
+
+test('可触达渠道: 有 phone/email/linkedin 时正确标注', () => {
+  const { buildReachabilityChannel } = loadLeadExport()
+  const withAll = {
+    ...sampleLead,
+    decisionMakers: [{ ...sampleLead.decisionMakers[0], linkedinUrl: 'https://linkedin.com/in/jane' }],
+  }
+  assert.equal(buildReachabilityChannel(withAll), 'WhatsApp / 邮件 / LinkedIn')
+})
+
+test('可触达渠道: 无任何联系方式返回「—」（需补数据）', () => {
+  const { buildReachabilityChannel } = loadLeadExport()
+  const bare = { id: 9, company: 'No Contact Ltd.' }
+  assert.equal(buildReachabilityChannel(bare), '—')
+})
+
+test('可触达渠道: 决策人层级字段也能触发（顶层为空时）', () => {
+  const { buildReachabilityChannel } = loadLeadExport()
+  const dmOnly = {
+    id: 10,
+    company: 'DM Only Ltd.',
+    decisionMakers: [{ name: 'A', title: 'CTO', email: 'a@dm.com', phone: '', source: 'x', confidenceScore: 50 }],
+  }
+  assert.equal(buildReachabilityChannel(dmOnly), '邮件')
+})
+
+test('字段组: 默认全选时表头与 LEAD_EXPORT_HEADERS 一致（不改变既有行为）', () => {
+  const { LEAD_EXPORT_HEADERS, buildLeadExportHeaders, DEFAULT_EXPORT_GROUPS } = loadLeadExport()
+  const headers = buildLeadExportHeaders(DEFAULT_EXPORT_GROUPS)
+  assert.equal(headers.length, LEAD_EXPORT_HEADERS.length)
+  headers.forEach((name, i) => {
+    assert.equal(name, LEAD_EXPORT_HEADERS[i], `默认全选第 ${i} 列应一致`)
+  })
+})
+
+test('字段组: 按勾选裁剪后行长度与表头仍严格一致（防错位）', () => {
+  const { buildLeadExportRow, buildLeadExportHeaders } = loadLeadExport()
+  const groups = ['core', 'reachability']
+  const headers = buildLeadExportHeaders(groups)
+  const row = buildLeadExportRow(sampleLead, groups)
+  assert.equal(row.length, headers.length, '裁剪后行与表头列数不一致 → CSV 会错位')
+  assert.ok(headers.includes('可触达渠道'), '勾选 reachability 后应含「可触达渠道」列')
+  assert.ok(!headers.includes('数据来源'), '未勾选 trailing 不应含「数据来源」列')
+})
+
+test('字段组: 空勾选时输出空表头（调用方须拦截）', () => {
+  const { buildLeadExportHeaders, buildLeadExportRow } = loadLeadExport()
+  assert.equal(buildLeadExportHeaders([]).length, 0)
+  assert.equal(buildLeadExportRow(sampleLead, []).length, 0)
+})
