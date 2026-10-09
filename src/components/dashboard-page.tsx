@@ -95,16 +95,19 @@ export function DashboardPage() {
   useEffect(() => {
     const handleNavigateSettings = () => setActiveNav('settings')
     const handleNavigateLeads = () => setActiveNav('leads')
+    const handleNavigateKnowledge = () => setActiveNav('knowledge')
     const handleCloudMode = (event: Event) => {
       const customEvent = event as CustomEvent<{ mode?: 'connected' | 'local' }>
       setCloudMode(customEvent.detail?.mode === 'local' ? 'local' : 'connected')
     }
     window.addEventListener('kone:navigate-settings', handleNavigateSettings)
     window.addEventListener('kone:navigate-leads', handleNavigateLeads)
+    window.addEventListener('kone:navigate-knowledge', handleNavigateKnowledge)
     window.addEventListener('kone:cloud-mode', handleCloudMode as EventListener)
     return () => {
       window.removeEventListener('kone:navigate-settings', handleNavigateSettings)
       window.removeEventListener('kone:navigate-leads', handleNavigateLeads)
+      window.removeEventListener('kone:navigate-knowledge', handleNavigateKnowledge)
       window.removeEventListener('kone:cloud-mode', handleCloudMode as EventListener)
     }
   }, [])

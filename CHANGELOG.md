@@ -17,6 +17,48 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.3] — 2026-10-09 · 知识库真正接入获客链路（Seller-Knowledge Injection）
+
+**背景**：审计发现知识库模块**并非 RAG**（embedding/向量检索零命中），且与获客链路
+**实质断开**——`usedKnowledgeTitles` 全程透传+持久化却**从未渲染**，用户无从判断
+AI 有没有用上自己的产品资料；Email 实时生成通道的 prompt **一个字的产品资料都没有**。
+
+**修复（四处）**：
+
+1. **检索兜底污染**（`electron/services/search/analysis.ts`）——`pickRelevantKnowledgeEntries`
+   原在命中不足时**按 `content.length` 无条件填充无关长文档**进 prompt，而 system prompt
+   又声明「以知识库作为卖方优势的首要来源」→ 既污染上下文又挤占相关条目名额。
+   改为**只返回真实命中**，同分按原始顺序稳定排序。
+
+2. **知识库注入 Email 实时生成**（`electron/services/agent-service.ts`）——
+   `createLlmEmailContentProvider` 新增 `[SELLER KNOWLEDGE BASE]` 注入块。该 provider 的
+   system prompt 本就严格禁止编造资质，改造前却无资料可用，只能写出空洞开发信。
+
+3. **WhatsApp 接入知识库**（`agent-service.ts` + `agents/whatsapp-agent.ts`）——
+   原为硬编码英文死模板。新增 `fallbackTextBuilder` 注入位（**刻意不用 LLM**：真实外发
+   路径上的同步环节，LLM 超时会阻断发送，违背「内容层失败永不阻断发送链路」）。
+
+4. **知识库来源可见化**（`src/components/analysis-drawer.tsx`）——新增 `KnowledgeSourceCard`：
+   有命中显示蓝卡 + 条目列表 + 条数徽标；无命中显示琥珀色虚线卡 + 「去补全产品资料」
+   直达引导（新增 `kone:navigate-knowledge` 事件，与既有 `-settings`/`-leads` 对称）。
+
+**新增**：`electron/services/agent-knowledge.ts`（Agent 侧知识库选取 SSOT）。
+
+**守护测试**：`tests/business-logic/agent-knowledge-injection.business.test.js`（8 条，含
+**跨端副本守护**——UI 的 `quickTags` 措辞必须能被 Agent 侧检索命中）、
+`tests/business-logic/knowledge-retrieval-honesty.business.test.js`（6 条，锁死兜底污染不回退）。
+
+**视觉验证**：`scripts/probe-knowledge-card.cjs` 纳入 `test:visual`。该探针内置**防自欺护栏**
+（patch 用 `defineProperty`、断言卡片几何有效、断言两场景截图哈希不同）——开发过程中它
+确实拦下了"两场景截出同一张图却报通过"的假阳性。
+
+**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4a 条。
+
+**验证**：typecheck 双侧 0 error；单测 **353/353**；`verify:consistency` 通过
+（未新增 IPC 通道，计数器无漂移）；lint 0 error；视觉探针 4/4 通过（含看图复核）。
+
+---
+
 ## [1.4.2] — 2026-10-08 · 云端测试纳入主门禁 + 备份校验向后兼容
 
 ### 一、`test:cloud` 纳入主门禁（门禁覆盖缺口）

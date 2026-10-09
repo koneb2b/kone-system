@@ -4,12 +4,17 @@ import { launchPersistentBrowser } from './browser-resolver'
 
 type WhatsAppSessionState = 'disconnected' | 'connected' | 'qr_ready' | 'expired' | 'rate_limited' | 'error'
 
-type WhatsAppAgentConfig = {
+export type WhatsAppAgentConfig = {
   dailyLimit: number
   sessionPath?: string
   // Anti-ban pacing: randomized delay applied AFTER each send (PRD reach-out red line).
   minSendIntervalMs?: number
   maxSendIntervalMs?: number
+  /* P0 知识库注入：当调用方未显式传入 message 时，用本函数构造兜底文案。
+     必须是**纯同步函数且永不抛错** —— 它是真实外发动作路径上的一环，
+     绝不能因内容构造失败阻断发送（ARCH-STANDARDS「内容层失败永不阻断发送链路」）。
+     返回 undefined 或空串时回落到内置极简模板。 */
+  fallbackTextBuilder?: (task: AgentTask) => string | undefined
 }
 
 // 'delivered' is ONLY set when WhatsApp Web shows a real delivery/read tick.
@@ -155,8 +160,18 @@ export class WhatsAppAgent {
         return { success: false, error: 'Message input not found' }
       }
 
+      // 优先级：调用方显式文案 > 知识库驱动的构造文案 > 内置极简模板。
+      // 构造失败（返回空）时静默回落，绝不让内容问题阻断发送。
+      let builtFallback: string | undefined
+      try {
+        builtFallback = this.config.fallbackTextBuilder?.(task)
+      } catch {
+        builtFallback = undefined
+      }
       const text =
-        message || `Hi ${task.company},\n\nWe noticed your business and would like to connect.\n\nBest regards`
+        message ||
+        (builtFallback && builtFallback.trim()) ||
+        `Hi ${task.company},\n\nWe noticed your business and would like to connect.\n\nBest regards`
       await messageBox.type(text, { delay: 50 })
 
       const sendButton = await page

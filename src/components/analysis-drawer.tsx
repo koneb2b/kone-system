@@ -16,6 +16,8 @@ import {
   Ship,
   Landmark,
   PenLine,
+  BookOpen,
+  ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1008,6 +1010,8 @@ function StrategyReportPanel({
         </div>
       </section>
 
+      <KnowledgeSourceCard titles={data.usedKnowledgeTitles} />
+
       <section className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -1029,6 +1033,61 @@ function StrategyReportPanel({
         </div>
       </section>
     </div>
+  )
+}
+
+/* 知识库来源卡片：把「本次分析实际引用了哪几条产品资料」如实展示给用户。
+   改造前 usedKnowledgeTitles 一路透传+持久化，却从不渲染 → 用户无从判断
+   AI 有没有用上自己的资料。为空时给出补资料引导（可直达知识库页）。 */
+function KnowledgeSourceCard({ titles }: { titles?: string[] }) {
+  const used = (titles || []).filter(Boolean)
+
+  if (!used.length) {
+    return (
+      <section className="rounded-xl border border-dashed border-amber-300 bg-amber-50/70 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <BookOpen className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-amber-900">未引用任何产品资料</div>
+            <div className="mt-1 text-xs leading-5 text-amber-800">
+              本次分析没有匹配到知识库条目（或尚未配置）。补充产品资料后，AI 才能写出
+              <span className="font-medium">有具体卖点、有说服力</span>的开发信，而不是只靠公司名泛泛而谈。
+            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('kone:navigate-knowledge'))}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-950"
+            >
+              去补全产品资料
+              <ArrowRight className="size-3" />
+            </button>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <BookOpen className="size-4 text-blue-600" />
+        引用产品资料
+        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+          {used.length} 条
+        </span>
+      </div>
+      <ul className="space-y-1.5">
+        {used.map((title, index) => (
+          <li key={`${title}-${index}`} className="flex items-start gap-2 text-xs leading-5 text-slate-700">
+            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-blue-500" />
+            <span className="min-w-0 break-words">{title}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 text-[11px] leading-5 text-slate-500">
+        以上资料已作为卖方优势来源注入本次分析，开发信中的卖点均取自此处。
+      </div>
+    </section>
   )
 }
 

@@ -323,30 +323,28 @@ const scenarioKnowledgeKeywords: Record<'direct_quote' | 'competitor_switch' | '
   factory_strength: ['工厂', '产能', '交付', '认证', '制造', '实力'],
 }
 
+/* 场景关键词预筛（非向量检索）。**只返回真实命中的条目**。
+   历史行为：命中不足时按 content.length 无条件填充无关条目，会把与当前客户
+   无关的长文档塞进 prompt，而 system prompt 又声明「以知识库作为卖方优势的
+   首要来源」→ 既污染上下文又挤占本可给相关条目的名额。已移除该兜底。
+   注意：调用方（search-service.ts）只消费返回列表，不假设"一定返回 limit 条"。 */
 export const pickRelevantKnowledgeEntries = (
   entries: Array<{ title: string; content: string; tags?: string[] }>,
   scenario: 'direct_quote' | 'competitor_switch' | 'factory_strength',
   limit = 5,
 ) => {
   const keywords = scenarioKnowledgeKeywords[scenario] || []
-  const scored = entries.map((entry) => {
+  if (!keywords.length) return []
+
+  const scored = entries.map((entry, index) => {
     const text = `${entry.title} ${entry.content} ${(entry.tags || []).join(' ')}`.toLowerCase()
     const score = keywords.reduce((sum, keyword) => (text.includes(keyword.toLowerCase()) ? sum + 1 : sum), 0)
-    return { entry, score }
+    return { entry, score, index }
   })
 
-  const prioritized = scored
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score
-      return b.entry.content.length - a.entry.content.length
-    })
+  return scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
+    .slice(0, limit)
     .map((item) => item.entry)
-
-  const withHits = prioritized.filter((entry) => {
-    const text = `${entry.title} ${entry.content} ${(entry.tags || []).join(' ')}`.toLowerCase()
-    return keywords.some((keyword) => text.includes(keyword.toLowerCase()))
-  })
-
-  const fallback = prioritized.filter((entry) => !withHits.includes(entry))
-  return [...withHits, ...fallback].slice(0, limit)
 }

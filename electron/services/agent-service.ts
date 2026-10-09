@@ -33,7 +33,7 @@ import {
   STAGE_INTERVAL_MS,
 } from './followup-scheduler'
 import { isEmailSuppressed, addSuppression, removeSuppression, readSuppressionList } from './email-suppression'
-
+import { readKnowledgeEntries, renderKnowledgePromptBlock, selectKnowledgeForAgent } from './agent-knowledge'
 // Hourly cadence for the follow-up scheduler tick.
 const FOLLOWUP_TICK_INTERVAL_MS = 60 * 60 * 1000
 
@@ -366,14 +366,31 @@ const createLlmEmailContentProvider = (
   store?: ConfigStore,
 ): NonNullable<import('./agents/email-agent').EmailAgentConfig['emailContentProvider']> => {
   return async (task, stage) => {
+    // P0 知识库注入：把用户配置的产品资料挑相关条目喂进 prompt。
+    // 改造前这里只给 Company/Website/Stage，而 system prompt 又禁止编造资质，
+    // 导致 LLM 无米下锅、只能写空洞信。命中失败时为 undefined，走下文诚实降级。
+    const knowledge = selectKnowledgeForAgent(
+      { company: task.company, website: task.website },
+      stage,
+      readKnowledgeEntries(store),
+    )
+    const knowledgeBlock = renderKnowledgePromptBlock(knowledge)
+    const knowledgeRule = knowledgeBlock
+      ? 'Use the SELLER KNOWLEDGE BASE below as the primary source of the seller strengths, products, ' +
+        'differentiators and proof points. Cite only what appears there. '
+      : 'No seller knowledge base is available, so do NOT claim any specific product capability, ' +
+        'certification, or statistic. Keep the email focused on the buyer context and a soft, honest value angle. '
+
     const system =
       'You are a senior B2B outbound sales copywriter. Write a highly personalized cold email of at most 150 words. ' +
       'Ground every claim in the company signals provided; never invent facts, certifications, or statistics. ' +
+      knowledgeRule +
       'Return ONLY valid JSON: {"subject": string (max 80 chars, specific, no clickbait), "body": string (plain text, greeting + 2-3 short paragraphs + sign-off "Kone Agent")}.'
     const user =
       `Company: ${task.company}\n` +
       `Website: ${task.website || 'unknown'}\n` +
       `Stage instruction: ${STAGE_POSITIONING[stage] || STAGE_POSITIONING[0]}\n` +
+      (knowledgeBlock ? `\n[SELLER KNOWLEDGE BASE]\n${knowledgeBlock}\n` : '') +
       'Write the email for this stage. Personalize with the company name and any inferable business context only.'
 
     const parsed = await callLlmJson(store, system, user)
@@ -381,6 +398,35 @@ const createLlmEmailContentProvider = (
     const body = String(parsed?.body || '').trim()
     if (!subject || !body) return null
     return { subject: subject.slice(0, 200), body: body.slice(0, 2400) }
+  }
+}
+
+/* P0 知识库注入（WhatsApp）：构造触达兜底文案。
+   **刻意不用 LLM** —— 这是真实外发路径上的同步环节，LLM 超时/失败会影响发送。
+   与 Email 侧的 provider 保持同一注入语义（都读 user_config.knowledgeBase），
+   但用确定性的模板拼装，无网络、无超时、不会抛错。 */
+const createKnowledgeWhatsAppTextBuilder = (
+  store?: ConfigStore,
+): NonNullable<import('./agents/whatsapp-agent').WhatsAppAgentConfig['fallbackTextBuilder']> => {
+  return (task) => {
+    const selection = selectKnowledgeForAgent(
+      { company: task.company, website: task.website },
+      0,
+      readKnowledgeEntries(store),
+    )
+    const name = task.company || 'there'
+    if (!selection.injected) {
+      // 诚实降级：无可用资料时不编造卖点，只保留中性问候。
+      return `Hi ${name},\n\nWe came across your business and would like to explore whether there is a fit.\n\nBest regards,\nKone Agent`
+    }
+    const points = selection.entries
+      .map((entry) => `- ${entry.title}${entry.tags.length ? `（${entry.tags.join('、')}）` : ''}`)
+      .join('\n')
+    return (
+      `Hi ${name},\n\n` +
+      `We would like to introduce what we can offer:\n${points}\n\n` +
+      'Would you be open to a short chat?\n\nBest regards,\nKone Agent'
+    )
   }
 }
 
@@ -493,6 +539,9 @@ const getAgentInstanceForType = (
           sessionPath: sandboxPath,
           minSendIntervalMs,
           maxSendIntervalMs,
+          // P0 知识库注入：用产品资料构造触达文案（同步纯函数，永不抛错）。
+          // 单例只创建一次，但闭包捕获 store，读取的始终是最新配置。
+          fallbackTextBuilder: createKnowledgeWhatsAppTextBuilder(store),
         },
         state,
       )

@@ -24,6 +24,7 @@ const steps = [
   { name: '设计 token 生效性', script: 'probe-design-tokens.cjs' },
   { name: '逐页渲染回归', script: 'probe-regression-visual.cjs' },
   { name: '客户资料下载端', script: 'probe-export-center.cjs' },
+  { name: '知识库来源卡片', script: 'probe-knowledge-card.cjs' },
 ]
 
 let failed = 0
