@@ -17,6 +17,54 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.8] — 2026-10-09 · 修复审计报告 P1 批次（体验一致性与合规）
+
+**背景**：P0 清零后继续处理审计报告的 P1 项，优先「用户可感知 × 低风险 × 高收益」。
+
+### P1-3 来源筛选是死选项
+- **问题**：`leads-management.tsx` 硬编码 `LinkedIn / Trade Show / AI Search` 三个选项，
+  而真实 `source` 值来自各 Provider（`Google Maps` / `Google Organic` / `AnySearch` …）
+  → **永不匹配**，点了没反应；且缺 `AnySearch` 这一真实来源。
+- **修复**：选项改为**从实际数据动态派生**（`sourceOptions` useMemo），保证与数据永不脱节。
+
+### P1-12 「今日配额」徽标口径错误
+- **问题**：`totalUsed = Σ dailyUsed` 但 `totalLimit = agents[0].dailyLimit`（仅首个智能体）
+  → 会显示如「12/5」的错值，误导用户对剩余额度的判断。
+- **修复**：`totalLimit = Σ a.dailyLimit`，与用量同口径。
+
+### P1-10 审批把邮箱等级硬编码为 `verified`（合规风险）
+- **问题**：`leads-table.tsx` 提交审批时写死 `emailVerificationGrade: 'verified'`，
+  而云端对缺省值的处理是 `'unverified'`（`cloudflare-service.ts`）——**系统原本的诚实默认**。
+  硬编码会把它覆盖，把**未经 SMTP 验证的邮箱标记为已验证**。
+- **修复**：新增纯函数 `src/lib/approval-grade.ts` 的 `resolveEmailVerificationGrade()`：
+  优先取与该邮箱匹配的决策人真实等级，无匹配则降级为 `'unverified'`，**绝不谎报**。
+
+### P1-1 / P1-2 危险操作无二次确认
+- **问题**：删除线索（立即持久化）、云端群发（不可逆批量外发）均**点一下即执行**。
+- **修复**：两处均加入确认对话框 —— 删除显示待删线索名并提示不可撤销；
+  群发提示「提交后无法撤回，请确认名单与模板已核对」。
+
+### P1-5 两个导出口径不一致
+- **问题**：`leads-table` 导出 `displayLeads`（受 50 条显示上限约束），
+  `leads-management` 导出全量 `filteredLeads` → 与 `lead-export.ts` 宣称的
+  「单一事实源 / 同口径」相悖；用户从线索表导出会**静默少拿数据**。
+- **修复**：抽出 `filteredLeads`（全量筛选结果）供导出使用，
+  **50 条上限只作用于渲染**（保留性能优化意图）。
+
+### 新增守护测试
+`tests/business-logic/p1-fixes-guard.business.test.js`（12 条）：
+- **运行时断言**（P1-10）：TS 编译 + vm 加载真实 `approval-grade.ts`，
+  验证命中/无匹配/空邮箱/大小写空白/空等级五种输入的判定。
+- **源码结构断言**（P1-1/2/3/5/12）：死选项、口径、确认态、导出源。
+  测试内同样**诚实标注**结构断言的边界。
+
+**变异测试（三轮，全部被精确捕获）**：① 审批等级改回 `'verified'` → 3 条失败；
+② 加回硬编码死选项 → 1 条失败；③ 导出改回 `displayLeads` → 1 条失败。均 `diff` 校验完整还原。
+
+**验证**：typecheck 0 error；lint 0 error；单测 **395/395**（新增 12 条）。
+
+---
+
 ## [1.4.7] — 2026-10-09 · 修复全项目审计的 7 项 P0 阻断缺陷
 
 **背景**：全项目深度审计（见 `KONE-V1.3-全项目深度审计报告-2026-10-09.md`）发现 7 项 P0，

@@ -2,6 +2,14 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Mail,
   CheckCircle2,
   XCircle,
@@ -91,6 +99,8 @@ export function AutomationWorkflow() {
   const [trackingOffline, setTrackingOffline] = useState(false)
   const [loadingTracking, setLoadingTracking] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
+  /* P1-2：云端群发是**不可逆**的批量外发动作，必须先经用户确认。 */
+  const [confirmSendOpen, setConfirmSendOpen] = useState(false)
   const [dnsResult, setDnsResult] = useState<DnsHealthCheckResult | null>(null)
   const [dnsChecking, setDnsChecking] = useState(false)
   const [senderDomain, setSenderDomain] = useState('')
@@ -660,7 +670,8 @@ export function AutomationWorkflow() {
                       })
                       return
                     }
-                    void handleStartCampaign()
+                    /* P1-2：改为打开确认对话框，用户确认后才真正提交（不可逆批量外发） */
+                    setConfirmSendOpen(true)
                   }}
                   disabled={
                     sending ||
@@ -757,6 +768,32 @@ export function AutomationWorkflow() {
           </div>
         </div>
       </div>
+
+      {/* P1-2：群发确认 —— 不可逆批量外发必须二次确认 */}
+      <Dialog open={confirmSendOpen} onOpenChange={(open) => (!open ? setConfirmSendOpen(false) : undefined)}>
+        <DialogContent className="max-w-md rounded-2xl border-slate-200 bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-slate-900">确认提交至云端发送队列？</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              将把清洗后的有效邮箱提交云端批量投递，提交后无法撤回。请确认收件人名单与模板已核对无误。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setConfirmSendOpen(false)}>
+              取消
+            </Button>
+            <Button
+              className="bg-blue-600 text-white hover:bg-blue-700"
+              onClick={() => {
+                setConfirmSendOpen(false)
+                void handleStartCampaign()
+              }}
+            >
+              确认提交
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <UpgradeModal open={upgradeOpen} intent="premium" onOpenChange={setUpgradeOpen} />
     </>

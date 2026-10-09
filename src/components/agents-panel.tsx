@@ -235,8 +235,11 @@ export function AgentsPanel() {
     }
   }
 
+  /* P1-12：总用量与总配额必须**同口径**。
+     原实现 `totalUsed = Σ dailyUsed` 但 `totalLimit = agents[0].dailyLimit`（仅首个智能体）
+     → 会显示如「12/5」的错值，误导用户对剩余额度的判断。 */
   const totalUsed = agents.reduce((sum, a) => sum + a.dailyUsed, 0)
-  const totalLimit = agents[0]?.dailyLimit || 50
+  const totalLimit = agents.reduce((sum, a) => sum + a.dailyLimit, 0) || 50
   const isPremium = tier === 'premium' || plan === 'enterprise'
   const isPaidBasic = plan === 'basic'
   const isTrialOrFree = !isPremium && !isPaidBasic

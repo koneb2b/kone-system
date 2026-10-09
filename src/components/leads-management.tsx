@@ -373,6 +373,8 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
   const [sortField, setSortField] = useState<string>('matchScore')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null)
+  /* P1-1：删除线索是**不可逆**操作（deleteLead 立即持久化），必须先经用户确认。 */
+  const [pendingDelete, setPendingDelete] = useState<LeadItem | null>(null)
   const [focusReplyCoachInputKey, setFocusReplyCoachInputKey] = useState(0)
   const [isExporting, setIsExporting] = useState(false)
   /* 客户资料下载端：字段组勾选（默认全选，行为与收敛前一致）。
@@ -400,6 +402,19 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     }
     return String(emailLanguage || 'English').trim() || 'English'
   }, [customEmailLanguage, emailLanguage])
+
+  /* P1-3：来源筛选项**从实际数据动态派生**。
+     原实现硬编码 `LinkedIn / Trade Show / AI Search`，而真实 source 值来自各 Provider
+     （'Google Maps' / 'Google Organic' / 'AnySearch' …），三者永不匹配 →
+     「点了没反应」的死选项，且缺 AnySearch 这一真实来源。动态派生保证选项与数据不脱节。 */
+  const sourceOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const lead of leads) {
+      const value = String(lead.source || '').trim()
+      if (value) set.add(value)
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [leads])
 
   useEffect(() => {
     if (!hydrated) {
@@ -520,7 +535,16 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     })
   }
 
-  const handleDeleteLead = async (lead: LeadItem) => {
+  /* P1-1：删除是不可逆的（deleteLead 立即持久化），先弹确认再执行。
+     原实现点一下即永久删除，误操作无法挽回。 */
+  const handleDeleteLead = (lead: LeadItem) => {
+    setPendingDelete(lead)
+  }
+
+  const confirmDeleteLead = async () => {
+    const lead = pendingDelete
+    if (!lead) return
+    setPendingDelete(null)
     await deleteLead(lead.id)
     toast({
       title: '线索已删除',
@@ -811,10 +835,11 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部来源</SelectItem>
-                <SelectItem value="Google Maps">Google Maps</SelectItem>
-                <SelectItem value="LinkedIn">LinkedIn</SelectItem>
-                <SelectItem value="Trade Show">Trade Show</SelectItem>
-                <SelectItem value="AI Search">AI Search</SelectItem>
+                {sourceOptions.map((source) => (
+                  <SelectItem key={source} value={source}>
+                    {source}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={matchFilter} onValueChange={setMatchFilter}>
@@ -1329,6 +1354,26 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
         lead={selectedLead}
         focusReplyCoachInputKey={focusReplyCoachInputKey}
       />
+      {/* P1-1：删除确认 —— 不可逆操作必须二次确认 */}
+      <Dialog open={pendingDelete !== null} onOpenChange={(open) => (!open ? setPendingDelete(null) : undefined)}>
+        <DialogContent className="max-w-md rounded-2xl border-slate-200 bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-slate-900">确认删除该线索？</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              将永久移除「{pendingDelete?.company || '该线索'}」及其分析缓存，此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              取消
+            </Button>
+            <Button className="bg-red-600 text-white hover:bg-red-700" onClick={() => void confirmDeleteLead()}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={emailComposerOpen} onOpenChange={setEmailComposerOpen}>
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto rounded-2xl border-slate-200 bg-white p-0 sm:max-w-3xl">
           <DialogHeader className="border-b border-slate-200 px-6 py-5">

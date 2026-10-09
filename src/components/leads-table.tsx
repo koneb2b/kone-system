@@ -2,6 +2,7 @@
 
 import { formatErrorMessage } from '@/lib/error-message'
 import { buildLeadExportCsv } from '@/lib/lead-export'
+import { resolveEmailVerificationGrade } from '@/lib/approval-grade'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Filter, Download, Mail, Phone, MessageCircle, Send, AlertCircle, ScanSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -218,9 +219,11 @@ export function LeadsTable({
   }, [leads])
 
   /* P1-4：显示上限 50 条——与 OMNI_SEARCH_RESULT_LIMIT 对齐，
-     避免用户积累大量保存线索时表格全量渲染导致卡顿。 */
+     避免用户积累大量保存线索时表格全量渲染导致卡顿。
+     注意：**上限只作用于渲染**。导出必须用下面的 `filteredLeads`（全量），
+     否则用户以为导出了全部筛选结果，实际只有 50 条（P1-5 口径不一致）。 */
   const LEADS_TABLE_DISPLAY_LIMIT = 50
-  const displayLeads = useMemo(
+  const filteredLeads = useMemo(
     () =>
       leads
         .filter((lead) => {
@@ -234,10 +237,10 @@ export function LeadsTable({
             return false
           return true
         })
-        .sort((a, b) => (hasNumericMatchScore(b) ? b.matchScore : -1) - (hasNumericMatchScore(a) ? a.matchScore : -1))
-        .slice(0, LEADS_TABLE_DISPLAY_LIMIT),
+        .sort((a, b) => (hasNumericMatchScore(b) ? b.matchScore : -1) - (hasNumericMatchScore(a) ? a.matchScore : -1)),
     [filters, leads],
   )
+  const displayLeads = useMemo(() => filteredLeads.slice(0, LEADS_TABLE_DISPLAY_LIMIT), [filteredLeads])
 
   const handleSendToCloud = async (lead: Lead) => {
     if (!canUseCloudSend) {
@@ -302,7 +305,11 @@ export function LeadsTable({
         approverMachineId: info.machineId ?? 'unknown-machine',
         decision,
         draftVersion,
-        emailVerificationGrade: 'verified',
+        /* P1-10：不得硬编码 'verified' —— 云端对缺省值的处理是 'unverified'
+           （cloudflare-service.ts: `lead.emailVerificationGrade || 'unverified'`），
+           硬编码会把未经 SMTP 验证的邮箱标记为已验证，构成合规风险。
+           改为优先取匹配决策人的真实等级，无匹配则诚实降级。 */
+        emailVerificationGrade: resolveEmailVerificationGrade(lead),
       })
       // 本地标记：approved → 记 approvalId（可投递）；rejected → 清除 approvalId（不可投递）
       await useLeadsStore.getState().updateLead(lead.id, {
@@ -464,7 +471,9 @@ export function LeadsTable({
                 // 此前该处与「线索管理」各写一份列定义，导致同一份数据两个入口
                 // 导出结果不同（线索管理那处甚至完全没有决策人）。
                 // 决策人用固定槽位展开，保证 CSV 是规整的平面表。
-                const csvContent = buildLeadExportCsv(displayLeads)
+                // P1-5：导出用**全量筛选结果**（filteredLeads），与「线索管理」入口同口径；
+                // 界面渲染才受 50 条上限约束。此前导出 displayLeads → 只有 50 条。
+                const csvContent = buildLeadExportCsv(filteredLeads)
                 const response = await saveExportFile({
                   fileName: `kone-leads-export-${new Date().toISOString().slice(0, 10)}.csv`,
                   content: csvContent,
