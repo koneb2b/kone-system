@@ -10,7 +10,7 @@ const path = require('node:path')
 //   2) 无命中时诚实降级 —— reason 能区分「没配」与「配了但不相关」
 //   3) 渲染出的 prompt 片段确实包含命中条目的正文（证明 LLM 真拿到资料）
 
-const { readKnowledgeEntries, selectKnowledgeForAgent, renderKnowledgePromptBlock } = require(
+const { readKnowledgeEntries, readKnowledgeSource, selectKnowledgeForAgent, renderKnowledgePromptBlock } = require(
   path.join(__dirname, '..', '..', 'dist-electron', 'electron', 'services', 'agent-knowledge.js'),
 )
 
@@ -103,4 +103,74 @@ test('P0-KB: 用户快捷标签措辞必须能命中（跨端副本守护）', (
     const result = selectKnowledgeForAgent({ company: 'Acme GmbH' }, 0, readKnowledgeEntries(store))
     assert.equal(result.injected, true, `UI 快捷标签「${tag}」必须能被 Agent 侧检索命中`)
   }
+})
+
+/* ─────────── 用户自定义标签贯通（本次新增能力）───────────
+   背景：`user_config.knowledgeBase.customTags` 曾是**死字段**（类型声明了但全仓零读写），
+   且 Agent 侧只认硬编码的 4 个内置标签 → 用户自定义标签永远无法命中，
+   「可自定义」形同虚设。以下测试锁死这条链路不回退。
+   诚实边界：本组验证的是**检索层**行为（关键词确实含自定义标签）。
+   真实端到端（UI 保存 → store → 发信 prompt）由 typecheck + 单测 + 手工验收共同覆盖。 */
+
+test('P0-KB: 用户自定义标签让「非内置术语」的资料也能命中', () => {
+  // 资料标题与内容都只用用户自己的术语，不含任何内置标签/stage 词。
+  const store = mkStore([{ title: '交期承诺', content: '我们承诺 15 天交付', tags: ['交期承诺'] }], {
+    customTags: ['交期承诺'],
+  })
+  const source = readKnowledgeSource(store)
+  assert.deepEqual(source.customTags, ['交期承诺'], '自定义标签应被读取')
+
+  // 不传自定义标签 → 不应命中（证明命中确实来自自定义标签，而非别的关键词）
+  const withoutCustom = selectKnowledgeForAgent({ company: 'Acme' }, 0, source.entries)
+  assert.equal(withoutCustom.injected, false, '不传自定义标签时该资料不应命中')
+
+  // 传入自定义标签 → 必须命中
+  const withCustom = selectKnowledgeForAgent({ company: 'Acme' }, 0, source.entries, 3, source.customTags)
+  assert.equal(withCustom.injected, true, '自定义标签必须让资料被命中')
+  assert.equal(withCustom.entries[0].title, '交期承诺')
+})
+
+test('P0-KB: 无自定义标签时行为与改造前完全一致（向后兼容）', () => {
+  const entries = [{ title: '工厂实力', content: '自有工厂', tags: [] }]
+  const legacy = selectKnowledgeForAgent({ company: 'Acme' }, 0, entries)
+  const explicitEmpty = selectKnowledgeForAgent({ company: 'Acme' }, 0, entries, 3, [])
+  assert.deepEqual(explicitEmpty, legacy, '显式传空数组不应改变行为')
+})
+
+test('P0-KB: 自定义标签不会挤掉内置标签的命中能力', () => {
+  // 用户加了自定义标签后，内置标签的资料仍必须能命中（不得发生覆盖）。
+  const store = mkStore(
+    [
+      { title: '工厂实力', content: '自有工厂 20000 平', tags: [] },
+      { title: '售后保障', content: '7x24 小时响应', tags: [] },
+    ],
+    { customTags: ['售后保障'] },
+  )
+  const source = readKnowledgeSource(store)
+  const result = selectKnowledgeForAgent({ company: 'Acme' }, 0, source.entries, 5, source.customTags)
+  const titles = result.entries.map((e) => e.title)
+  assert.ok(titles.includes('工厂实力'), '内置标签命中不得被自定义标签挤掉')
+  assert.ok(titles.includes('售后保障'), '自定义标签资料也应命中')
+})
+
+test('P0-KB: readKnowledgeSource 对畸形 customTags 健壮（不抛错、不污染）', () => {
+  const notArray = { get: () => ({ knowledgeBase: { entries: [], customTags: 'oops' } }) }
+  assert.deepEqual(readKnowledgeSource(notArray).customTags, [])
+
+  const mixed = { get: () => ({ knowledgeBase: { entries: [], customTags: ['ok', '', '   ', null, 42] } }) }
+  assert.deepEqual(readKnowledgeSource(mixed).customTags, ['ok', '42'], '应过滤空串但保留可转字符串')
+
+  assert.deepEqual(readKnowledgeSource(undefined), { entries: [], customTags: [] })
+})
+
+test('P0-KB: 自定义标签在 UI 侧确实被持久化（跨端贯通守护）', () => {
+  const fs = require('node:fs')
+  const uiSource = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'components', 'knowledge-base.tsx'), 'utf8')
+  // UI 保存时必须写入 customTags，否则 Agent 侧永远读不到 → 自定义标签再次变成死字段。
+  assert.ok(
+    /customTags:\s*normalizeTags\(customTags\)/.test(uiSource),
+    'knowledge-base.tsx 保存时必须持久化 customTags（否则自定义标签不参与检索）',
+  )
+  // UI 加载时也必须回填，否则用户刷新后自定义标签消失。
+  assert.ok(/config\.knowledgeBase\?\.customTags/.test(uiSource), 'knowledge-base.tsx 加载时必须回填 customTags')
 })

@@ -38,26 +38,42 @@ export type AgentKnowledgeSelection = {
 
 const MAX_ENTRY_CONTENT_CHARS = 1200
 
-/** 从 store 读取知识库原始条目（宽松解析，字段缺失即跳过）。 */
-export const readKnowledgeEntries = (store?: {
-  get?: (key: string) => unknown
-}): Array<{ title: string; content: string; tags: string[] }> => {
+export type KnowledgeEntryInput = { title: string; content: string; tags: string[] }
+
+export type KnowledgeSource = {
+  /** 有效知识条目（标题或正文非空） */
+  entries: KnowledgeEntryInput[]
+  /** 用户在 UI 中自定义的标签池（用于扩展检索关键词，见 buildMatchKeywords） */
+  customTags: string[]
+}
+
+/** 从 store 读取知识库原始条目与自定义标签（宽松解析，字段缺失即跳过/为空）。 */
+export const readKnowledgeEntries = (store?: { get?: (key: string) => unknown }): KnowledgeEntryInput[] =>
+  readKnowledgeSource(store).entries
+
+/** 读取知识库完整来源（条目 + 自定义标签）。UI 未配置 customTags 时返回空数组。 */
+export const readKnowledgeSource = (store?: { get?: (key: string) => unknown }): KnowledgeSource => {
   try {
     const raw = store?.get?.('user_config') as Record<string, unknown> | undefined
-    const kb = (raw?.knowledgeBase ?? {}) as { entries?: unknown }
-    if (!Array.isArray(kb.entries)) return []
-    return kb.entries
-      .map((entry) => {
-        const e = (entry ?? {}) as Record<string, unknown>
-        return {
-          title: String(e.title ?? '').trim(),
-          content: String(e.content ?? '').trim(),
-          tags: Array.isArray(e.tags) ? e.tags.map((t) => String(t ?? '').trim()).filter(Boolean) : [],
-        }
-      })
-      .filter((entry) => entry.title || entry.content)
+    const kb = (raw?.knowledgeBase ?? {}) as { entries?: unknown; customTags?: unknown }
+    const entries = Array.isArray(kb.entries)
+      ? kb.entries
+          .map((entry) => {
+            const e = (entry ?? {}) as Record<string, unknown>
+            return {
+              title: String(e.title ?? '').trim(),
+              content: String(e.content ?? '').trim(),
+              tags: Array.isArray(e.tags) ? e.tags.map((t) => String(t ?? '').trim()).filter(Boolean) : [],
+            }
+          })
+          .filter((entry) => entry.title || entry.content)
+      : []
+    const customTags = Array.isArray(kb.customTags)
+      ? kb.customTags.map((t) => String(t ?? '').trim()).filter(Boolean)
+      : []
+    return { entries, customTags }
   } catch {
-    return []
+    return { entries: [], customTags: [] }
   }
 }
 
@@ -83,13 +99,15 @@ const BUILTIN_KNOWLEDGE_TAGS = ['竞品替换', '直接报价', '工厂实力', 
 const buildMatchKeywords = (
   task: { company?: string; website?: string; industry?: string; country?: string },
   stage: number,
+  customTags: string[] = [],
 ): string[] => {
   const raw = [
     task.company,
     task.industry,
     task.country,
     (STAGE_INTENT_KEYWORDS[stage] || STAGE_INTENT_KEYWORDS[0]).join(' '),
-    BUILTIN_KNOWLEDGE_TAGS.join(' '),
+    // 内置标签保证开箱可用；自定义标签让用户自己的术语体系真正参与检索。
+    [...BUILTIN_KNOWLEDGE_TAGS, ...customTags].join(' '),
   ]
     .filter(Boolean)
     .join(' ')
@@ -109,17 +127,22 @@ const buildMatchKeywords = (
 /**
  * 选取与当前线索/阶段相关的知识条目。
  * **只返回真实命中的条目**；命中的条目按 命中数 → 原始顺序 稳定排序。
+ *
+ * customTags：用户在知识库 UI 中自定义的标签池。它们会扩展匹配关键词，
+ * 使「用户自己的术语」写的资料也能被命中（否则只有内置 4 个词有效，
+ * 用户自定义标签形同虚设）。传入空数组时行为与改造前完全一致。
  */
 export const selectKnowledgeForAgent = (
   task: { company?: string; website?: string; industry?: string; country?: string },
   stage: number,
-  entries: Array<{ title: string; content: string; tags: string[] }>,
+  entries: KnowledgeEntryInput[],
   limit = 3,
+  customTags: string[] = [],
 ): AgentKnowledgeSelection => {
   const totalEntries = entries.length
   if (!totalEntries) return { entries: [], totalEntries: 0, injected: false, reason: 'empty' }
 
-  const keywords = buildMatchKeywords(task, stage)
+  const keywords = buildMatchKeywords(task, stage, customTags)
   const scored = entries.map((entry, index) => {
     const haystack = `${entry.title} ${entry.content} ${entry.tags.join(' ')}`.toLowerCase()
     const score = keywords.reduce((sum, kw) => (haystack.includes(kw) ? sum + 1 : sum), 0)

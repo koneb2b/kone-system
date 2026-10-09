@@ -25,6 +25,7 @@ const steps = [
   { name: '逐页渲染回归', script: 'probe-regression-visual.cjs' },
   { name: '客户资料下载端', script: 'probe-export-center.cjs' },
   { name: '知识库来源卡片', script: 'probe-knowledge-card.cjs' },
+  { name: '知识库自定义标签', script: 'probe-knowledge-tags.cjs' },
 ]
 
 let failed = 0

@@ -75,15 +75,57 @@ const buildMockBridgeSource = (opts = {}) => {
 
     const ok = (data) => Promise.resolve({ success: true, data })
 
+    /* 真实内存配置存储（localStorage 持久化）。
+       原实现 config.set 是 no-op、config.get 恒返回 null —— 那会让任何
+       「保存后是否持久化」的断言**永远无法真正验证**（写进去读不出来）。
+       改为真 KV：set 写入、get 读出，使持久化断言具备实际意义。
+
+       注意：用 localStorage 而非纯内存对象 —— evaluateOnNewDocument 在每次
+       导航（刷新）时都会重新执行，纯内存 store 会被重置，导致「刷新后仍在」
+       类断言必然失败（那是探针自身的假阳性，不是产品缺陷）。 */
+    const LS_KEY = '__KONE_MOCK_CONFIG__'
+    const loadStore = () => {
+      try {
+        return JSON.parse(localStorage.getItem(LS_KEY) || '{}')
+      } catch {
+        return {}
+      }
+    }
+    const CONFIG_STORE = Object.assign({ leads: LEADS }, loadStore())
+    const persist = () => {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(CONFIG_STORE))
+      } catch {
+        /* 隐私模式等场景下忽略 */
+      }
+    }
+    window.__MOCK_STORE__ = {
+      get: (key) => (key in CONFIG_STORE ? CONFIG_STORE[key] : undefined),
+      set: (key, value) => {
+        CONFIG_STORE[key] = value
+        persist()
+      },
+      reset: () => {
+        try {
+          localStorage.removeItem(LS_KEY)
+        } catch {
+          /* ignore */
+        }
+      },
+    }
+
     // 显式实现：需要被断言或需要真实数据形状的通道
     const overrides = {
       config: {
         get: (key) => {
           window.__KONE_PROBE__.configKeys.push(key)
-          if (key === 'leads') return ok(LEADS)
+          return ok(key in CONFIG_STORE ? CONFIG_STORE[key] : null)
+        },
+        set: ({ key, value }) => {
+          CONFIG_STORE[key] = value
+          persist()
           return ok(null)
         },
-        set: () => ok(null),
         save: () => ok(null),
         fetchModels: () => ok({ models: [] }),
       },

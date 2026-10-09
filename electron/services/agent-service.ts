@@ -33,7 +33,7 @@ import {
   STAGE_INTERVAL_MS,
 } from './followup-scheduler'
 import { isEmailSuppressed, addSuppression, removeSuppression, readSuppressionList } from './email-suppression'
-import { readKnowledgeEntries, renderKnowledgePromptBlock, selectKnowledgeForAgent } from './agent-knowledge'
+import { readKnowledgeSource, renderKnowledgePromptBlock, selectKnowledgeForAgent } from './agent-knowledge'
 // Hourly cadence for the follow-up scheduler tick.
 const FOLLOWUP_TICK_INTERVAL_MS = 60 * 60 * 1000
 
@@ -369,10 +369,13 @@ const createLlmEmailContentProvider = (
     // P0 知识库注入：把用户配置的产品资料挑相关条目喂进 prompt。
     // 改造前这里只给 Company/Website/Stage，而 system prompt 又禁止编造资质，
     // 导致 LLM 无米下锅、只能写空洞信。命中失败时为 undefined，走下文诚实降级。
+    const knowledgeSource = readKnowledgeSource(store)
     const knowledge = selectKnowledgeForAgent(
       { company: task.company, website: task.website },
       stage,
-      readKnowledgeEntries(store),
+      knowledgeSource.entries,
+      3,
+      knowledgeSource.customTags,
     )
     const knowledgeBlock = renderKnowledgePromptBlock(knowledge)
     const knowledgeRule = knowledgeBlock
@@ -409,10 +412,13 @@ const createKnowledgeWhatsAppTextBuilder = (
   store?: ConfigStore,
 ): NonNullable<import('./agents/whatsapp-agent').WhatsAppAgentConfig['fallbackTextBuilder']> => {
   return (task) => {
+    const knowledgeSource = readKnowledgeSource(store)
     const selection = selectKnowledgeForAgent(
       { company: task.company, website: task.website },
       0,
-      readKnowledgeEntries(store),
+      knowledgeSource.entries,
+      3,
+      knowledgeSource.customTags,
     )
     const name = task.company || 'there'
     if (!selection.injected) {
