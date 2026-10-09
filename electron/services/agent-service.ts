@@ -362,7 +362,12 @@ const STAGE_POSITIONING: Record<number, string> = {
   3: 'Break-up note: polite last touch, leave the door open.',
 }
 
-const createLlmEmailContentProvider = (
+/* 导出（而非私有）是为了让「知识库 → prompt 拼接」这一环可被测试直接覆盖：
+   该拼接逻辑是知识库改造的核心价值主张（AI 真的拿到用户的产品资料），
+   但此前只有 renderKnowledgePromptBlock 的输出被单测覆盖，**拼接本身无验证** ——
+   若此处条件写反/漏拼，单测与视觉探针都发现不了。见
+   tests/business-logic/agent-prompt-knowledge.business.test.js。 */
+export const createLlmEmailContentProvider = (
   store?: ConfigStore,
 ): NonNullable<import('./agents/email-agent').EmailAgentConfig['emailContentProvider']> => {
   return async (task, stage) => {
@@ -408,7 +413,7 @@ const createLlmEmailContentProvider = (
    **刻意不用 LLM** —— 这是真实外发路径上的同步环节，LLM 超时/失败会影响发送。
    与 Email 侧的 provider 保持同一注入语义（都读 user_config.knowledgeBase），
    但用确定性的模板拼装，无网络、无超时、不会抛错。 */
-const createKnowledgeWhatsAppTextBuilder = (
+export const createKnowledgeWhatsAppTextBuilder = (
   store?: ConfigStore,
 ): NonNullable<import('./agents/whatsapp-agent').WhatsAppAgentConfig['fallbackTextBuilder']> => {
   return (task) => {

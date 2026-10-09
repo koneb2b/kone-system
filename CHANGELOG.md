@@ -17,6 +17,42 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.6] — 2026-10-09 · 补齐知识库链路唯一验证盲区（prompt 拼接端到端验证）
+
+**背景**：知识库改造（[1.4.3] / [1.4.5]）的核心价值主张是「AI 真的拿到了用户的产品资料」。
+但复核发现**覆盖有缺口**：
+
+- 单测 `agent-knowledge-injection.business.test.js` 只验证 `renderKnowledgePromptBlock`
+  **返回了什么字符串**；
+- 视觉探针只验证 UI 卡片**渲染成什么样**（走 `analysis.generate` 另一条链路）。
+
+**中间那段把片段拼进 system/user prompt 的代码（`agent-service.ts`）从未被验证**。
+若条件写反、漏拼 `knowledgeBlock`、或降级规则拼错，上述两者**都发现不了** ——
+而用户会拿到一封**没有产品卖点**的开发信，正是本次改造要解决的问题。
+
+**修复（可测试性改进 + 端到端验证）**：
+
+1. **导出两个 provider 工厂函数**（`agent-service.ts`）—— `createLlmEmailContentProvider` /
+   `createKnowledgeWhatsAppTextBuilder` 由私有改为导出，使「知识库 → prompt 拼接」可被直接覆盖。
+
+2. **新增 `tests/business-logic/agent-prompt-knowledge.business.test.js`（6 条）** ——
+   mock 全局 `fetch`（`safeFetch` 直接调用它）**捕获真实请求体**，再调用**产品自带的**
+   provider，断言发给 LLM 的 prompt 内容。只 mock 网络出口，其余全真实：
+   - 命中的条目**正文**必须真的进入 user prompt（含 `[SELLER KNOWLEDGE BASE]` 块）
+   - 无命中时**不得**出现知识库块，且必须注入诚实降级规则（禁止编造卖点）
+   - 未配置知识库时同样走降级
+   - **用户自定义标签**命中的资料也能进入 prompt（与 [1.4.5] 贯通）
+   - 缺 LLM 凭证时返回 `null` 而非抛错（内容层失败不阻断发送链路）
+   - WhatsApp 兜底文案同步语义：命中列条目、未命中不编造
+
+**变异测试（双向验证守护有效）**：① 让 user prompt **漏拼** `knowledgeBlock`
+→ **2 条失败**；② 把降级规则**条件写反** → **3 条失败**。均精确报出且 `diff` 校验完整还原。
+这两类错误正是此前**无法被任何测试发现**的。
+
+**验证**：typecheck 双侧 0 error；单测 **369/369**（新增 6 条）。
+
+---
+
 ## [1.4.5] — 2026-10-09 · 知识库自定义标签真正参与检索（User-Defined Tag Vocabulary）
 
 **背景**：用户要求「既要体现模块功能价值，也不能过度工程化，保持灵活性，用户可以自定义」。
