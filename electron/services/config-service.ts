@@ -436,6 +436,13 @@ const CONFIG_GET_ALLOWED_NAMESPACES = [
   'autopilot', // Autopilot 运行态
   'system.trialExpiresAt', // 试用过期时间（前端需展示）
   'system.machineId', // 设备识别码（前端需展示）
+  /* P0-2 修复：`cloud.*` 此前**可写不可读** —— 写端黑名单
+     （CONFIG_SET_BLACKLIST）不含 `cloud.` 故可写，读端白名单却不含 → 一律 403。
+     后果：云端引擎配置与 IMAP 自动检测「存了读不出来」，且 CloudSettingsTab
+     用 Promise.all 聚合读取，任一拒绝即整体失败 → 保存成功后再次读取失败，
+     恒弹「保存失败」（实际已落盘）。
+     这些 key 本就需要在设置页回显（用户要看到已配置的值），故开放读取。 */
+  'cloud', // 云端引擎配置（provider / url / apiKey / workspaceId）
 ]
 
 const isConfigKeyReadable = (key: string): boolean => {
@@ -452,6 +459,14 @@ const SECRET_SET_WHITELIST: Set<string> = new Set([
   SECRET_KEYS.DECISION_MAKER_API_KEY,
   SECRET_KEYS.ANYSEARCH_API_KEY,
   SECRET_KEYS.ANYSEARCH_BASE_URL,
+  /* P0-1 修复：邮箱密码此前**不在白名单**，而渲染层「保存邮箱」会调用
+     `secret:set('secrets.email.smtpPass')` → 403 → 加密槽写不进。
+     更严重的是渲染层**先清空了 user_config 的明文槽**，导致密码彻底丢失、
+     邮箱链路（SMTP 发信 / IMAP 回复检测）完全不可用。
+     这两个 key 与 LLM API Key 同级（同样经 safeStorage 加密落 kone-secrets.json），
+     渲染层必须能写 —— 否则用户在设置页根本无法配置邮箱。 */
+  SECRET_KEYS.EMAIL_SMTP_PASS,
+  SECRET_KEYS.EMAIL_IMAP_PASS,
 ])
 
 interface IElectronMain extends Electron.IpcMain {

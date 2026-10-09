@@ -17,6 +17,79 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.7] — 2026-10-09 · 修复全项目审计的 7 项 P0 阻断缺陷
+
+**背景**：全项目深度审计（见 `KONE-V1.3-全项目深度审计报告-2026-10-09.md`）发现 7 项 P0，
+**均已逐行复核**。本轮按优先级依次修复，每项配守护测试。
+
+### P0-1 邮箱密码保存必失败且丢数据
+- **根因**：`SECRET_SET_WHITELIST`（`config-service.ts`）**不含** `EMAIL_SMTP_PASS`/`EMAIL_IMAP_PASS`，
+  而渲染层保存邮箱时会 `secret:set` 这两个 key → 403；更严重的是渲染层**先清空了
+  `user_config` 的明文槽**再写加密槽 → 密码彻底丢失，邮箱链路完全不可用。
+- **修复**：① 白名单补入两个 key（与 LLM API Key 同级，同样经 safeStorage 加密）；
+  ② `accounts-management.tsx` **调整顺序**——先写加密槽，成功后才清空明文槽，
+  使 secretSet 失败时明文槽保持原值，不再丢密码。
+
+### P0-2 `cloud.*` 可写不可读
+- **根因**：写端黑名单不含 `cloud.`（可写），读端白名单也不含（403）→ 云端引擎配置与
+  IMAP 自动检测「存了读不出来」；`CloudSettingsTab` 用 `Promise.all` 聚合读取，
+  任一失败即整体回退默认值，且保存成功后再次读取失败 → **恒弹「保存失败」（实际已落盘）**。
+- **修复**：`CONFIG_GET_ALLOWED_NAMESPACES` 补入 `'cloud'`。
+
+### P0-3 停止智能体后自动重连继续发送（合规红线）
+- **根因**：`stopAgent` 只 `disconnect()` + 置 `status='idle'`，但三条执行循环
+  **从不读取 `agent.status`** → 循环继续 `sendMessage`，而 `sendMessage` 遇到
+  `sessionState!=='connected'` 会**自动 `connect()` 重连** → 用户以为停了，实际仍在发送。
+- **修复**：新增循环级**启停检查点** `waitWhilePaused(agent)`，在三条循环（whatsapp/linkedin/email）
+  每轮开头调用；`idle` → `break`（剩余目标不再发送）。
+
+### P0-4 暂停完全无效
+- **根因**：`pause` 只置 `status='paused'`，执行循环无任何读取检查点 → 暂停期间照常发送，
+  而 UI 显示「已暂停」，构成误导性状态。
+- **修复**：同上的检查点在 `paused` 时**挂起轮询**；并修 `startAgent`——
+  `paused` 时只把状态改回 `running` 而**不再启动第二条循环**（原实现会让「继续」
+  与原挂起循环并存 → 重复发送）。
+
+### P0-5 日限额重启即清零
+- **根因**：`dailyUsed` 为纯内存态，`agents` Map 每次启动重建为 0（可绕过日限额）；
+  且无日期锚点，长时间不关机会一直累加、永不按自然日重置。
+- **修复**：持久化到 `agent_daily_usage` 并带**本地日期锚点**（`todayDateKey`）——
+  仅当日期为今日才恢复，同时实现「重启不清零」与「跨天自动重置」；
+  执行循环每轮调用 `persistAgentDailyUsage()` 落盘。
+
+### P0-6 `leadKey` 入库恒 undefined
+- **根因**：`lead-mappers.ts` 的 `typeof result.id === 'string'` 判断——
+  但上游 `use-search-engine.ts` 已把 `id` 转成 `number`，而**原始 UUID 早已单独保留在
+  `LeadSearchResult.leadKey`**（该字段一直存在，只是入库时读错了字段）→ 条件恒 false →
+  `LeadItem.leadKey` 恒 undefined → 双管道触达读端（`agentGetStatus` 批量拉取）失效。
+- **修复**：`mapSearchResultToLeadItem` 改为**优先读 `result.leadKey`**，
+  回退到 `result.id` 是字符串的情形（兼容 autopilot-runner 直接传原始结果的路径）。
+
+### P0-7 最高付费档看不到深度分析面板
+- **根因**：`deep-analysis.tsx` 用 `if (role !== 'pro') return null` 自我隐藏，
+  而 premium 用户的 role 是 `'enterprise'` → 「权限给了、组件却藏了」。
+- **修复**：门禁改为**能力驱动** `if (!allowDeepAnalysis) return null`，
+  并移除已无用的 `role` prop（组件与调用处）。
+
+### 新增守护测试
+`tests/business-logic/p0-fixes-guard.business.test.js`（14 条）：
+- **运行时断言**（P0-6）：以 TS 编译 + vm 加载真实 `lead-mappers.ts`，验证
+  LeadSearchResult 形态 / 原始结果形态 / 缺失 / 空白 四种输入下的 leadKey 提取。
+- **源码结构断言**（P0-1/2/3/4/5/7）：白名单内容、检查点数量与循环数相等、
+  保存顺序、日期锚点、门禁形态。测试内**诚实标注**该类断言的边界
+  （只验「修复代码在不在」，不验运行时行为）。
+
+**变异测试（三轮，全部被精确捕获）**：
+① 移除邮箱密码白名单项 → P0-1 失败；② 移除一处循环检查点 → P0-3/4 失败；
+③ leadKey 改回只读 `result.id` → P0-6 运行时断言失败。均 `diff` 校验完整还原。
+
+**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4d 条（密钥白名单与调用点对齐、
+配置读写对称性、执行循环启停检查点三条硬约束）。
+
+**验证**：typecheck 双侧 0 error；单测 **383/383**（新增 14 条）。
+
+---
+
 ## [1.4.6] — 2026-10-09 · 补齐知识库链路唯一验证盲区（prompt 拼接端到端验证）
 
 **背景**：知识库改造（[1.4.3] / [1.4.5]）的核心价值主张是「AI 真的拿到了用户的产品资料」。

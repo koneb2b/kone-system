@@ -131,6 +131,31 @@ const persistAgentStatuses = () => {
   }
 }
 
+/* P0-5 修复：日限额（dailyUsed）此前是**纯内存态** —— `agents` Map 每次进程启动
+   都重建为 `dailyUsed: 0`，导致「重启即清零、可绕过日限额」；且无日期锚点，
+   长时间不关机会一直累加、永不按自然日重置（商业限额形同虚设）。
+   现持久化到 `agent_daily_usage`，并带**本地日期锚点**：仅当日期为今日才恢复，
+   否则保持 0 —— 这同时实现了「重启不清零」与「跨天自动重置」。 */
+const AGENT_DAILY_USAGE_CONFIG_KEY = 'agent_daily_usage'
+
+/** 本地日期键（YYYY-MM-DD）。用本地时区而非 UTC，避免跨日错位。 */
+const todayDateKey = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 把当前各智能体的日用量落盘。每轮执行循环调用一次（廉价，且轮间本就有发送间隔）。 */
+const persistAgentDailyUsage = () => {
+  if (!moduleStore) return
+  try {
+    const usage: Record<string, number> = {}
+    for (const [id, agent] of agents) usage[id] = agent.dailyUsed
+    moduleStore.set(AGENT_DAILY_USAGE_CONFIG_KEY, { date: todayDateKey(), usage })
+  } catch {
+    /* disk-protected env → keep in-memory counters only */
+  }
+}
+
 // Re-load persisted logs + statuses so the touch timeline survives restarts.
 const hydrateAgentPersistence = (store: ConfigStore) => {
   moduleStore = store
@@ -145,6 +170,16 @@ const hydrateAgentPersistence = (store: ConfigStore) => {
     if (statuses && typeof statuses === 'object') {
       for (const [leadKey, status] of Object.entries(statuses)) {
         if (status && typeof status === 'object') agentStatusStore.set(leadKey, status)
+      }
+    }
+    // P0-5：恢复**今日**的日限额用量；日期非今日则保持 0（跨天自动重置）。
+    const dailyUsage = store.get?.(AGENT_DAILY_USAGE_CONFIG_KEY) as
+      | { date?: string; usage?: Record<string, number> }
+      | undefined
+    if (dailyUsage && dailyUsage.date === todayDateKey() && dailyUsage.usage && typeof dailyUsage.usage === 'object') {
+      for (const [agentId, agent] of agents) {
+        const restored = Number(dailyUsage.usage[agentId])
+        if (Number.isFinite(restored) && restored >= 0) agent.dailyUsed = restored
       }
     }
   } catch {
@@ -591,6 +626,31 @@ const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item
   await Promise.all(Array.from({ length: normalizedLimit }, () => runner()))
 }
 
+/* P0-3/P0-4 修复：执行循环的**启停检查点**。
+ *
+ * 背景（审计发现的两个 P0）：
+ *  - `stopAgent` 只做 `disconnect()` + 置 `status='idle'`，但三条执行循环
+ *    **从不读取 `agent.status`** → 循环继续调用 `sendMessage`，而 `sendMessage`
+ *    开头遇到 `sessionState!=='connected'` 会**自动 `connect()` 重连** →
+ *    用户以为已停止，实际仍在对外发送（合规红线）。
+ *  - `pause` 只置 `status='paused'`，同样无人读取 → 暂停期间照常发送，
+ *    而 UI 显示「已暂停」，构成误导性状态。
+ *
+ * 本函数在循环**每轮开头**调用：
+ *  - `paused` → 挂起轮询，直到恢复 `running`（返回 `continue`）或被停止 `idle`（返回 `stop`）
+ *  - `idle`   → 返回 `stop`，调用方 `break`，剩余目标不再发送
+ *
+ * 配套改动：`startAgent` 在 `paused` 时只恢复状态而**不再启动第二条循环**
+ * （原实现会把「继续」变成新循环，与原挂起循环并存 → 重复发送）。
+ */
+const AGENT_GATE_POLL_MS = 500
+const waitWhilePaused = async (agent: SalesAgentState): Promise<'continue' | 'stop'> => {
+  while (agent.status === 'paused') {
+    await new Promise((resolve) => setTimeout(resolve, AGENT_GATE_POLL_MS))
+  }
+  return agent.status === 'idle' ? 'stop' : 'continue'
+}
+
 const executeWhatsAppAgent = async (
   agent: SalesAgentState,
   targets: Array<{ leadKey?: string; company: string; phone: string; website: string }>,
@@ -634,6 +694,14 @@ const executeWhatsAppAgent = async (
   }
 
   for (const target of targets) {
+    // P0-3/P0-4：启停检查点 —— 暂停则挂起，停止则中止剩余目标。
+    // 必须置于所有其他检查之前（用户意图优先于管线/额度判断）。
+    if ((await waitWhilePaused(agent)) === 'stop') {
+      addLogEntry(agent.agentId, 'stopped', 'Agent stopped by user — aborting remaining targets')
+      break
+    }
+    // P0-5：把上一轮累计的日限额用量落盘（重启不清零、跨天自动重置）。
+    persistAgentDailyUsage()
     if (runId && isStaleTask(runId)) {
       addLogEntry(
         agent.agentId,
@@ -714,6 +782,14 @@ const executeLinkedinAgent = async (
   }
 
   for (const target of targets) {
+    // P0-3/P0-4：启停检查点 —— 暂停则挂起，停止则中止剩余目标。
+    // 必须置于所有其他检查之前（用户意图优先于管线/额度判断）。
+    if ((await waitWhilePaused(agent)) === 'stop') {
+      addLogEntry(agent.agentId, 'stopped', 'Agent stopped by user — aborting remaining targets')
+      break
+    }
+    // P0-5：把上一轮累计的日限额用量落盘（重启不清零、跨天自动重置）。
+    persistAgentDailyUsage()
     if (runId && isStaleTask(runId)) {
       addLogEntry(
         agent.agentId,
@@ -804,6 +880,14 @@ const executeEmailAgent = async (
   }
 
   for (const target of targets) {
+    // P0-3/P0-4：启停检查点 —— 暂停则挂起，停止则中止剩余目标。
+    // 必须置于所有其他检查之前（用户意图优先于管线/额度判断）。
+    if ((await waitWhilePaused(agent)) === 'stop') {
+      addLogEntry(agent.agentId, 'stopped', 'Agent stopped by user — aborting remaining targets')
+      break
+    }
+    // P0-5：把上一轮累计的日限额用量落盘（重启不清零、跨天自动重置）。
+    persistAgentDailyUsage()
     if (runId && isStaleTask(runId)) {
       addLogEntry(
         agent.agentId,
@@ -1006,6 +1090,15 @@ const startAgent = async (
   if (!agent) throw new Error(`Agent ${agentId} not found`)
 
   if (agent.status === 'running') return
+  /* P0-4：`paused` 表示已有执行循环正挂起等待（`waitWhilePaused` 轮询中）。
+     「继续」只需把状态改回 running，挂起的循环会自行继续；
+     若在此启动第二条循环，会与原挂起循环并存 → 重复发送、计数错乱。 */
+  if (agent.status === 'paused') {
+    agent.status = 'running'
+    agent.errorMessage = undefined
+    emitAgentStatus(agent)
+    return
+  }
   if (agent.dailyUsed >= agent.dailyLimit) {
     agent.errorMessage = `Daily limit reached (${agent.dailyLimit})`
     agent.status = 'error'
@@ -1391,12 +1484,12 @@ export const registerAgentHandlers = (ipcMain: Electron.IpcMain, store: ConfigSt
           agent.status = 'paused'
           emitAgentStatus(agent)
         } else if (action === 'resume') {
-          if (payload?.targets) {
-            void startAgent(agentId, payload.targets, undefined, store)
-          } else {
-            const batch = consumeStagedBatch(agentId)
-            void startAgent(agentId, batch.targets, batch.runId, store)
-          }
+          /* P0-4：与 start 同构 —— `paused → running` 即可，挂起的执行循环
+             会自行继续。原实现重新调用 startAgent 创建第二条循环，与原挂起
+             循环并存 → 重复发送。 */
+          agent.status = 'running'
+          agent.errorMessage = undefined
+          emitAgentStatus(agent)
         }
 
         return {

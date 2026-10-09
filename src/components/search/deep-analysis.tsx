@@ -14,7 +14,10 @@ export type AnalysisResult = {
 }
 
 interface DeepAnalysisProps {
-  role: string | null | undefined
+  /* P0-7：门禁以**能力**（allowDeepAnalysis，来自 feature-gate）为准，
+     不再用 role 字符串判断。原实现 `role !== 'pro'` 会把 premium 用户挡在门外 ——
+     其 role 是 'enterprise'（dashboard-page.tsx:86），于是「权限给了、组件却自我隐藏」，
+     最高付费档看不到深度分析面板。 */
   allowDeepAnalysis: boolean
   analyzingUrl: string
   isAnalyzing: boolean
@@ -24,7 +27,6 @@ interface DeepAnalysisProps {
 }
 
 export function DeepAnalysis({
-  role,
   allowDeepAnalysis,
   analyzingUrl,
   isAnalyzing,
@@ -32,7 +34,7 @@ export function DeepAnalysis({
   onUrlChange,
   onAnalyze,
 }: DeepAnalysisProps) {
-  if (role !== 'pro') return null
+  if (!allowDeepAnalysis) return null
 
   return (
     <div className="mt-4 pt-4 border-t border-slate-200">

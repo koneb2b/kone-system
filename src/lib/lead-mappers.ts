@@ -10,6 +10,8 @@ import type {
 
 type LeadMapperInput = Partial<Omit<SearchExecuteResult, 'id'>> & {
   id?: number | string
+  /* P0-6：由 LeadSearchResult 透传的原始字符串 id（稳定 UUID） */
+  leadKey?: string
   company: string
   industry?: LeadSearchResult['industry']
   unlocked?: LeadSearchResult['unlocked']
@@ -152,8 +154,15 @@ export const mapSearchResultToLeadItem = (result: LeadMapperInput, context: Lead
 
   return {
     id,
-    /* P0-1：保留搜索产物稳定 UUID（字符串 id），供 agentStatus 写回关联 */
-    leadKey: typeof result.id === 'string' && result.id.trim() ? result.id.trim() : undefined,
+    /* P0-1/P0-6：保留搜索产物稳定 UUID（字符串 id），供 agentStatus 写回关联。
+       优先取显式透传的 `leadKey`（LeadSearchResult 已把原始 UUID 单独保留）；
+       回退到 `id` 本身是字符串的情形（其他调用方可能直接传字符串 id）。 */
+    leadKey:
+      typeof result.leadKey === 'string' && result.leadKey.trim()
+        ? result.leadKey.trim()
+        : typeof result.id === 'string' && result.id.trim()
+          ? result.id.trim()
+          : undefined,
     company,
     contact: String(result.contact || '').trim(),
     contactTitle: String(result.contactTitle || '').trim(),

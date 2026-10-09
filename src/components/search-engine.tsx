@@ -1190,7 +1190,6 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
         <SearchPagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToSearchPage} />
 
         <DeepAnalysis
-          role={userRole}
           allowDeepAnalysis={searchLimit.allowDeepAnalysis}
           analyzingUrl={analyzingUrl}
           isAnalyzing={isAnalyzing}

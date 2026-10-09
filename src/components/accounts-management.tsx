@@ -237,6 +237,16 @@ export function AccountsManagement() {
       const newPass = String(emailDraft.smtpPass || '').trim()
       const newImapPass = String(emailDraft.imapPass || '').trim()
       const imapHost = String(emailDraft.imapHost || '').trim()
+      /* P0-1 修复（顺序）：**先写加密槽，成功后才清空明文遗留槽**。
+         原实现先 updateUserConfig 把 smtpPass/imapPass 置空，再调 secretSet；
+         一旦 secretSet 失败（如白名单未放行），明文槽已被清空、加密槽又没写进去
+         → 密码彻底丢失。调整顺序后，secretSet 抛错时明文槽保持原值，不会丢密码。 */
+      if (newPass) {
+        await secretSet({ key: 'secrets.email.smtpPass', value: newPass })
+      }
+      if (newImapPass) {
+        await secretSet({ key: 'secrets.email.imapPass', value: newImapPass })
+      }
       await updateUserConfig((current) => ({
         ...current,
         accounts: {
@@ -256,12 +266,6 @@ export function AccountsManagement() {
           },
         },
       }))
-      if (newPass) {
-        await secretSet({ key: 'secrets.email.smtpPass', value: newPass })
-      }
-      if (newImapPass) {
-        await secretSet({ key: 'secrets.email.imapPass', value: newImapPass })
-      }
       await accountConnect({
         accountType: editingEmailType,
         label: `${ACCOUNT_TYPE_META[editingEmailType].label} 账号`,
