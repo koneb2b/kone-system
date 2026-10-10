@@ -18,13 +18,15 @@ const realRequire = Module.createRequire(__filename)
 const stubs = {
   '@/lib/utils': { stableHash: (value) => String(value) },
 }
-const customRequire = (id) => {
+const { createTsAwareRequire } = require('./helpers.js')
+
+const customRequire = createTsAwareRequire((id) => {
   if (id in stubs) return stubs[id]
   if (id.startsWith('@/')) {
     return realRequire(path.join(repoRoot, 'src', id.slice(2)))
   }
   return realRequire(id)
-}
+})
 const transpileMapper = () => {
   const source = fs.readFileSync(mapperPath, 'utf8')
   const transpiled = ts.transpileModule(source, {

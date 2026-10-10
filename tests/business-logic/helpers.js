@@ -95,6 +95,45 @@ const resetModule = (modulePath) => {
   delete require.cache[require.resolve(modulePath)]
 }
 
+const REPO_ROOT = path.join(__dirname, '..', '..')
+
+/* 让 `@/` 别名在测试里可解析到 `src/**` 的 **.ts** 源文件。
+ *
+ * 背景：测试通过 ts.transpileModule + vm 加载 src 侧模块，Node 原生不认 `.ts`。
+ * 此前各测试靠"把每个 `@/` 依赖手动 stub 掉"绕过 —— 一旦被测模块**新增**一个
+ * `@/` 值导入（如 `@/lib/country-code`），所有引用它的测试都会 MODULE_NOT_FOUND。
+ * 这里提供递归加载能力：先让调用方自己的 require（stub）优先，仅在
+ * MODULE_NOT_FOUND 时回退到 `@/` → `.ts` 解析。 */
+const createTsAwareRequire = (customRequire) => {
+  const fs = require('node:fs')
+  const cache = new Map()
+
+  const loadTs = (absPath) => {
+    if (cache.has(absPath)) return cache.get(absPath)
+    const exportsObj = transpileTypeScriptModule(absPath, { require: tsAwareRequire })
+    cache.set(absPath, exportsObj)
+    return exportsObj
+  }
+
+  const tsAwareRequire = (request) => {
+    if (typeof customRequire === 'function') {
+      try {
+        return customRequire(request)
+      } catch (error) {
+        // 仅当"找不到模块"时才回退到 @/ 解析；其他错误应如实抛出。
+        if (error?.code !== 'MODULE_NOT_FOUND') throw error
+      }
+    }
+    if (typeof request === 'string' && request.startsWith('@/')) {
+      const base = path.join(REPO_ROOT, 'src', request.slice(2))
+      if (fs.existsSync(`${base}.ts`)) return loadTs(`${base}.ts`)
+    }
+    return require(request)
+  }
+
+  return tsAwareRequire
+}
+
 const transpileTypeScriptModule = (filePath, contextOverrides = {}) => {
   const fs = require('node:fs')
   const source = fs.readFileSync(filePath, 'utf8')
@@ -112,7 +151,7 @@ const transpileTypeScriptModule = (filePath, contextOverrides = {}) => {
   const context = vm.createContext({
     module,
     exports: module.exports,
-    require: contextOverrides.require,
+    require: createTsAwareRequire(contextOverrides.require),
     __dirname: path.dirname(filePath),
     __filename: filePath,
     process,
@@ -137,4 +176,6 @@ module.exports = {
   withModuleMocks,
   resetModule,
   transpileTypeScriptModule,
+  /* 供自实现 customRequire 的测试复用：让 `@/` 别名回退解析到 src 下的 .ts 源文件 */
+  createTsAwareRequire,
 }

@@ -5,6 +5,7 @@ const Module = require('node:module')
 const fs = require('node:fs')
 const ts = require('typescript')
 const vm = require('node:vm')
+const { createTsAwareRequire } = require('./helpers.js')
 
 // P1-3 回归防护：流式评分单点增量更新。
 //
@@ -26,13 +27,13 @@ const stubs = {
     configSet: async () => null,
   },
 }
-const customRequire = (id) => {
+const customRequire = createTsAwareRequire((id) => {
   if (id in stubs) return stubs[id]
   if (id.startsWith('@/')) {
     return realRequire(path.join(repoRoot, 'src', id.slice(2)))
   }
   return realRequire(id)
-}
+})
 const transpileStore = () => {
   const source = fs.readFileSync(storePath, 'utf8')
   const transpiled = ts.transpileModule(source, {

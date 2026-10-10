@@ -5,6 +5,7 @@ const Module = require('node:module')
 const fs = require('node:fs')
 const ts = require('typescript')
 const vm = require('node:vm')
+const { createTsAwareRequire } = require('./helpers.js')
 
 /**
  * 导出列构造器 SSOT 守护（防漂移闭环）。
@@ -37,10 +38,10 @@ const stubs = {
     formatMatchScoreForExport: (score) => (typeof score === 'number' ? `${score}%` : '待评估'),
   },
 }
-const customRequire = (id) => {
+const customRequire = createTsAwareRequire((id) => {
   if (id in stubs) return stubs[id]
   return realRequire(id)
-}
+})
 
 /** 转译并加载**真实**的 lead-export.ts（非内联副本），确保测试不与实现脱钩。 */
 const loadLeadExport = () => {

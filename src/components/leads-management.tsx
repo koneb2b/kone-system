@@ -1068,7 +1068,29 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
         </div>
 
         <div className="overflow-x-auto">
-          {leads.length === 0 ? (
+          {leads.length > 0 && filteredLeads.length === 0 ? (
+            /* P2 修复：库中有线索但**筛选后无匹配**时，此前渲染 4 列空看板 ——
+               用户无法区分「筛选没结果」与「数据未加载」。补明确空态 + 一键清除筛选。 */
+            <div className="py-16 text-center text-sm text-slate-500">
+              <div className="text-base font-semibold text-slate-700">没有符合条件的线索</div>
+              <div className="mt-2 text-xs text-slate-500">当前筛选条件下无匹配结果，试试放宽条件或清除筛选。</div>
+              <div className="mt-4 flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setStatusFilter('all')
+                    setSourceFilter('all')
+                    setMatchFilter('all')
+                    setUnlockedFilter('all')
+                    setNextActionFilter('')
+                  }}
+                >
+                  清除全部筛选
+                </Button>
+              </div>
+            </div>
+          ) : leads.length === 0 ? (
             <div className="py-16 text-center text-sm text-slate-500">
               <div className="text-base font-semibold text-slate-700">暂无线索</div>
               <div className="mt-2 text-xs text-slate-500">去智能获客搜索并保存第一条线索</div>

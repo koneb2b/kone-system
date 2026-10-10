@@ -5,6 +5,7 @@ const Module = require('node:module')
 const fs = require('node:fs')
 const ts = require('typescript')
 const vm = require('node:vm')
+const { createTsAwareRequire } = require('./helpers.js')
 
 // P1-3 续 · 组件级 selector 订阅前置：把 `getLeadSettlementMeta` 抽成纯函数后，
 // 此处对其全部分支做回归防护。该函数决定搜索结果卡片的"结算态"展示
@@ -22,13 +23,13 @@ const stubs = {
   // 仅 getLeadSettlementMeta 的运行时依赖；type-only 导入在 transpile 阶段被擦除。
   '@/lib/utils': { stableHash: (value) => String(value) },
 }
-const customRequire = (id) => {
+const customRequire = createTsAwareRequire((id) => {
   if (id in stubs) return stubs[id]
   if (id.startsWith('@/')) {
     return realRequire(path.join(repoRoot, 'src', id.slice(2)))
   }
   return realRequire(id)
-}
+})
 const transpileMapper = () => {
   const source = fs.readFileSync(mapperPath, 'utf8')
   const transpiled = ts.transpileModule(source, {

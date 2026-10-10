@@ -5,6 +5,7 @@ const Module = require('node:module')
 const fs = require('node:fs')
 const ts = require('typescript')
 const vm = require('node:vm')
+const { createTsAwareRequire } = require('./helpers.js')
 
 /* P0 修复守护测试（2026-10-09 全项目审计后的 7 项阻断缺陷）。
  *
@@ -29,11 +30,11 @@ const realRequire = Module.createRequire(__filename)
 const stubs = {
   '@/lib/utils': { stableHash: (value) => String(value) },
 }
-const customRequire = (id) => {
+const customRequire = createTsAwareRequire((id) => {
   if (id in stubs) return stubs[id]
   if (id.startsWith('@/')) return realRequire(path.join(repoRoot, 'src', id.slice(2)))
   return realRequire(id)
-}
+})
 const loadMapper = () => {
   const source = fs.readFileSync(mapperPath, 'utf8')
   const transpiled = ts.transpileModule(source, {
