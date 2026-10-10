@@ -29,3 +29,25 @@ gen_article2.js
 /kone_图标Logo (1).png
 .env
 .env.*
+
+# ── 工具运行时产物（非产品代码，不入库）─────────────────────────
+# Oh My OpenCode 运行时状态（boulder / drafts / evidence / notepads 等）
+.omo/
+# 探针证据（截图与 JSON；tests/ 下的冒烟证据为已入库例外）
+.sisyphus/
+# WorkBuddy AI 工作记忆（项目约定与日志，属本地上下文）
+.workbuddy-ai/
+
+# ── 根目录探针产物与生成物 ────────────────────────────────────
+# 视觉探针截图/报告（tests/ 下的 packaged-smoke 证据为已入库例外）
+/probe-*.png
+/probe-*.json
+# 一次性测试报告（非长期资产）
+/tests/*-report.json
+/tests/module-e2e-report.json
+# 打包产物与意外重定向文件
+release.rar
+/release.rar
+/=
+
+
