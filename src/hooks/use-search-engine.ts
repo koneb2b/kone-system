@@ -1,6 +1,7 @@
 'use client'
 
 import { formatSearchErrorMessage } from '@/lib/error-message'
+import { resolveCountryCode } from '@/lib/country-code'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { useLeadsStore, LeadSearchResult } from '@/store/leads-store'
@@ -97,7 +98,8 @@ const mapSearchExecuteResultToSearchResult = (
   unlocked: Boolean(item.unlocked),
   source: (item.source as string) || 'Google Maps',
   country: context.country || 'Global',
-  countryCode: context.country ? context.country.slice(0, 2).toUpperCase() : 'GL',
+  /* P2 修复：原为 `context.country.slice(0, 2)` → `Germany` 会变成 `GE`（实为 `DE`）。 */
+  countryCode: resolveCountryCode(context.country),
   website: (item.website as string) || '',
   matchReasons: Array.isArray(item.matchReasons) ? (item.matchReasons as string[]) : [],
   riskFlags: Array.isArray(item.riskFlags) ? (item.riskFlags as string[]) : [],

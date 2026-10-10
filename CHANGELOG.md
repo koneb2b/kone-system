@@ -17,6 +17,29 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.10] — 2026-10-09 · 修复 P2 国家代码推导错误（数据正确性）
+
+### P2-1 `countryCode` 由国家名截取前两字母 → 数据错误
+- **问题**：三处用 `country.slice(0, 2).toUpperCase()` 推导 ISO 代码 ——
+  `Germany` → `GE`（实为 `DE`）、`United States` → `UN`（实为 `US`）。
+  **错误代码会作为"看起来合法"的数据进入表格、导出文件与云端台账**，
+  比空值更难被发现。
+  - `src/lib/lead-mappers.ts`（入库时）
+  - `src/hooks/use-search-engine.ts`（搜索结果映射时）
+  - `src/components/analysis-drawer.tsx`（AI 分析时）
+- **修复**：新增 `src/lib/country-code.ts`，内置 60+ 常用国家的中英文名 → ISO alpha-2 映射；
+  **未命中返回空串（诚实表示未知），不再猜**。
+  `lead-mappers` 保留原有本地函数签名（调用方不受影响），内部改为委托共享映射。
+
+### 守护测试
+`tests/business-logic/p2-fixes-guard.business.test.js`（6 条，**运行时断言**）：
+验证 Germany→DE / United States→US / 中文国名 / 大小写空白 / 未知返回空串，
+以及三处调用点不再使用 slice 推导。
+
+**验证**：typecheck 0 error；lint 0 error。
+
+---
+
 ## [1.4.9] — 2026-10-09 · 修复审计报告 P1 批次（二）· 账号链路与门禁引导
 
 ### P1-7 邮箱账号健康检查读错路径 → 永远「已断开」

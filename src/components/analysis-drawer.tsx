@@ -28,6 +28,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useLeadsStore } from '@/store/leads-store'
 import type { LeadAnalysisCacheEntry, LeadItem } from '@/store/leads-store'
 import { getDataSourceBadge, getDataSourceMeta } from '@/lib/data-source-meta'
+import { resolveCountryCode } from '@/lib/country-code'
 import { analysisGenerate, ElectronApiError, exportPdfFile } from '@/lib/electron-api'
 import { useFeatureGate } from '@/lib/feature-gate'
 
@@ -177,7 +178,8 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
       contact: lead.contact || '',
       contactTitle: lead.contactTitle || '',
       country,
-      countryCode: lead.countryCode || country.slice(0, 2).toUpperCase() || 'GL',
+      /* P2 修复：原为 `country.slice(0, 2)` → `Germany` 会变成 `GE`（实为 `DE`）。 */
+      countryCode: lead.countryCode || resolveCountryCode(country),
       website: normalizedWebsite,
       source: lead.source || 'Google Maps',
       matchScore: lead.matchScore,

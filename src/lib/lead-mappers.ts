@@ -1,4 +1,5 @@
 import { stableHash } from '@/lib/utils'
+import { resolveCountryCode as resolveCountryCodeFromName } from '@/lib/country-code'
 import type { LeadAnalysisCacheEntry, LeadItem, LeadSearchResult } from '@/store/leads-store'
 import type {
   SearchExecuteResult,
@@ -130,9 +131,10 @@ const resolveCountryCode = (countryCode?: string, country?: string) => {
     .toUpperCase()
   if (normalizedCode) return normalizedCode.slice(0, 2)
 
-  const normalizedCountry = String(country || '').trim()
-  if (!normalizedCountry) return 'GL'
-  return normalizedCountry.slice(0, 2).toUpperCase()
+  /* P2 修复：不得截取国家名前两个字母（`Germany` → `GE`，实为 `DE`；
+     `United States` → `UN`，实为 `US`）。改用共享映射；未知返回 `''`（诚实），
+     由展示层决定兜底文案，而不是塞一个"看起来合法"的错误代码进数据。 */
+  return resolveCountryCodeFromName(country)
 }
 
 const normalizeAnalysisCache = (analysisCache?: Record<string, LeadAnalysisCacheEntry | unknown>) => {
