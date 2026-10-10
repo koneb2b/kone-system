@@ -45,9 +45,51 @@ master 就立刻又落后 1 个提交，需再次同步。两个可选根治方�
 | **A. 统一为 master** | 后续直接在 master 上提交，废弃 `gap-fix-p0-p1` | 符合通用习惯，零额外成本 | 分支名 `gap-fix-p0-p1` 名不副实（它早已不止 P0/P1 修复） |
 | **B. 统一为 main** | `git branch -m gap-fix-p0-p1 main` 后删除 master | 命名现代、名副其实 | 若有外部脚本硬编码 `master` 需同步调整 |
 
-**我的建议：方案 B**。理由：`gap-fix-p0-p1` 这个名字是**临时任务名**，
-但它实际承载了 153 个提交（审计、知识库、导出、UI、P0/P1/P2 修复……），
-留着一个"任务名当主干 + 一个空壳 master"的结构，只会继续制造混淆。
+### ✅ 已执行：方案 B（分支根治，2026-10-10）
+
+**执行前的安全核查（全部通过）**：
+
+| 核查项 | 结果 |
+|---|---|
+| `package.json` 是否引用 master | 无 |
+| `scripts/` / `.github/` 是否引用 master | 无 |
+| `.git/config` 是否引用 master | 无 |
+| **CI 期望的分支名** | **`.github/workflows/ci.yml` 声明 `branches: [main, dev, 'release/*']`** |
+
+> **决定性证据**：CI 配置期望的是 **`main`**，而仓库里**根本没有 main 分支** ——
+> 这意味着 **CI 从未被触发过**。方案 B 不仅"更规范"，而且是**修复 CI 失效的必要前提**。
+
+**执行结果**：
+```
+git branch -m gap-fix-p0-p1 main    # 改名
+git branch -D master                # 删除（内容完全一致，零损失）
+```
+- **现状**：仓库只有 **1 个分支 `main`**，与 CI 配置对齐。
+- **可回滚**：原 master SHA `c64cc7f0c3a25bfca2ceb5a7ac817e2ca0296b52`；
+  如需还原：`git branch master c64cc7f`
+- **零内容损失**：执行前已用 `git diff master gap-fix-p0-p1` 确认两者完全一致。
+
+## 二·补 关于「审批 → 云端二次门禁」的核查（重要订正）
+
+梳理过程中入库了 `KONE-V1.3-审批与云端二次门禁设计方案-2026-10-07.md`。
+该文档头部标注「**状态：草案 v1，待评审**」，正文称：
+> "AGENTS.md 宪法第 5 条要求「审批 + 服务端二次门禁」……**这条宪法级约束在代码中无实现**"
+
+**核查结论：该描述已过时，宪法第 5 条实际已落地。**
+
+| 证据 | 内容 |
+|---|---|
+| 提交 `4edd5b4`（2026-10-07） | `feat(cloud): 阶段1 · 云端二次门禁 ⑤⑥⑦⑧⑨ + approvals API（宪法第5条落地）` |
+| 提交 `0f2208f`（2026-10-07） | `feat(cloud): 阶段4 · 配额熔断写入侧 + 驳回 UI（让门禁⑨真正生效）` |
+| 云端实现 | `kone-cloud/src/worker.ts`：`/outreach/queue` → `handleQueueOutreach`（仅接受 **approved** lead） |
+| 门禁测试 | `kone-cloud/tests/approval-gate.test.ts` 覆盖 ⑤撞单 / ⑥抑制 / **⑦审批（无记录→APPROVAL_REQUIRED、rejected→拒绝、版本不匹配→DRAFT_VERSION_MISMATCH）** / ⑧邮箱等级 / ⑨熔断 |
+
+**厘清**：本地侧 `queueOutreach` 确实**不做前置审批校验**（也不传 `approvalId`），
+但这是**符合宪法措辞的设计** —— 宪法要求的是 **"server-side second-gate"（服务端二次门禁）**，
+本地只负责投递、由服务端兜底。**不是缺陷**。
+
+**待办（文档治理）**：该设计文档的状态行应订正为「已实现（见 `4edd5b4`）」，
+避免后来者误读为"宪法未落地"。
 
 ## 三、优化覆盖度核查（回答「是否全面严谨覆盖到位」）
 
