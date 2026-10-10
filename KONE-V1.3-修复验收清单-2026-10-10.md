@@ -5,6 +5,22 @@
 
 ---
 
+## 第零部分 · 交付物状态（2026-10-11 补录）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| **安装包产出** | ✅ | `release-v140/Kone-Intellect-Setup-1.3.15.exe`（89.8 MB，2026-10-11 00:11，**已签名**） |
+| **包内含全部修复** | ✅ | asar 内验证：`waitWhilePaused`×5、`agent_daily_usage`×2、`secrets.email.smtpPass`×3、`全部来源`、`确认删除` |
+| **打包冒烟** | ✅ | `booted: true`、激活页可见、preload 桥可用（截图人工确认） |
+| 旧包状态 | ⚠️ **不可用** | `release-build/…1.3.15.exe` 产出于 10-07，**早于 P0 修复 2 天**，不含任何修复 |
+
+> **打包阻塞问题已解决**：此前 `npm run dist` 报 `EBUSY: app.asar locked`。
+> 根因是**旧 `release/` 目录被锁**，而非打包能力问题。
+> 绕过方式：`npx electron-builder --win nsis --config.directories.output=release-v140`（换输出目录）。
+> 冒烟脚本亦支持位置参数：`node scripts/packaged-smoke.cjs release-v140`。
+
+---
+
 ## 第一部分 · 自动化门禁（可重复执行）
 
 | 命令 | 覆盖 | 期望 |
