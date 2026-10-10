@@ -29,6 +29,38 @@ const accounts: Map<string, AccountEntry> = new Map()
 let healthCheckTimer: ReturnType<typeof setInterval> | null = null
 let healthCheckRunning = false
 
+/* P1-9 修复：账号列表此前是**纯内存 Map** —— 进程重启即清空，
+   用户每次开机都要重新「连接」账号（Cookie 分区其实还在，只是列表空了）。
+   现持久化到独立配置键；Cookie 本就由 `persist:kone_sandbox_*` 分区承载。
+   注意：只持久化**结构**（connect / disconnect），不持久化 `status` ——
+   重启后由 30s 健康检查自动刷新，避免每次检查都写盘。 */
+const SANDBOX_ACCOUNTS_CONFIG_KEY = 'sandbox_accounts'
+let sandboxStore: ConfigStore | null = null
+
+const persistSandboxAccounts = () => {
+  if (!sandboxStore) return
+  try {
+    sandboxStore.set(SANDBOX_ACCOUNTS_CONFIG_KEY, Array.from(accounts.values()))
+  } catch {
+    /* disk-protected env → keep in-memory accounts only */
+  }
+}
+
+const hydrateSandboxAccounts = (store: ConfigStore) => {
+  sandboxStore = store
+  try {
+    const saved = store.get(SANDBOX_ACCOUNTS_CONFIG_KEY)
+    if (Array.isArray(saved)) {
+      for (const entry of saved) {
+        const e = entry as AccountEntry | undefined
+        if (e && typeof e === 'object' && e.accountId) accounts.set(e.accountId, e)
+      }
+    }
+  } catch {
+    /* corrupt/absent persistence → start with an empty list */
+  }
+}
+
 const generateAccountId = () => {
   const ts = Date.now().toString(36)
   const rnd = Math.random().toString(36).slice(2, 8)
@@ -97,8 +129,19 @@ const performHealthCheck = async (entry: AccountEntry, store: ConfigStore) => {
       // 与宪法「不得假成功」的要求相悖。
       // 注：此处只校验配置**存在性**；真实连通性由「测试连接」与
       // Email Agent 执行前的 DNS 健康检查（email-agent.ts）负责。
-      const cfg = (store.get('user_config') ?? {}) as { smtpHost?: string; imapHost?: string }
-      const host = entry.accountType === 'email_smtp' ? cfg.smtpHost : cfg.imapHost
+      /* P1-7 修复：邮箱配置的真实写入路径是 `user_config.accounts.email.*`
+         （`accounts-management.tsx` 保存端、`agent-service.ts` / `imap-reply-service.ts`
+         读取端均如此）。此处原先读**顶层** `user_config.smtpHost` → 路径不匹配 →
+         邮箱账号恒判「已断开」，与「保存并连接」的成功提示自相矛盾。
+         顶层读取保留为向后兼容回退（旧安装可能残留）。 */
+      const cfg = (store.get('user_config') ?? {}) as {
+        smtpHost?: string
+        imapHost?: string
+        accounts?: { email?: { smtpHost?: string; imapHost?: string } }
+      }
+      const emailCfg = cfg.accounts?.email
+      const host =
+        entry.accountType === 'email_smtp' ? emailCfg?.smtpHost || cfg.smtpHost : emailCfg?.imapHost || cfg.imapHost
       if (String(host ?? '').trim()) {
         entry.status = 'connected'
         entry.errorMessage = undefined
@@ -213,6 +256,8 @@ export const findAccountByType = (accountType: string): AccountEntry | undefined
 
 export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
   const { licenseGuard } = createLicenseService(store)
+  // P1-9：恢复上次会话的账号列表（重启不再清空）
+  hydrateSandboxAccounts(store)
 
   let rollcallSender: Electron.WebContents | null = null
 
@@ -259,6 +304,7 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
       }
 
       accounts.set(accountId, entry)
+      persistSandboxAccounts()
 
       // 立即执行一次健康检查（不等待 30s 轮询），使返回的 status 反映真实情况
       await performHealthCheck(entry, store)
@@ -313,6 +359,7 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
       await ses.clearStorageData({ storages: ['cookies', 'localstorage'] })
 
       accounts.delete(accountId)
+      persistSandboxAccounts()
 
       if (accounts.size === 0) {
         stopHealthCheckPoller()

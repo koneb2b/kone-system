@@ -17,6 +17,41 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.9] — 2026-10-09 · 修复审计报告 P1 批次（二）· 账号链路与门禁引导
+
+### P1-7 邮箱账号健康检查读错路径 → 永远「已断开」
+- **问题**：`sandbox-service.ts` 读**顶层** `user_config.smtpHost`，而真实写入路径是
+  `user_config.accounts.email.smtpHost`（`accounts-management` 保存端、`agent-service` /
+  `imap-reply-service` 读取端均如此）→ 路径不匹配 → 邮箱账号**恒判「已断开」**，
+  与「保存并连接」的成功提示自相矛盾。
+- **修复**：优先读 `accounts.email.*`，顶层读取保留为向后兼容回退（旧安装可能残留）。
+
+### P1-9 账号列表不持久化 → 重启即清空
+- **问题**：`accounts` 是**纯内存 Map** → 进程重启后列表为空，用户每次开机都要重新「连接」
+  （Cookie 分区其实还在，只是列表空了）。
+- **修复**：持久化到独立配置键 `sandbox_accounts`；`registerSandboxHandlers` 启动时恢复，
+  `connect` / `disconnect` 后落盘。
+  **刻意只持久化结构、不持久化 `status`** —— 重启后由 30s 健康检查自动刷新，避免每次检查都写盘。
+
+### P1-11 邮箱清洗/域名检测/追踪刷新 前端无门禁、无升级引导
+- **问题**：三者后端均受 `requireFeature('cloud_send')` 保护（Fail-Closed），
+  但对 Basic/Trial 用户按钮**可点** → 点了才看到 403 原始错误，**转化路径断裂**。
+- **修复**：新增统一门禁辅助 `requireCloudSend(featureLabel)`（与 `handleStartCampaign` 同模式），
+  三处按钮接入：未授权时弹升级弹窗 + 明确文案，而非暴露原始错误。
+
+### P1-6 改完设置马上切页会静默丢失
+- **问题**：`system-settings.tsx` 卸载时的 cleanup 只 `clearTimeout` ——
+  **200ms 防抖窗口内的改动被静默丢弃**。
+- **修复**：新增 `pendingPersistRef` 记录待落盘动作，cleanup 时**立即执行**而非丢弃。
+
+### 守护测试
+`tests/business-logic/p1-fixes-guard.business.test.js` 增至 **16 条**（新增 4 条：
+P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
+
+**验证**：typecheck 双侧 0 error；lint 0 error。
+
+---
+
 ## [1.4.8] — 2026-10-09 · 修复审计报告 P1 批次（体验一致性与合规）
 
 **背景**：P0 清零后继续处理审计报告的 P1 项，优先「用户可感知 × 低风险 × 高收益」。

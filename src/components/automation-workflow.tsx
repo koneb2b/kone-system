@@ -191,6 +191,24 @@ export function AutomationWorkflow() {
     setUpgradeOpen(true)
   }, [])
 
+  /* P1-11：`cloud_send` 类能力的**统一前端门禁**。
+     邮箱清洗 / 域名信誉检测 / 追踪刷新 在后端均受 `requireFeature('cloud_send')`
+     保护（Fail-Closed），但对 Basic/Trial 用户按钮**可点** —— 点了才看到 403 原始错误，
+     转化路径断裂。此处先行拦截并弹升级引导。返回 true 表示放行。 */
+  const requireCloudSend = useCallback(
+    (featureLabel: string): boolean => {
+      if (canUseCloudSend) return true
+      handleOpenUpgrade()
+      toast({
+        title: '高级发送能力未开通',
+        description: `${featureLabel}属于高级版云端协同能力，请升级后使用。`,
+        variant: 'destructive',
+      })
+      return false
+    },
+    [canUseCloudSend, handleOpenUpgrade, toast],
+  )
+
   const buildLeadPayloads = useCallback(
     async (emails: string[], verificationStatus: 'verified' | 'unverified') => {
       const config = await getUserConfig()
@@ -482,7 +500,13 @@ export function AutomationWorkflow() {
                 className="min-h-36 font-mono text-xs"
               />
               <div className="flex gap-2 mt-3">
-                <Button size="sm" onClick={handleVerifyEmails} disabled={verifying || !rawEmails.trim()}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (requireCloudSend('邮箱清洗')) void handleVerifyEmails()
+                  }}
+                  disabled={verifying || !rawEmails.trim()}
+                >
                   {verifying ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />}
                   {verifying ? '正在校验中...' : '一键清洗'}
                 </Button>
@@ -585,6 +609,7 @@ export function AutomationWorkflow() {
                   variant="outline"
                   disabled={dnsChecking || !senderDomain.trim()}
                   onClick={async () => {
+                    if (!requireCloudSend('域名信誉检测')) return
                     setDnsChecking(true)
                     try {
                       const result = await dnsHealthCheck(senderDomain.trim())
@@ -714,7 +739,14 @@ export function AutomationWorkflow() {
                     </span>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={loadTracking} disabled={loadingTracking}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (requireCloudSend('追踪状态刷新')) void loadTracking()
+                  }}
+                  disabled={loadingTracking}
+                >
                   {loadingTracking ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
                   刷新追踪
                 </Button>

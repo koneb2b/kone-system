@@ -44,6 +44,9 @@ interface SystemSettingsProps {
 export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   const hasLoadedConfig = useRef(false)
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /* P1-6：保存待落盘的持久化动作。组件卸载时若仍有防抖窗口内的改动，
+     必须**立即执行**而非丢弃（原实现只 clearTimeout → 改完设置马上切页即丢失）。 */
+  const pendingPersistRef = useRef<(() => void) | null>(null)
   const apiKeysRef = useRef<ApiKeyConfig[]>([])
   const connectionStatusRef = useRef<Record<string, 'connected' | 'error' | 'pending'>>({})
   const icpProfileRef = useRef<IcpProfile>(defaultIcpProfile)
@@ -210,6 +213,11 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
     return () => {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current)
+        /* P1-6：卸载前把**待落盘的改动立即执行**。
+           原实现只 clearTimeout —— 200ms 防抖窗口内的改动被静默丢弃，
+           用户「改完设置马上切页」就会丢失。 */
+        pendingPersistRef.current?.()
+        pendingPersistRef.current = null
       }
     }
   }, [])
@@ -219,6 +227,7 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
       clearTimeout(persistTimeoutRef.current)
       persistTimeoutRef.current = null
     }
+    pendingPersistRef.current = null
   }
 
   const buildPersistedValue = (
@@ -244,10 +253,16 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   ) => {
     clearScheduledPersist()
     const version = ++persistVersionRef.current
-    persistTimeoutRef.current = setTimeout(() => {
+    const runPersist = () => {
       if (version !== persistVersionRef.current) return
       const { configs, persistedValue } = buildPayload()
       void persist(configs, { persistedValue })
+    }
+    /* P1-6：记录本次待落盘动作，供卸载时的 cleanup **立即执行**（而非丢弃）。 */
+    pendingPersistRef.current = runPersist
+    persistTimeoutRef.current = setTimeout(() => {
+      pendingPersistRef.current = null
+      runPersist()
     }, delayMs)
   }
 

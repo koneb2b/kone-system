@@ -144,3 +144,44 @@ test('P1-5: 导出必须用全量筛选结果，而非受显示上限约束的�
   )
   assert.match(src, /filteredLeads\.slice\(0, LEADS_TABLE_DISPLAY_LIMIT\)/, 'P1-5：显示上限应只作用于渲染')
 })
+
+/* ───────────── P1-7 / P1-9：账号链路（源码结构断言）───────────── */
+
+test('P1-7: 邮箱账号健康检查必须读 accounts.email.* 路径', () => {
+  const src = read('electron/services/sandbox-service.ts')
+  assert.match(src, /cfg\.accounts\?\.email/, 'P1-7 回归：读顶层 user_config.smtpHost 会恒判「已断开」')
+  assert.match(src, /emailCfg\?\.smtpHost/, 'P1-7：SMTP 主机应优先取 accounts.email.smtpHost')
+})
+
+test('P1-9: 账号列表必须持久化（重启不清空）', () => {
+  const src = read('electron/services/sandbox-service.ts')
+  assert.match(src, /const SANDBOX_ACCOUNTS_CONFIG_KEY/, 'P1-9：应有独立的持久化 key')
+  assert.match(src, /const persistSandboxAccounts = /, 'P1-9：应有落盘函数')
+  assert.match(src, /const hydrateSandboxAccounts = /, 'P1-9：应有恢复函数')
+  assert.match(src, /hydrateSandboxAccounts\(store\)/, 'P1-9：注册时必须恢复账号列表')
+  const persistCalls = (src.match(/persistSandboxAccounts\(\)/g) || []).length
+  assert.ok(persistCalls >= 2, `P1-9：connect 与 disconnect 后都应落盘（实际 ${persistCalls} 处）`)
+})
+
+/* ───────────── P1-11：前端门禁与升级引导（源码结构断言）───────────── */
+
+test('P1-11: cloud_send 类能力必须有统一的前端门禁与升级引导', () => {
+  const src = read('src/components/automation-workflow.tsx')
+  assert.match(src, /const requireCloudSend = useCallback/, 'P1-11：应有统一门禁函数')
+  assert.match(src, /requireCloudSend\('邮箱清洗'\)/, 'P1-11：邮箱清洗应受门禁保护')
+  assert.match(src, /requireCloudSend\('域名信誉检测'\)/, 'P1-11：域名检测应受门禁保护')
+  assert.match(src, /requireCloudSend\('追踪状态刷新'\)/, 'P1-11：追踪刷新应受门禁保护')
+})
+
+/* ───────────── P1-6：未保存改动不丢失（源码结构断言）───────────── */
+
+test('P1-6: 卸载时必须执行待落盘的改动，而非仅 clearTimeout', () => {
+  const src = read('src/components/system-settings.tsx')
+  assert.match(src, /const pendingPersistRef = useRef/, 'P1-6：应记录待落盘动作')
+  assert.match(
+    src,
+    /clearTimeout\(persistTimeoutRef\.current\)[\s\S]{0,400}?pendingPersistRef\.current\?\.\(\)/,
+    'P1-6 回归：cleanup 只 clearTimeout 会静默丢弃防抖窗口内的改动',
+  )
+  assert.match(src, /pendingPersistRef\.current = runPersist/, 'P1-6：schedulePersist 应记录待落盘动作')
+})
