@@ -592,18 +592,15 @@ export function LeadsTable({
                             const key = getLeadUniqueKey(lead)
                             const exists = leads.some((item) => getLeadUniqueKey(item) === key)
                             setSavedLeadIds((prev) => new Set(prev).add(lead.id))
+                            /* P1-4：本按钮的语义是「分析」，入库只是分析的前置条件。
+                               原实现在线索**已在库中**时仍弹「已保存」toast ——
+                               用户点「分析」却被提示「已保存」，语义错位。
+                               现仅在**真正新增**时提示，其余情况静默（分析本身另有反馈）。 */
                             if (!exists) {
                               await addLead(lead)
                               toast({
                                 title: '已同步线索',
                                 description: `线索 "${lead.company}" 已保存至本地`,
-                                variant: 'default',
-                                className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-                              })
-                            } else {
-                              toast({
-                                title: '已保存',
-                                description: '该线索已在库中，无需重复保存',
                                 variant: 'default',
                                 className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
                               })

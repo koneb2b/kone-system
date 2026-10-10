@@ -216,7 +216,17 @@ export function AccountsManagement() {
         label: `${ACCOUNT_TYPE_META[accountType].label} 账号`,
         credentials: {},
       })
-      toast({ title: '沙箱已激活', description: `${ACCOUNT_TYPE_META[accountType].label} 沙箱环境已建立` })
+      /* P1-8：诚实化 —— 社媒（LinkedIn / Facebook / WhatsApp）目前**只建立沙箱环境**，
+         尚未接入平台登录（全仓无登录窗口逻辑），因此连接后状态仍是「未连接」。
+         原文案「沙箱已激活」会让用户误以为已连上，与卡片上「未连接」自相矛盾。 */
+      if (isEmailType) {
+        toast({ title: '沙箱已激活', description: `${ACCOUNT_TYPE_META[accountType].label} 沙箱环境已建立` })
+      } else {
+        toast({
+          title: '沙箱环境已建立（平台登录未接入）',
+          description: `${ACCOUNT_TYPE_META[accountType].label} 沙箱已创建，但该平台的登录尚未接入，状态将保持「未连接」。`,
+        })
+      }
       await refreshList()
     } catch (error) {
       const message = error instanceof Error ? error.message : '连接失败'

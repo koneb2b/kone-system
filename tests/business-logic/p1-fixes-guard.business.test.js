@@ -185,3 +185,17 @@ test('P1-6: 卸载时必须执行待落盘的改动，而非仅 clearTimeout', (
   )
   assert.match(src, /pendingPersistRef\.current = runPersist/, 'P1-6：schedulePersist 应记录待落盘动作')
 })
+
+/* ───────────── P1-8 / P1-4：诚实化（源码结构断言）───────────── */
+
+test('P1-8: 社媒账号连接不得谎报「已激活」', () => {
+  const src = read('src/components/accounts-management.tsx')
+  assert.match(src, /平台登录未接入/, 'P1-8：应如实说明社媒登录尚未接入')
+  assert.match(src, /if \(isEmailType\) \{/, 'P1-8：邮箱与社媒的提示文案应区分')
+})
+
+test('P1-4: 「分析」按钮不得在线索已存在时弹「已保存」', () => {
+  const src = read('src/components/leads-table.tsx')
+  assert.ok(!/title: '已保存'/.test(src), 'P1-4 回归：点「分析」却提示「已保存」属语义错位')
+  assert.match(src, /title: '已同步线索'/, 'P1-4：仅在真正新增时提示')
+})
