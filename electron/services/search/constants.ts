@@ -33,6 +33,17 @@ export const MAX_WEBSITE_TEXT_FOR_LLM = 3000
 export const SERPAPI_RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504])
 export const SEARCH_LLM_TIMEOUT_MS = 20_000
 export const WEBSITE_PROBE_TIMEOUT_MS = 15_000
+/* 单次搜索的**总时长硬上限**（涵盖所有阶段：意图变异 → 扇出搜索 → 评分 → 官网富化）。
+ *
+ * 各阶段虽有独立超时，但**串行累加**后可远超用户可接受范围：
+ * `search-service.ts` 原注释已自承「50 条 × 并发 2 × LLM 20s ≈ 25 分钟以上」。
+ * 实测（2026-10-11）LLM 上游 503 熔断后，搜索**永久卡住**：
+ * 日志停止输出 5 分钟以上、前端一直「搜索中」、**无取消入口**，
+ * 用户唯一出路是重启应用。
+ *
+ * 超过本上限即**停止推进剩余线索**，用已得结果完成本轮并如实告知用户，
+ * 把「可能永久等待」变成「最多等 5 分钟」—— 这是商用交付的底线要求。 */
+export const SEARCH_TOTAL_TIMEOUT_MS = 5 * 60 * 1000
 
 export const SCOUT_NEGATIVE_TERMS = [
   'auto repair',

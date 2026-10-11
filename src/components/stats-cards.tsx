@@ -29,10 +29,14 @@ export function StatsCards({ onLeadsNavigate }: { onLeadsNavigate?: () => void }
       bgColor: 'bg-success/10',
     },
     {
-      label: '线索库总量',
+      /* 口径澄清：本卡统计的是**用户主动保存**的线索（store.leads），
+         与「今日挖掘量」（搜索结果）是两个不同口径。
+         实测中用户搜索得到 17 条却看到「线索库总量 0」，容易误判为数据丢失。
+         改称「已保存线索」并标注来源，避免歧义。 */
+      label: '已保存线索',
       value: `${leads.length}`,
       icon: Zap,
-      trend: '本地',
+      trend: leads.length ? '本地库' : '待保存',
       color: 'text-amber-500',
       bgColor: 'bg-amber-500/10',
       action: onLeadsNavigate,

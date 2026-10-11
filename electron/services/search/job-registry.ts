@@ -13,8 +13,17 @@
  *   - `currentActiveJobId`: 全局最新 job（单窗口语义 + 旧路径回退，始终指向最新 job）
  */
 
+import { SEARCH_TOTAL_TIMEOUT_MS } from './constants'
+
 let currentActiveJobId: string | null = null
 const activeJobIds = new Map<number, string>()
+
+/* 每个 job 的启动时刻 —— 用于**总时长硬上限**判定。
+   各阶段虽有独立超时，但串行累加后可远超用户可接受范围
+   （代码原注释已自承最坏路径 25 分钟以上）。
+   实测 2026-10-11：LLM 上游 503 熔断后搜索**永久卡住**（日志停 5 分钟以上、
+   前端一直「搜索中」、无取消入口），用户唯一出路是重启应用。 */
+const jobStartedAt = new Map<string, number>()
 
 /** 全局最新活跃 job（兼容旧路径） */
 export const getCurrentActiveJobId = () => currentActiveJobId
@@ -33,7 +42,27 @@ export const isKnownActiveJobId = (jobId: string | undefined): boolean => {
 export const registerActiveJob = (ownerKey: number, jobId: string): void => {
   activeJobIds.set(ownerKey, jobId)
   currentActiveJobId = jobId
+  jobStartedAt.set(jobId, Date.now())
+  /* 清理已不被任何 owner 引用的旧时间戳，避免长会话下 Map 无限增长 */
+  if (jobStartedAt.size > 64) {
+    const live = new Set<string>([...activeJobIds.values(), jobId])
+    for (const key of jobStartedAt.keys()) {
+      if (!live.has(key)) jobStartedAt.delete(key)
+    }
+  }
 }
 
-/** 读取某 owner 的活跃 job（无则回退全局最新） */
-export const getActiveJobIdFor = (ownerKey: number): string | null => activeJobIds.get(ownerKey) ?? currentActiveJobId
+/** 读取某 owner 的活跃 job（无则回退全局最新）。
+ *
+ * **总超时保护**：超过 `SEARCH_TOTAL_TIMEOUT_MS` 后返回 `null`（视为过期），
+ * 使主流程中所有 `if (myJobId !== activeJobIdFor()) break` 检查点**自动退出**，
+ * 用已得结果完成本轮 —— 把「可能永久等待」变成「最多等 5 分钟」。 */
+export const getActiveJobIdFor = (ownerKey: number): string | null => {
+  const jobId = activeJobIds.get(ownerKey) ?? currentActiveJobId
+  if (!jobId) return null
+  const startedAt = jobStartedAt.get(jobId)
+  if (startedAt !== undefined && Date.now() - startedAt > SEARCH_TOTAL_TIMEOUT_MS) {
+    return null
+  }
+  return jobId
+}
