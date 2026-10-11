@@ -125,7 +125,6 @@ export function UpgradeModal({ open, intent = 'premium', onOpenChange, onActivat
       <DialogContent
         data-testid="upgrade-modal"
         className="gap-0 overflow-hidden border border-slate-200 bg-white p-0 text-slate-900 shadow-md sm:max-w-[920px]"
-        showCloseButton={false}
       >
         <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_1fr]" role="dialog" aria-label="升级激活弹窗">
           <section className="relative border-b border-slate-200 bg-slate-50 px-8 py-8 lg:border-b-0 lg:border-r">
