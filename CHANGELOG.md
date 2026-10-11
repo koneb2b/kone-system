@@ -17,6 +17,46 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.11] — 2026-10-11 · 搜索 API 消耗治理（成本控制 + 规范订正）
+
+### 背景
+用户实测反馈「跑 2 次搜索任务免费额度都跑完了」。统计单次搜索：
+**SerpApi 53 次 / LLM 60 次 / 派发关键词变体 17 个**。
+SerpApi 免费版 100 次/月 → **2 次搜索即耗尽**。
+
+### 根因
+变体数 = 产品词数 × 4 角色词 × 语言数，**产品词数与语言数均无上限**：
+- `search-service.ts` 的 `pureEnglishProducts` 缺 `slice`（同段 `keywords` 有 `slice(0,4)`，属实现不对称）
+- `allSearchKeywords` 按语言循环 push，**语言数无上限**（3 语言 → 4 + 12 = 16 变体）
+- LLM 偶发回吐**不可检索**条目（实测整句中文被当作关键词派发给上游）
+
+### 规范订正（SSOT 回写）
+- **`kone-PRD.md §零.3`**：
+  - 新增 `SEARCH_PRODUCT_TERM_LIMIT = 2`（参与变体生成的产品词上限）
+  - 新增 `SEARCH_VARIANT_LIMIT = 8`（单次搜索变体**总数**上限，属**总量域**）
+  - **订正 HTTP 熔断行**：原文把 `429` 与 `400/401/403` 并列为"配置错误不计入开路"**有误** ——
+    `429` 是**上游限流**（暂时性、可恢复），与"密钥错误"性质不同，**应计入熔断**；
+    否则限流下反复重试会**加剧**配额消耗
+- **`AGENTS.md`**「多语言多源搜索执行宪法」：
+  - 变体公式改为 `pureEnglishProducts[0..SEARCH_PRODUCT_TERM_LIMIT-1]`
+  - 明确「约 **2x**」的基数是「单产品词的英文变体数（`B2B_ROLE_TERMS[0..3]`，即 4 个）」，消除歧义
+  - 新增**产品词必须清洗**的强制条款
+
+### 实现
+- `search/constants.ts`：新增 2 常量
+- `search/intent.ts`：新增 `sanitizeProductTerms()`（剔除含中文/控制词/超长的不可检索条目）
+- `search-service.ts`：产品词清洗 + `.slice(0, SEARCH_PRODUCT_TERM_LIMIT)`；
+  `allSearchKeywords` 按 `SEARCH_VARIANT_LIMIT` 硬截断（英文变体排前故优先保留）
+
+### 影响 SSOT
+`kone-PRD.md §零.3` / `AGENTS.md` / `search/constants.ts` / `CHANGELOG.md`
+
+### 预期效果
+变体 17 → ≤8，SerpApi 53 → 约 20-25，**免费额度可支撑搜索次数 2 → 4-5 次**。
+并发域（扇出 `3` / 评分 `2`）与评分条数（`50`）**均未改动**，四级弹性搜索协议不受影响。
+
+---
+
 ## [1.4.10] — 2026-10-09 · 修复 P2 国家代码推导错误（数据正确性）
 
 ### P2-1 `countryCode` 由国家名截取前两字母 → 数据错误

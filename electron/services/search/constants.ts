@@ -45,6 +45,15 @@ export const WEBSITE_PROBE_TIMEOUT_MS = 15_000
  * 把「可能永久等待」变成「最多等 5 分钟」—— 这是商用交付的底线要求。 */
 export const SEARCH_TOTAL_TIMEOUT_MS = 5 * 60 * 1000
 
+/* ── 2026-10-11 新增：搜索**总量**域上限（防额度烧光） ──────────────────
+ * 此前宪法只约束了**并发**（防打爆上游），未约束**总量**（防烧光用户额度）。
+ * 实测单次搜索派发 17 个关键词变体 → SerpApi 53 次调用 →
+ * SerpApi 免费额度（100 次/月）**2 次搜索即耗尽**。
+ *
+ * 权威值见 `kone-PRD.md §零.3`。与并发域（扇出 3 / 评分 2）是**不同维度**，不得混读。 */
+export const SEARCH_PRODUCT_TERM_LIMIT = 2
+export const SEARCH_VARIANT_LIMIT = 8
+
 export const SCOUT_NEGATIVE_TERMS = [
   'auto repair',
   'body shop',

@@ -105,8 +105,10 @@ Agent 执行管道 (agent-pipeline.ts)
 ## 多语言多源搜索执行宪法
 
 - 当用户自然语言或 `country` 字段限定国家时，`mutateSearchIntent()` 必须通过 LLM 解析该国官方语言，并生成本地语言产品词变体；LLM 不可达时只能降级为英文变体，不得臆造语言。
-- 搜索变体公式为：`(pureEnglishProducts[] + localizedProducts[].terms[]) × B2B_ROLE_TERMS[0..3] × country/city`。
-- 英文变体始终执行，本地语言变体并行补充。此策略允许约 `2x` API 调用量，但不得提高 LLM 评分与官网富化并发上限。
+- 搜索变体公式为：`(pureEnglishProducts[0..SEARCH_PRODUCT_TERM_LIMIT-1] + localizedProducts[].terms[]) × B2B_ROLE_TERMS[0..3] × country/city`。
+  **产品词上限 `SEARCH_PRODUCT_TERM_LIMIT = 2`、单次派发变体总数上限 `SEARCH_VARIANT_LIMIT = 8`**，权威值见 `kone-PRD.md §零.3`（2026-10-11 新增）。
+- 英文变体始终执行，本地语言变体并行补充。此策略允许约 `2x` API 调用量 —— **「2x」的基数是「单产品词的英文变体数（= `B2B_ROLE_TERMS[0..3]`，即 4 个）」**，而非无限膨胀。无论语言如何扩面，**单次搜索派发的变体总数不得超过 `SEARCH_VARIANT_LIMIT`**。该上限**不改变** LLM 评分与官网富化的并发上限（`2`），也**不改变**扇出并发上限（`3`）—— 三者是**不同维度**（总量 / 算力并发 / 扇出并发），**不得混读**。
+- **产品词必须清洗**：进入变体生成的产品词须为**可检索的英文商品词**；含控制词（`请搜索`/`帮我找`/`要求…`）、中文原文或超长自然语言的条目**必须剔除**，不得直接作为查询派发（实测曾出现整句中文被当作关键词打给上游，纯属浪费配额）。
 - 所有 Provider 必须通过统一 `ProviderQuery` 消费 `keyword`, `language`, `country`, `city`, `intentProducts`, `b2bAttributes`, `myJobId`。
 - Provider 只负责采集与归一化，不得写 Zustand、不得发送 IPC、不得保存线索。
 - `google_maps`、`google_organic`、AnySearch、`linkedin_search`、`customs_shipment`、`trade_show`、`yellow_pages`、`facebook_search` 的失败必须互相隔离，任何单源失败不得中断整轮搜索。

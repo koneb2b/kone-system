@@ -51,7 +51,9 @@ import {
   SEARCH_LLM_CONCURRENCY,
   SEARCH_LLM_SCORE_LIMIT,
   SEARCH_LLM_TIMEOUT_MS,
+  SEARCH_PRODUCT_TERM_LIMIT,
   SEARCH_TARGETED_LEAD_LIMIT,
+  SEARCH_VARIANT_LIMIT,
   SERPAPI_RETRYABLE_STATUS,
   WEBSITE_PROBE_TIMEOUT_MS,
 } from './search/constants'
@@ -76,6 +78,7 @@ import {
   normalizeIntentCountry,
   parseIntentMutation,
   resolveEmailLanguage,
+  sanitizeProductTerms,
   type SearchIntentMutation,
 } from './search/intent'
 /* 保留公开导出面：LANGUAGE_LABELS 原为导出符号 */
@@ -362,9 +365,16 @@ const mutateSearchIntent = async (payload: {
       ? parsed.pureEnglishProducts.map((item: unknown) => String(item || '').trim()).filter(Boolean)
       : []
     const llmKeywords = rawKeywords.length > 0 ? rawKeywords : []
-    const llmProducts = rawProducts.length > 0 ? rawProducts : []
+    /* 产品词清洗 + 封顶（2026-10-11，宪法 SEARCH_PRODUCT_TERM_LIMIT）：
+       ① 清洗：剔除含中文/控制词/超长的**不可检索**条目（见 sanitizeProductTerms）；
+       ② 封顶：与同段 `keywords.slice(0, 4)` 保持对称 —— 此前 `pureEnglishProducts`
+          无上限，而变体数 = 产品词数 × 4，实测 3 语言场景派发 17 变体 → SerpApi 53 次调用。 */
+    const llmProducts = sanitizeProductTerms(rawProducts)
     const keywords = llmKeywords.length > 0 ? llmKeywords.slice(0, 4) : fallback.keywords
-    const pureEnglishProducts = llmProducts.length > 0 ? llmProducts : fallback.pureEnglishProducts
+    const pureEnglishProducts = (llmProducts.length > 0 ? llmProducts : fallback.pureEnglishProducts).slice(
+      0,
+      SEARCH_PRODUCT_TERM_LIMIT,
+    )
 
     const normalizedCountry = normalizeIntentCountry(String(parsed?.country || fallback.country || '').trim())
 
@@ -1392,6 +1402,20 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               }
             }
           }
+        }
+
+        /* 变体**总量**兜底（2026-10-11，宪法 SEARCH_VARIANT_LIMIT）：
+           英文 ≤4 + 每语言 ≤4，但**语言数无上限** —— 多语言场景下会失控
+           （实测 3 语言 → 17 变体 → SerpApi 53 次调用 → 免费额度 2 次搜索即耗尽）。
+           此处按宪法硬截断，**英文变体排在前故优先保留**，砍掉的是靠后的本地语言变体。
+           注意：这是**总量域**上限，与扇出并发域（SEARCH_FANOUT_CONCURRENCY=3）
+           和评分并发域（SEARCH_LLM_CONCURRENCY=2）是不同维度，不得混读。 */
+        if (allSearchKeywords.length > SEARCH_VARIANT_LIMIT) {
+          probeLog('[Probe-Intent] Variant limit applied:', {
+            before: allSearchKeywords.length,
+            after: SEARCH_VARIANT_LIMIT,
+          })
+          allSearchKeywords.length = SEARCH_VARIANT_LIMIT
         }
 
         const localizedLanguages = localizedKeywordsMap

@@ -172,6 +172,27 @@ export const crossProductB2BKeywords = (products: string[], country: string): st
     .filter(Boolean)
     .slice(0, 4)
 
+/* 产品词清洗（2026-10-11，宪法 `SEARCH_PRODUCT_TERM_LIMIT` 的前置守卫）：
+ * LLM 偶尔会回吐**不可检索**的条目 —— 含控制词（请搜索/帮我找/要求…）、
+ * 中文原文、或超长自然语言。这类词打给上游只会返回垃圾结果，**纯浪费配额**。
+ * 实测曾把整句中文（"请深度 在德国做电动叉车 … dealer"）当作关键词派发。
+ *
+ * 只保留"可检索的英文商品词"：无中文、无控制词、长度合理。 */
+export const sanitizeProductTerms = (products: string[]): string[] => {
+  const cleaned = products
+    .map((term) =>
+      String(term || '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((term) => {
+      if (!term || term.length > 40) return false
+      if (/[\u4e00-\u9fa5]/.test(term)) return false // 含中文 → 非英文商品词
+      return !OMNI_CONTROL_TERMS.some((re) => new RegExp(re.source, re.flags.replace('g', '')).test(term))
+    })
+  return Array.from(new Set(cleaned))
+}
+
 export const buildIntentMutationPrompt = (payload: { keyword: string; country: string; city: string }) => ({
   system: mergePromptParts(
     'You are an intent parser for a B2B lead search engine. ',
