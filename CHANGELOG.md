@@ -17,6 +17,43 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.14] — 2026-10-11 · 校正历史遗留的假国家码（`Global` → `GL`）
+
+### 背景（全链路梳理中发现）
+用户线索数据中 `country: "Global"` 却带 `countryCode: "GL"`（**格陵兰**），
+导出后显示错误国家，且**污染下游**（号码补全 / 邮件语言 / 本地化搜索变体）。
+
+**根因**：P2-1 修复前用 `country.slice(0, 2).toUpperCase()` 推导：
+`Global`→`GL`、`United States`→`UN`、`Germany`→`GE`。
+`resolveCountryCode`（`src/lib/country-code.ts`）**已修好**（未命中返回 `''`，不猜），
+**但不会回溯修正已落库的旧记录** —— 历史数据里的假码一直留存。
+
+### 变更
+`src/store/leads-store.ts` 的 `normalizeLeadItem` 增加**国家码重算**：
+```ts
+const countryCode = resolveCountryCode(lead.country) || ''
+```
+- 能识别 → 用正确码；**不能识别（如 `Global`）→ 清空**
+- **绝不保留假码** —— 假码比空值更糟（会作为"看起来合法"的数据进入表格/导出/台账）
+- 该函数在 **hydrate / saveLeads / updateLead** 三处调用，故**读取即校正**，
+  无需一次性数据迁移脚本，也不改动用户的原始数据文件
+
+### 测试
+新增 `tests/business-logic/country-code.business.test.js`（3 条守护）：
+- 已知国家名 → 正确 ISO alpha-2
+- **`Global` / `全球` / 空值 → 必须返回空串**（不得截取前两字母）
+- 逐项验证曾产出假码的输入（`Germany`/`United States`/`Global`）
+
+### 影响 SSOT
+`leads-store.ts` / `country-code.ts`（未改，仅消费）/ `CHANGELOG.md`
+
+### 附：全链路梳理结论（详见 `KONE-V1.3-前端体验闭环深度梳理-2026-10-11.md`）
+七环齐备（搜索/分析/入库/导出/触达/跟进/行动入口），
+**真正瓶颈是「弹药」——数据的可得性与质量**（电话多为座机、邮箱覆盖率低）。
+优化方向应是**提高数据质量**，而非继续加功能。
+
+---
+
 ## [1.4.13] — 2026-10-11 · WhatsApp 触达必须识别号码类型（固定电话不可用）
 
 ### 背景（用户实测反馈）

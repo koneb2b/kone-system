@@ -6,6 +6,8 @@ import {
   configSet,
 } from '@/lib/electron-api'
 import type { DataSourceType, DecisionMaker, CustomsData, AgentStatus } from '@/shared/ipc-contracts'
+/* 国家名 → ISO alpha-2：用于校正历史遗留的假国家码（见 normalizeLeadItem 注释） */
+import { resolveCountryCode } from '@/lib/country-code'
 
 // Durable persistence key for the SAVED lead pool. Only `leads` (the operator's
 // curated, long-lived asset) is persisted — NEVER `searchResults`, which is a
@@ -189,10 +191,19 @@ export const normalizeLeadStatus = (status?: string): LeadStatus => {
 
 const normalizeLeadItem = (lead: LeadItem): LeadItem => {
   const status = normalizeLeadStatus(lead.status || lead.followUp)
+  /* 2026-10-11：**校正历史遗留的错误国家码**。
+     P2-1 修复前，代码用 `country.slice(0,2).toUpperCase()` 推导国家码，
+     把 `Global` 截成 `GL`（格陵兰）、`United States` 截成 `UN`。
+     `resolveCountryCode` 虽已修好，但**不会回溯修正已落库的旧记录** ——
+     实测用户线索 `country: "Global"` 仍带 `countryCode: "GL"`，导出显示「格陵兰」。
+     此处按国家名**重算**：能识别 → 用正确码；不能识别（如 `Global`）→ **清空**。
+     **绝不保留假码** —— 假码比空值更糟，会污染号码补全 / 邮件语言 / 本地化搜索变体。 */
+  const countryCode = resolveCountryCode(lead.country) || ''
   return {
     ...lead,
     status,
     followUp: status,
+    countryCode,
   }
 }
 
