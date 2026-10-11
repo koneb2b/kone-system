@@ -582,6 +582,18 @@ export function useSearchEngine(): UseSearchEngineReturn {
   }
 
   const handleSearch = async () => {
+    /* 防重复发起：搜索进行中再次点击会并发起多轮搜索 ——
+       每轮含 7 个 Provider 调用 + 多次 LLM 解析，既**浪费真实配额**，
+       也会让两条结果流相互污染（后到的结果覆盖先到的）。 */
+    if (isLoading) {
+      toast({
+        title: '搜索正在进行中',
+        description: '请等待当前搜索完成后再发起新的搜索。',
+        variant: 'destructive',
+      })
+      return
+    }
+
     if (autopilotBusy) {
       toast({
         title: '后台巡航正在占用搜索资源',
