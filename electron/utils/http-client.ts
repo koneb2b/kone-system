@@ -9,6 +9,9 @@ const CIRCUIT_OPEN_MS = 60_000
 type CircuitState = {
   consecutiveFailures: number
   openUntil: number
+  /* 最近一次触发熔断的状态码 —— 用于把「429 限流」与其他服务异常区分开，
+     给出**可操作**的提示（当前仅 429 计入熔断，见 FAILURE_STATUSES）。 */
+  lastStatus?: number
 }
 
 type SafeFetchError = Error & {
@@ -40,8 +43,16 @@ const getCircuitState = (host: string): CircuitState => {
   return nextState
 }
 
-const createCircuitBreakerError = (host: string) => {
-  const error = new Error(`服务暂不可用，已触发系统保护，请稍后再试 (${host})`) as SafeFetchError
+const createCircuitBreakerError = (host: string, lastStatus?: number) => {
+  /* 429（限流）与「服务异常」对用户意味着**完全不同的动作**：
+     前者要检查**密钥的配额/速率**，后者是上游故障只需等待。
+     此前统一提示「服务暂不可用」，用户会误判为密钥失效而反复更换密钥
+     —— 2026-10-11 实测中确实发生了这一误判（换密钥后仍 429）。 */
+  const isRateLimited = lastStatus === 429
+  const message = isRateLimited
+    ? `模型服务触发限流（429），已暂停调用 60 秒。请检查该密钥的配额与速率限制，或稍后重试 (${host})`
+    : `服务暂不可用，已触发系统保护，请稍后再试 (${host})`
+  const error = new Error(message) as SafeFetchError
   error.code = 'CIRCUIT_BREAKER_OPEN'
   error.status = 503
   return error
@@ -70,6 +81,7 @@ const redactUrl = (url: string): string => {
 const recordProtectedFailure = (host: string, url: string, status: number) => {
   const circuitState = getCircuitState(host)
   circuitState.consecutiveFailures += 1
+  circuitState.lastStatus = status
   /* 宪法（kone-PRD §0.3）：**连续 3 次失败即断开 60 秒**。
      此前用 `>`（需第 4 次才打开），与权威值差 1 次——修正为 `>=`。 */
   if (circuitState.consecutiveFailures >= FAILURE_THRESHOLD) {
@@ -100,7 +112,7 @@ export const safeFetch = async (url: string, options?: RequestInit, timeoutMs = 
   const host = normalizeHost(url)
 
   if (isCircuitOpen(host)) {
-    throw createCircuitBreakerError(host)
+    throw createCircuitBreakerError(host, getCircuitState(host).lastStatus)
   }
 
   const controller = new AbortController()
