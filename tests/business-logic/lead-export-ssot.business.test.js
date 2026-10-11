@@ -122,7 +122,9 @@ test('SSOT: 表头顺序稳定（企业主体 → 顶层联系方式 → 决策�
   const { LEAD_EXPORT_HEADERS } = loadLeadExport()
   // 注意：模块在 vm context 中加载，其数组原型与测试进程不同，
   // 故不能直接用 assert.deepEqual（会因引用不等而误判），改为逐项比较。
-  const expected = ['公司名称', '行业', '国家', '匹配度', '联系人', '职位', '邮箱', '邮箱等级', '电话', '网站']
+  /* 「地址」为 2026-10-11 新增：用户明确要求的客户核心信息之一。
+     数据层 LeadItem.address 一直存在，此前导出链路遗漏（数据链路断裂）。 */
+  const expected = ['公司名称', '行业', '国家', '地址', '匹配度', '联系人', '职位', '邮箱', '邮箱等级', '电话', '网站']
   expected.forEach((name, i) => {
     assert.equal(LEAD_EXPORT_HEADERS[i], name, `第 ${i} 列应为「${name}」`)
   })

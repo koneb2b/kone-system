@@ -76,6 +76,8 @@ export const buildPdfHtml = (payload: {
   email?: string
   phone?: string
   industry?: string
+  /** 企业地址（2026-10-11）：与 CSV 导出同步补齐，回应用户「店址」诉求 */
+  address?: string
   riskFlags?: string[]
   evidence?: string
 }) => {
@@ -282,6 +284,7 @@ export const buildPdfHtml = (payload: {
       <div class="info-item"><span class="info-label">官方网站</span><span class="info-value">${val(payload.website)}</span></div>
       <div class="info-item"><span class="info-label">目标市场</span><span class="info-value">${val(payload.country)}</span></div>
       <div class="info-item"><span class="info-label">所属行业</span><span class="info-value">${val(payload.industry)}</span></div>
+      <div class="info-item"><span class="info-label">企业地址</span><span class="info-value">${val(payload.address)}</span></div>
       <div class="info-item"><span class="info-label">企业联系口</span><span class="info-value">${val(payload.contact)}${payload.contactTitle ? ` · ${esc(payload.contactTitle)}` : ''}</span></div>
       <div class="info-item"><span class="info-label">企业邮箱</span><span class="info-value">${val(payload.email)}</span></div>
       <div class="info-item"><span class="info-label">企业电话</span><span class="info-value">${val(payload.phone)}</span></div>
@@ -510,6 +513,7 @@ export const registerExportHandlers = (
           email: payload.email ? String(payload.email) : undefined,
           phone: payload.phone ? String(payload.phone) : undefined,
           industry: payload.industry ? String(payload.industry) : undefined,
+          address: payload.address ? String(payload.address) : undefined,
           riskFlags: Array.isArray(payload.riskFlags) ? (payload.riskFlags as string[]) : undefined,
           evidence: payload.evidence ? String(payload.evidence) : undefined,
         })

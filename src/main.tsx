@@ -124,7 +124,14 @@ if (import.meta.env.DEV) {
     })
 
     const devShellApi: ElectronApi = {
-      system: { getDeviceStatus: async () => ({ success: true, data: { available: true } }) },
+      system: {
+        getDeviceStatus: async () => ({ success: true, data: { available: true } }),
+        /* 浏览器预览环境无 Electron shell：退化为 window.open（开发模式专用） */
+        openExternal: async (url: string) => {
+          window.open(url, '_blank')
+          return { success: true, data: { opened: true } }
+        },
+      },
       license: {
         verify: (async () => ({
           success: true,

@@ -575,6 +575,7 @@ export function AnalysisDrawer({ open, onOpenChange, lead, focusReplyCoachInputK
         email: lead.email,
         phone: lead.phone,
         industry: lead.industry,
+        address: lead.address,
         riskFlags: lead.riskFlags,
         evidence: lead.snippet,
       })

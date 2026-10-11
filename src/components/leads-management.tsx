@@ -687,6 +687,38 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     window.location.href = mailtoUrl
   }
 
+  /* WhatsApp 一键触达（2026-10-11，回应用户「手机号可直接通过高级版触达」）：
+     **仅唤起** WhatsApp 并预填文案 —— 用户仍需在 WhatsApp 内手动点发送，
+     **不涉及自动发送**，与 AGENTS.md 的自动化风控约束不冲突。
+     号码归一化为纯数字（`wa.me` 要求 E.164 且不带 `+`）。 */
+  const handleLaunchWhatsApp = async () => {
+    if (!emailComposerLead) return
+    const raw = String(emailComposerLead.phone || emailComposerLead.decisionMakers?.[0]?.phone || '').trim()
+    const digits = raw.replace(/[^\d]/g, '')
+    if (digits.length < 7) {
+      toast({
+        title: '无法唤起 WhatsApp',
+        description: raw ? `电话号码「${raw}」不完整（缺国家码或位数不足）。` : '该线索没有可用电话号码。',
+        variant: 'destructive',
+      })
+      return
+    }
+    const text = getExternalEmailBody(emailBody) || emailSubject.trim()
+    const url = `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`
+    try {
+      const res = await window.electronAPI.system.openExternal(url)
+      if (!res?.success) {
+        toast({ title: '唤起失败', description: res?.error || '无法打开系统浏览器', variant: 'destructive' })
+      }
+    } catch (error) {
+      toast({
+        title: '唤起失败',
+        description: error instanceof Error ? error.message : '无法打开系统浏览器',
+        variant: 'destructive',
+      })
+    }
+  }
+
   const handleCopyEmailField = async (field: 'subject' | 'body') => {
     const value = field === 'subject' ? emailSubject.trim() : getExternalEmailBody(emailBody)
     if (!value) {
@@ -1513,6 +1545,15 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
               <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={handleLaunchMailClient}>
                 <Mail className="size-4" />
                 唤起本地邮箱发送
+              </Button>
+              {/* WhatsApp 一键触达（2026-10-11）：仅唤起并预填文案，不自动发送 */}
+              <Button
+                variant="outline"
+                className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                onClick={handleLaunchWhatsApp}
+              >
+                <MessageSquare className="size-4" />
+                唤起 WhatsApp
               </Button>
             </div>
           </DialogFooter>

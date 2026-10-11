@@ -54,6 +54,15 @@ export const systemGetDeviceStatusContract: Contract<unknown, LicenseEnvelope> =
   responseRule: licenseEnvelopeResponseRule,
 }
 
+/* 2026-10-11 新增：用**系统默认浏览器**打开外部链接（用于 `wa.me` 一键 WhatsApp 触达）。
+   handler 侧**白名单校验协议**（仅 http/https），拒绝 `file://` 与自定义协议，
+   防止该通道被滥用为本地文件读取或任意程序唤起。 */
+export const systemOpenExternalContract: Contract<unknown, LicenseEnvelope> = {
+  channel: IPC_CHANNELS.SYSTEM.OPEN_EXTERNAL,
+  requestRule: anyRequestRule,
+  responseRule: licenseEnvelopeResponseRule,
+}
+
 export const licenseGetInfoContract: Contract<unknown, LicenseEnvelope> = {
   channel: IPC_CHANNELS.LICENSE.GET_INFO,
   requestRule: anyRequestRule,

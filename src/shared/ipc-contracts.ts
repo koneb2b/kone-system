@@ -359,6 +359,10 @@ export type FileExportPdfRequest = {
   email?: string
   phone?: string
   industry?: string
+  /** 企业地址（2026-10-11 新增）：用户明确要求的客户核心信息之一。
+      数据层 `LeadItem.address` 一直存在（leads-store.ts:83），此前白皮书与 CSV 均遗漏 ——
+      用户在界面能看到地址、导出后消失，属数据链路断裂。 */
+  address?: string
   /** 风险标记（如域名未验证、邮箱为 catch-all） */
   riskFlags?: string[]
   /** 证据摘要（命中原因 / 来源链接） */
@@ -839,6 +843,9 @@ export type CampaignStartData = {
 export type ElectronApi = {
   system: {
     getDeviceStatus: () => Promise<IpcResponse<SystemDeviceStatusData>>
+    /* 2026-10-11：用系统默认浏览器打开外部链接（wa.me 一键 WhatsApp 触达）。
+       主进程侧对协议做白名单校验（仅 http/https）。 */
+    openExternal: (url: string) => Promise<IpcResponse<{ opened: boolean }>>
   }
   auth: {
     login: (options: AuthLoginRequest) => Promise<IpcResponse<AuthLoginData>>

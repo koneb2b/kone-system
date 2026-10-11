@@ -25,6 +25,9 @@ const electronAPI: ElectronApi = {
   // 1. 系统基础
   system: {
     getDeviceStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.GET_DEVICE_STATUS),
+    /* 2026-10-11：用系统默认浏览器打开外部链接（wa.me 一键 WhatsApp 触达）。
+       不能用 window.location.href —— 那会在 Electron 窗口内导航、覆盖应用界面。 */
+    openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.OPEN_EXTERNAL, { url }),
   },
   auth: {
     login: (options: AuthLoginRequest) => ipcRenderer.invoke(IPC_CHANNELS.AUTH.LOGIN, options),

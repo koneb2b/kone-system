@@ -61,7 +61,10 @@ export const DEFAULT_EXPORT_GROUPS: LeadExportGroupKey[] = LEAD_EXPORT_GROUPS.ma
 
 /** 各字段组的表头。 */
 const GROUP_HEADERS: Record<LeadExportGroupKey, string[]> = {
-  core: ['公司名称', '行业', '国家', '匹配度'],
+  /* 「地址」是用户明确要求的客户核心信息之一（2026-10-11）。
+     数据层 `LeadItem.address` 一直存在（leads-store.ts:83），此前导出链路遗漏 ——
+     用户在 UI 能看到地址、导出后却消失，属**数据链路断裂**。 */
+  core: ['公司名称', '行业', '国家', '地址', '匹配度'],
   contact: ['联系人', '职位', '邮箱', '邮箱等级', '电话', '网站'],
   reachability: ['可触达渠道'],
   decisionMakers: Array.from({ length: DECISION_MAKER_SLOTS }, (_, i) =>
@@ -118,7 +121,13 @@ export const buildLeadExportRow = (lead: LeadItem, groups: LeadExportGroupKey[] 
   }).flat()
 
   const cells: Record<LeadExportGroupKey, string[]> = {
-    core: [lead.company ?? '', lead.industry ?? '', lead.country ?? '', formatMatchScoreForExport(lead.matchScore)],
+    core: [
+      lead.company ?? '',
+      lead.industry ?? '',
+      lead.country ?? '',
+      lead.address ?? '',
+      formatMatchScoreForExport(lead.matchScore),
+    ],
     contact: [
       lead.contact ?? '',
       lead.contactTitle ?? '',

@@ -52,7 +52,11 @@ export const SEARCH_TOTAL_TIMEOUT_MS = 5 * 60 * 1000
  *
  * 权威值见 `kone-PRD.md §零.3`。与并发域（扇出 3 / 评分 2）是**不同维度**，不得混读。 */
 export const SEARCH_PRODUCT_TERM_LIMIT = 2
-export const SEARCH_VARIANT_LIMIT = 8
+/* 2026-10-11 校准：用户明确「不能为省配额牺牲搜索数量与覆盖深度」。
+ * 原定 8 偏紧（2 产品词 × 4 角色词即用满，本地语言变体全被砍）。
+ * 放宽到 12 —— 在**保留多语言覆盖**的前提下仍设硬顶，防乘数爆炸。
+ * 成本控制优先靠「产品词清洗」（剔除垃圾变体）与缓存复用，而非压低覆盖。 */
+export const SEARCH_VARIANT_LIMIT = 12
 
 export const SCOUT_NEGATIVE_TERMS = [
   'auto repair',

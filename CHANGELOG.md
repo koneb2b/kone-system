@@ -17,6 +17,61 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.12] — 2026-10-11 · 全链路补齐：资料导出补「地址」+ WhatsApp 一键触达
+
+### 背景
+用户要求「全面提升从搜索到记录标注触达的完整链路体验」，并明确指出
+导出资料需含**公司名/邮箱/电话/网址/店址/客户类型**，且手机号应能通过
+高级版**直接触达 WhatsApp / 邮箱**。
+
+### 发现的两个真实缺口
+1. **地址（店址）数据有、导不出**：数据层 `LeadItem.address` 一直存在
+   （`leads-store.ts:83`），但 `lead-export.ts` 的 5 个字段组**均无 address**，
+   白皮书 `buildPdfHtml` 入参也**无 address** → 用户界面能看到地址、**导出后消失**，
+   属**数据链路断裂**。
+2. **WhatsApp 无直连入口**：全仓 `grep 'wa\.me'` 零命中，只有 `mailto:`。
+
+### 变更（契约先行）
+**A. 地址链路贯通**
+- `src/shared/ipc-contracts.ts`：`FileExportPdfRequest` 加 `address?: string`
+- `src/lib/lead-export.ts`：`core` 组表头加「地址」，行构造读 `lead.address`
+- `electron/services/export-service.ts`：白皮书入参 + 渲染（「企业地址」）+ 调用方透传
+- `src/components/analysis-drawer.tsx`：`address: lead.address`
+
+**B. 新增 IPC 通道 `SYSTEM.OPEN_EXTERNAL`（`system:open-external`）**
+- `electron/ipc/channels.ts`：通道命名
+- `electron/ipc/contracts/license.contract.ts`：`systemOpenExternalContract`
+- `electron/services/license-service.ts`：handler（`shell.openExternal` +
+  **协议白名单，仅 http/https**，拒绝 `file://` 与自定义协议）
+- `preload/index.ts` + `src/shared/ipc-contracts.ts`（`ElectronApi.system.openExternal`）
+- `src/main.tsx`：dev mock 同步（**typecheck 捕获**）
+- `src/components/leads-management.tsx`：`handleLaunchWhatsApp` + 「唤起 WhatsApp」按钮
+
+### 设计要点
+- **仅唤起，不自动发送** —— 用户仍需在 WhatsApp 内手动点发送，
+  **不触碰 AGENTS.md 的自动化风控红线**（与 Puppeteer/Cloud API 自动化路径并存不冲突）
+- 号码归一化为纯数字（`wa.me` 要求 E.164 无 `+`）；不完整时**明确提示**，不静默失败
+- 不复用 `window.location.href` —— 那会在 Electron 窗口内导航、覆盖应用界面
+
+### 规范回写
+- `AGENTS.md` / `kone-PRD.md §零.3`：`SEARCH_VARIANT_LIMIT` **8 → 12**
+  （用户反馈「不能过度平衡，影响搜索数量、覆盖深度」→ 初版 8 偏紧会砍掉本地语言变体）
+
+### 影响 SSOT
+`ipc-contracts.ts` / `channels.ts` / `lead-export.ts` / `export-service.ts` /
+`license.contract.ts` / `preload/index.ts` / `kone-PRD.md §零.3` / `AGENTS.md` / `CHANGELOG.md`
+
+### 测试
+- `ipc-startup-gate.test.ts`：invoke 通道数断言 **60 → 61**（门禁正确拦住了新增通道）
+- `lead-export-ssot.business.test.js`：导出表头断言补「地址」
+- typecheck 双侧 / `verify:consistency` / 单测 407-407
+
+### 仍待澄清
+「客户类型」语义：用户要的是「行业」（`industry`，**已导出**）还是
+「客户角色/类型」（`inferredRole`，**已产出但未进导出列**）？
+
+---
+
 ## [1.4.11] — 2026-10-11 · 搜索 API 消耗治理（成本控制 + 规范订正）
 
 ### 背景

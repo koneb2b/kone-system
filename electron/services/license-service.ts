@@ -1,4 +1,4 @@
-import { app } from './electron-bridge'
+import { app, shell } from './electron-bridge'
 import { execSync } from 'child_process'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
@@ -20,6 +20,7 @@ import { setSecret } from './secret-manager'
 import { registerIpc, registry, secureAnyContract } from '../ipc/registry'
 import {
   systemGetDeviceStatusContract,
+  systemOpenExternalContract,
   licenseGetInfoContract,
   licenseRequestTrialContract,
   licenseSubmitContract,
@@ -725,6 +726,31 @@ export const createLicenseService = (store: ConfigStore) => {
         return { success: true, data: { available: Boolean(machineId), machineId } }
       } catch (error) {
         return buildIpcErrorResponse(error, '读取设备状态失败')
+      }
+    })
+
+    /* 用**系统默认浏览器**打开外部链接（2026-10-11）。
+       用于 `wa.me` 一键 WhatsApp 触达 —— 不能复用 `window.location.href`，
+       那会在 Electron 窗口内导航、直接覆盖应用界面。
+       **安全**：协议白名单仅 http/https，拒绝 `file://` 与自定义协议，
+       防止该通道被滥用为本地文件读取或任意程序唤起。 */
+    registerIpc(IPC_CHANNELS.SYSTEM.OPEN_EXTERNAL, systemOpenExternalContract, async (_event, payload: unknown) => {
+      try {
+        const url = String((payload as { url?: unknown } | undefined)?.url || '').trim()
+        if (!url) return { success: false, error: '缺少 url' }
+        let parsed: URL
+        try {
+          parsed = new URL(url)
+        } catch {
+          return { success: false, error: 'URL 格式无效' }
+        }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return { success: false, error: `不允许的协议：${parsed.protocol}` }
+        }
+        await shell.openExternal(url)
+        return { success: true, data: { opened: true } }
+      } catch (error) {
+        return buildIpcErrorResponse(error, '打开外部链接失败')
       }
     })
 

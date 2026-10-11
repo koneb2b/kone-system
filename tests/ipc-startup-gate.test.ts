@@ -204,10 +204,11 @@ test('启动门禁：完整注册序列后 assertAllRegistered 通过 + lock 生
   const { licenseGuard } = require(licensePath).createLicenseService(store)
   const ipcMain = makeIpcMain()
 
-  // 1) collectInvokeChannels 精确为 60（声明 71 − 仅推送 11），且与 PUSH_CHANNELS 互斥
+  // 1) collectInvokeChannels 精确为 61（声明 72 − 仅推送 11），且与 PUSH_CHANNELS 互斥
   //    [V1.4.0] Phase 2.9 新增 2 个 invoke：cloud:create-approval / cloud:list-approvals
+  //    2026-10-11 新增 1 个 invoke：system:open-external（WhatsApp 一键触达，经系统浏览器打开）
   const invoke = collectInvokeChannels()
-  assert.equal(invoke.length, 60, 'collectInvokeChannels 应返回 60 个 invoke 通道')
+  assert.equal(invoke.length, 61, 'collectInvokeChannels 应返回 61 个 invoke 通道')
   // 2) 完整复刻 main.ts 注册序列
   runMainRegistrationSequence(
     registry,

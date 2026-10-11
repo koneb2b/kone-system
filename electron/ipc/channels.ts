@@ -7,6 +7,10 @@ export const IPC_CHANNELS = {
   SYSTEM: {
     GET_DEVICE_STATUS: 'system:get-device-status',
     AUTOPILOT_ACTION: 'autopilot-action',
+    /* 2026-10-11 新增：用**系统默认浏览器**打开外部链接（如 `wa.me` 一键 WhatsApp 触达）。
+       不能复用 `window.location.href` —— 那会在 Electron 窗口内导航、直接覆盖应用界面。
+       （`mailto:` 之所以可复用，是因为该协议由系统接管，不触发窗口导航。） */
+    OPEN_EXTERNAL: 'system:open-external',
   },
   AUTOPILOT: {
     GET_STATE: 'autopilot:get-state',
