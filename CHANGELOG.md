@@ -17,6 +17,58 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.13] — 2026-10-11 · WhatsApp 触达必须识别号码类型（固定电话不可用）
+
+### 背景（用户实测反馈）
+> 「资料里面都固定电话啊，这个你不会识别吗，能链接 whatsapp 吗，我都吐血了」
+
+**这是一个真实且严重的设计缺陷**：
+- WhatsApp 是**手机 App**，**固定电话（座机）无法注册/接收消息**
+- 而 Google Maps / Yellow Pages 等来源返回的商家电话**绝大多数是座机**
+  —— 实测 17 条线索中 **15 条为美国 `(XXX) XXX-XXXX` 格式的商家座机**
+- 此前 `normalizePhoneE164` **只校验格式**（8-15 位数字），座机也被判 `phoneValid: true`
+- 前端据此**直接拼 `wa.me/<digits>`** → **链接必然无效**（用户点了打不开）
+
+### 变更
+**新增 `src/shared/phone-kind.ts`（双端共用 SSOT）**
+- `classifyPhoneKind(raw, countryCode)` → `mobile | landline | unknown`
+  - **CN**：`1[3-9]xxxxxxxxx` → mobile；`0xx(x)-xxxxxxx` → landline
+  - **DE**：`+49 15x/16x/17x` → mobile；其余 → landline
+  - **US/CA**：号码可携带（LNP），**无法从号段区分** → `unknown`（保守）
+  - 其他国家 → `unknown`
+- `canReachWhatsApp(raw, cc)` → 仅 `mobile` 为 true
+- `buildWhatsAppDigits(raw, cc)` → **必须带国家码**；无法可靠补全时返回 `null`
+
+**`leads-management.tsx` 的 `handleLaunchWhatsApp` 加三重门禁**
+1. `classifyPhoneKind` 判定 → **仅 mobile 放行**
+2. `buildWhatsAppDigits` 补国家码 → 缺国家码**明确拒绝**（不臆造区号）
+3. 座机/无法判定 → **明确告知原因**（"是固定电话，WhatsApp 仅支持手机号"），
+   并**建议改用邮件触达** —— 不静默失败、不给无效链接
+
+**`electron/utils/contact-validation.ts`** 改为 re-export shared 模块（消除重复实现）
+
+### 设计原则
+**保守优先**：拿不准就 `unknown` → 按「不可用」处理。
+**宁可少给一个按钮，不可给错链接**（用户点了却打不开最伤体验）。
+
+### 测试
+新增 `tests/business-logic/phone-kind.business.test.js`（6 条守护）：
+- 座机必须判 `landline`（不得混入 mobile）
+- 美国商家座机（实测 4 条真实样本）**必须不可用于 WhatsApp**
+- 空值/垃圾输入不得误判为 mobile
+- `buildWhatsAppDigits` 对缺国家码**必须返回 null**
+
+### 影响 SSOT
+`src/shared/phone-kind.ts`（新增）/ `leads-management.tsx` /
+`contact-validation.ts` / `CHANGELOG.md`
+
+### 附：本次暴露的上游数据问题（待后续处理）
+实测线索 `countryCode` 为 **`GL`（格陵兰）/ `UN`** —— 而号码是**美国** `(832)` 等。
+`country: "Global"` 被截取前两字母 → `GL`。**国家码推导仍有缺陷**（P2-1 的残留），
+导致号码无法补全 `+1`，进一步恶化 WhatsApp 可用性。
+
+---
+
 ## [1.4.12] — 2026-10-11 · 全链路补齐：资料导出补「地址」+ WhatsApp 一键触达
 
 ### 背景

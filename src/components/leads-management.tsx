@@ -68,6 +68,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Checkbox } from '@/components/ui/checkbox'
 import { AnalysisDrawer } from '@/components/analysis-drawer'
 import { LeadItem, LeadStatus, useLeadsStore } from '@/store/leads-store'
+/* 号码类型判定（双端共用 SSOT）—— WhatsApp 仅支持手机号，座机不可用 */
+import { buildWhatsAppDigits, classifyPhoneKind } from '@/shared/phone-kind'
 import { analysisGenerate, ElectronApiError, saveExportFile } from '@/lib/electron-api'
 import { useFeatureGate } from '@/lib/feature-gate'
 
@@ -687,18 +689,39 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     window.location.href = mailtoUrl
   }
 
-  /* WhatsApp 一键触达（2026-10-11，回应用户「手机号可直接通过高级版触达」）：
-     **仅唤起** WhatsApp 并预填文案 —— 用户仍需在 WhatsApp 内手动点发送，
-     **不涉及自动发送**，与 AGENTS.md 的自动化风控约束不冲突。
-     号码归一化为纯数字（`wa.me` 要求 E.164 且不带 `+`）。 */
+  /* WhatsApp 一键触达（2026-10-11，回应用户「手机号可直接通过高级版触达」）。
+     **2026-10-11 修正**：此前只做格式校验就直接拼 wa.me —— 但 WhatsApp 是**手机 App**，
+     **固定电话（座机）无法使用**；而 Google Maps 等来源的商家电话**绝大多数是座机**
+     （实测 17 条线索 15 条为美国商家座机）。故改为：
+       ① 用 `classifyPhoneKind` 判定类型，**仅 mobile 放行**；
+       ② 用 `buildWhatsAppDigits` 补国家码（无国家码的本地号码无法可靠拼链，明确拒绝）；
+       ③ 座机/无法判定 → **明确告知原因**，不静默失败、不给无效链接。
+     仍然**仅唤起，不自动发送** —— 用户需在 WhatsApp 内手动点发送。 */
   const handleLaunchWhatsApp = async () => {
     if (!emailComposerLead) return
     const raw = String(emailComposerLead.phone || emailComposerLead.decisionMakers?.[0]?.phone || '').trim()
-    const digits = raw.replace(/[^\d]/g, '')
-    if (digits.length < 7) {
+    const countryCode = String(emailComposerLead.countryCode || '').trim()
+    if (!raw) {
+      toast({ title: '无法唤起 WhatsApp', description: '该线索没有可用电话号码。', variant: 'destructive' })
+      return
+    }
+    const kind = classifyPhoneKind(raw, countryCode)
+    if (kind !== 'mobile') {
+      toast({
+        title: '该号码不可用于 WhatsApp',
+        description:
+          kind === 'landline'
+            ? `「${raw}」是固定电话。WhatsApp 仅支持手机号，座机无法接收消息。`
+            : `「${raw}」无法确认为手机号（可能缺少国家码，或该国家号码无法从号段区分手机/座机）。WhatsApp 需手机号，建议改用邮件触达。`,
+        variant: 'destructive',
+      })
+      return
+    }
+    const digits = buildWhatsAppDigits(raw, countryCode)
+    if (!digits) {
       toast({
         title: '无法唤起 WhatsApp',
-        description: raw ? `电话号码「${raw}」不完整（缺国家码或位数不足）。` : '该线索没有可用电话号码。',
+        description: `「${raw}」缺少国家码，无法构造有效的 WhatsApp 链接，请先补全为国际格式（如 +49…）。`,
         variant: 'destructive',
       })
       return
