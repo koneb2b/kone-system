@@ -219,17 +219,25 @@ app
       return
     }
 
-    migrateLegacySecretsFromConfig(store)
+    /* 密钥迁移失败**不得**中断启动：否则 createMainWindow 不执行 → 应用无窗口、彻底变砖，
+       用户连"进设置页重新录入密钥"这条唯一恢复路径都走不到。
+       Fail-Closed 应作用于**单个能力**（取不到密钥 = 未配置），而非整个应用。（2026-10-12 实测复现） */
+    try {
+      migrateLegacySecretsFromConfig(store)
+    } catch (error) {
+      console.error('[Main] 密钥迁移失败（已降级为"密钥不可用"，应用继续启动）:', error)
+    }
     clearLegacyAutopilotNode(store)
-    registerIpcHandlers()
-    const mainWindow = await createMainWindow()
-    mainWindowRef = mainWindow
-    createTray(mainWindow)
-    bindWindowCloseToTray(mainWindow)
-    initAutoUpdater()
     // 第四批迁移收口：最后一处 plain 直挂。契约 autopilotSyncLifecycleContract 规定请求为
     // { lifecycle } 对象（与 v2 测试一致）；preload 负责把公开 API 的 lifecycle 字符串包成
     // 该对象，主进程在此解包，从而既保持契约真值、又不破坏渲染层调用形态。
+    //
+    // 关键顺序（P0 修复）：本通道必须在 `registerIpcHandlers()`（其末尾执行 `registry.attach(ipcMain)`）
+    // **之前**登记。`attach()` 只对"登记时刻已存在的通道"做真实 `ipcMain.handle` 绑定；若本通道晚于
+    // attach 登记，将**永远不绑定到 ipcMain** —— 渲染层调用恒得
+    // "No handler registered for 'sync-autopilot-state'"（实测：打包版每次 dashboard 挂载都报错，
+    // 系统托盘巡航状态永不更新）。同理也需早于 createMainWindow，因为已激活用户的 dashboard 会在
+    // createMainWindow 期间即调用本通道。
     registerIpc(
       IPC_CHANNELS.AUTOPILOT.SYNC_STATE,
       autopilotSyncLifecycleContract,
@@ -243,12 +251,22 @@ app
           lifecycle === 'error'
         ) {
           autopilotLifecycle = lifecycle
-          refreshTrayMenu(mainWindow)
+          // mainWindowRef 可能尚未赋值（渲染层在 createMainWindow 期间即调用）——此时托盘尚未创建，
+          // 随后 createTray(mainWindow) 会依据已同步的 autopilotLifecycle 建菜单，此处无需刷新。
+          if (mainWindowRef) {
+            refreshTrayMenu(mainWindowRef)
+          }
           return { success: true, data: null }
         }
         return { success: false, error: 'Invalid autopilot lifecycle', code: 400 }
       },
     )
+    registerIpcHandlers()
+    const mainWindow = await createMainWindow()
+    mainWindowRef = mainWindow
+    createTray(mainWindow)
+    bindWindowCloseToTray(mainWindow)
+    initAutoUpdater()
 
     // P0-4/收口：启动门禁。所有 invoke 通道（含经 Fail-Closed 包装器治理登记的 20 处）均已在上方
     // registerIpcHandlers() + SYNC_STATE 登记进注册中心。`collectInvokeChannels()` 已排除仅推送通道，

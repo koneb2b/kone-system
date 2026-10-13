@@ -2,6 +2,18 @@ import * as crypto from 'crypto'
 import { IPC_CHANNELS } from '../ipc/channels'
 import type { DataSourceType, DecisionMaker } from '../../src/shared/ipc-contracts'
 import { validateDecisionMakerContacts } from '../utils/contact-validation'
+import { classifyPhoneKind, type PhoneKind } from '../utils/contact-validation'
+import { resolveCountryCode } from '../../src/lib/country-code'
+/* 联系方式来源与可信度（三档）—— 双端 SSOT */
+import {
+  pickContactWithProvenance,
+  type ContactFieldProvenance,
+  type ContactProvenance,
+} from '../../src/shared/contact-provenance'
+/* 用户「相关 / 不相关」反馈闭环（S4c）—— 本地、零成本，让匹配精度**越用越准** */
+import { applyFeedbackAdjustment, deriveFeedbackKey, type LeadFeedbackMap } from '../../src/shared/lead-feedback'
+import { enrichFromApollo, getUserApolloApiKey, type ApolloEnrichResult } from './search/enrich-apollo'
+import { enrichFromProspeo, getUserProspeoApiKey, type ProspeoEnrichResult } from './search/enrich-prospeo'
 import { isCircuitBreakerOpenError, resetCircuitBreaker } from '../utils/http-client'
 import {
   ConfigStore,
@@ -41,6 +53,18 @@ import {
   normalizeWebsiteUrl,
   sanitizePlainText,
 } from './search/text-utils'
+/* 官网联系方式提取（纯函数）：真实 UA / 扩展联系页路径 / JSON-LD 解析。
+   目的：提升**免费**邮箱/电话命中率，降低对付费富化（Apollo）的依赖。 */
+import {
+  WEBSITE_PROBE_USER_AGENT,
+  CONTACT_PAGE_FETCH_LIMIT,
+  buildContactPageUrls,
+  decodeContactHrefValue,
+  extractContactLinksFromHtml,
+  extractLabelledMobileNumbers,
+  extractWhatsAppNumbers,
+  parseJsonLdContacts,
+} from './search/contact-extract'
 /* O1 拆分（P2/P3/P4/P7b）：词表/常量/并发/意图已抽出至 ./search/*，行为不变 */
 import {
   MAX_SEARCH_CANDIDATES,
@@ -56,6 +80,9 @@ import {
   SEARCH_VARIANT_LIMIT,
   SERPAPI_RETRYABLE_STATUS,
   WEBSITE_PROBE_TIMEOUT_MS,
+  ENRICH_LOOKUP_BUDGET,
+  PROSPEO_EMAIL_BUDGET,
+  PROSPEO_MOBILE_BUDGET,
 } from './search/constants'
 import { mapLimitedConcurrency, runLimitedConcurrency } from './search/concurrency'
 /* O1 拆分（P3）：Scout 预筛/准入逻辑已抽出至 ./search/scout，行为不变 */
@@ -85,6 +112,7 @@ import {
 export { LANGUAGE_LABELS }
 /* O1 拆分（P5）：评分基元与评分提示词已抽出至 ./search/scoring，行为不变 */
 import {
+  applyNegativeIcpPenalty,
   applySchemaDefaults,
   buildSearchScoringPrompt,
   buildUniversalIcpPrompt,
@@ -658,6 +686,10 @@ type WebsiteContentProbe = {
   body: string
   directEmails: string[]
   directPhones: string[]
+  /** 首页 `<a>` 链接中识别出的**站内联系页**候选（零 API 成本的真实 URL 发现）。 */
+  contactLinks: string[]
+  /** **WhatsApp 直链**号码（`wa.me` 等）—— 定义上即为 WhatsApp 可用，是免费手机号最高价值来源。 */
+  whatsappNumbers: string[]
   failureCode?: 'website_403' | 'website_503' | 'website_timeout' | 'website_unreachable'
 }
 
@@ -672,17 +704,10 @@ const createEmptyWebsiteContentProbe = (
   body: '',
   directEmails: [],
   directPhones: [],
+  contactLinks: [],
+  whatsappNumbers: [],
   failureCode,
 })
-
-const buildContactPageUrls = (website: string) => {
-  try {
-    const base = new URL(normalizeWebsiteUrl(website))
-    return ['/contact', '/contact-us'].map((pathname) => new URL(pathname, base).toString())
-  } catch {
-    return []
-  }
-}
 
 const mergeWebsiteContentProbes = (...probes: WebsiteContentProbe[]): WebsiteContentProbe => {
   const validProbes = probes.filter((probe) => probe.ok)
@@ -704,6 +729,8 @@ const mergeWebsiteContentProbes = (...probes: WebsiteContentProbe[]): WebsiteCon
     ),
     directEmails: mergeUniqueValues(...validProbes.map((probe) => probe.directEmails)),
     directPhones: mergeUniqueValues(...validProbes.map((probe) => probe.directPhones)),
+    contactLinks: mergeUniqueValues(...validProbes.map((probe) => probe.contactLinks)),
+    whatsappNumbers: mergeUniqueValues(...validProbes.map((probe) => probe.whatsappNumbers)),
   }
 }
 
@@ -737,7 +764,7 @@ const fetchWebsiteContent = async (url: string, timeoutMs: number): Promise<Webs
   try {
     probeLog('[Probe-Fetch] Fetching website:', url, 'timeoutMs:', timeoutMs)
     const response = await withTimeoutGuard(
-      fetchWithTimeout(url, { method: 'GET', headers: { 'User-Agent': 'Kone-AI/1.0' } }, timeoutMs),
+      fetchWithTimeout(url, { method: 'GET', headers: { 'User-Agent': WEBSITE_PROBE_USER_AGENT } }, timeoutMs),
       timeoutMs,
       `Website fetch ${url}`,
     )
@@ -761,27 +788,37 @@ const fetchWebsiteContent = async (url: string, timeoutMs: number): Promise<Webs
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<[^>]+>/g, ' ')
     const contactHrefMatches = Array.from(html.matchAll(/(?:href=["']mailto:([^"'>?#]+)|href=["']tel:([^"'>?#]+))/gi))
+    /* JSON-LD（application/ld+json）的 Organization/LocalBusiness telephone/email：
+       结构化数据命中率高、噪声低，是**免费**联系方式的重要来源。 */
+    const jsonLdContacts = parseJsonLdContacts(html)
     return {
       ok: true,
       url,
       title: titleMatch?.[1] ? sanitizePlainText(titleMatch[1], 200) : '',
       description: descMatch?.[1] ? sanitizePlainText(descMatch[1], 400) : '',
       body: sanitizePlainText(bodyText, 2200),
-      directEmails: Array.from(
-        new Set(
-          contactHrefMatches
-            .map((match) => match[1])
-            .filter(Boolean)
-            .map((item) => String(item).trim()),
-        ),
+      directEmails: mergeUniqueValues(
+        contactHrefMatches
+          .map((match) => match[1])
+          .filter(Boolean)
+          /* `mailto:`/`tel:` 值可能含 URL 编码（如 `%20`）→ 必须解码，否则残留进字段 */
+          .map((item) => decodeContactHrefValue(String(item))),
+        jsonLdContacts.emails,
       ),
-      directPhones: Array.from(
-        new Set(
-          contactHrefMatches
-            .map((match) => match[2])
-            .filter(Boolean)
-            .map((item) => String(item).trim()),
-        ),
+      directPhones: mergeUniqueValues(
+        contactHrefMatches
+          .map((match) => match[2])
+          .filter(Boolean)
+          .map((item) => decodeContactHrefValue(String(item))),
+        jsonLdContacts.phones,
+      ),
+      /* 站内联系页候选：从首页 `<a>` 链接识别真实 URL（零 API 成本，比猜固定路径更准）。 */
+      contactLinks: extractContactLinksFromHtml(html, url),
+      /* WhatsApp 直链（`wa.me` 等，定义上即可用于 WhatsApp）+ 带「手机/WhatsApp」标记的号码。
+         这是**免费**获取「可用于 WhatsApp 的手机号」的最高价值来源（商家电话多为座机）。 */
+      whatsappNumbers: mergeUniqueValues(
+        extractWhatsAppNumbers(html),
+        extractLabelledMobileNumbers(`${bodyText} ${titleMatch?.[1] || ''}`),
       ),
     }
   } catch (error) {
@@ -818,7 +855,12 @@ const extractWebsiteContent = async (url: string, timeoutMs: number) => {
     return homepage
   }
 
-  const contactUrls = buildContactPageUrls(url)
+  /* 联系页候选 = 首页发现的**真实链接**（优先，比猜固定路径更准）+ 固定路径兜底；
+     合并去重并受 CONTACT_PAGE_FETCH_LIMIT 上限约束（不放大延迟/连接数，也不改富化线索并发=2）。 */
+  const contactUrls = Array.from(new Set([...(homepage.contactLinks || []), ...buildContactPageUrls(url)])).slice(
+    0,
+    CONTACT_PAGE_FETCH_LIMIT,
+  )
   if (contactUrls.length === 0) {
     return homepage
   }
@@ -948,6 +990,80 @@ const buildSocialFallbackEnrichedText = async (
   return trimWebsiteTextForLlm(snippets.filter(Boolean).join(' '))
 }
 
+/** 在多个候选电话中**优先选手机**（最大化 WhatsApp 可达性）；无手机则保持既有回退顺序。
+ * 分类复用双端 SSOT `classifyPhoneKind`（已在 contact-validation 收敛）。
+ *
+ * 2026-10-13 增强：`whatsappPhone`（来自网页 `wa.me` 直链）**定义上即可用于 WhatsApp**，
+ * 故直接按 `mobile` 参与排序 —— 这是**免费**拿到「可用于 WhatsApp 的手机号」的关键来源
+ * （Google Maps 等来源的商家电话绝大多数是座机，US 号码因 LNP 无法从号段区分，一律 `unknown`）。
+ *
+ * 2026-10-13 再增强（S2）：返回值同时携带**来源与可信度**（`provenance`），
+ * 保证「取值」与「来源标注」同源，杜绝静默错标。 */
+const pickBestPhoneForReach = (
+  candidatePhone: string,
+  apollo: ApolloEnrichResult | null,
+  prospeo: ProspeoEnrichResult | null,
+  whatsappPhone: string,
+  websitePhone: string,
+  extractedPhone: string,
+  country?: string,
+  candidateSourceLabel = 'Google Maps',
+): { phone: string; provenance?: ContactFieldProvenance } => {
+  const countryCode = resolveCountryCode(country) || ''
+  const ranked: Array<{ phone: string; kind: PhoneKind; provenance: ContactFieldProvenance }> = []
+  if (candidatePhone)
+    ranked.push({
+      phone: candidatePhone,
+      kind: classifyPhoneKind(candidatePhone, countryCode),
+      provenance: {
+        tier: 'extracted',
+        source: candidateSourceLabel,
+        kind: classifyPhoneKind(candidatePhone, countryCode),
+      },
+    })
+  /* Prospeo 揭示的 `mobile` 是**已验证手机号**（字段语义即 mobile）→ 优先于 Apollo 的自报类型 */
+  if (prospeo?.phone)
+    ranked.push({
+      phone: prospeo.phone,
+      kind: prospeo.phoneKind,
+      provenance: { tier: 'verified', source: 'Prospeo', kind: prospeo.phoneKind },
+    })
+  if (apollo?.phone)
+    ranked.push({
+      phone: apollo.phone,
+      kind: apollo.phoneKind,
+      provenance: { tier: 'verified', source: 'Apollo', kind: apollo.phoneKind },
+    })
+  /* WhatsApp 直链号码：网站主动挂出的一键 WhatsApp → 定义上可用，按 mobile 参与排序 */
+  if (whatsappPhone)
+    ranked.push({
+      phone: whatsappPhone,
+      kind: 'mobile',
+      provenance: { tier: 'extracted', source: '官网 WhatsApp 直链', kind: 'mobile' },
+    })
+  if (websitePhone)
+    ranked.push({
+      phone: websitePhone,
+      kind: classifyPhoneKind(websitePhone, countryCode),
+      provenance: { tier: 'extracted', source: '官网', kind: classifyPhoneKind(websitePhone, countryCode) },
+    })
+  if (extractedPhone)
+    ranked.push({
+      phone: extractedPhone,
+      kind: classifyPhoneKind(extractedPhone, countryCode),
+      provenance: { tier: 'extracted', source: '官网', kind: classifyPhoneKind(extractedPhone, countryCode) },
+    })
+  const mobile = ranked.find((r) => r.kind === 'mobile')
+  if (mobile) return { phone: mobile.phone, provenance: mobile.provenance }
+  /* 无手机 → 保持**既有回退顺序**（候选 > 官网 > 提取），行为不变 */
+  const fallbackOrder = [candidatePhone, websitePhone, extractedPhone]
+  for (const fallbackPhone of fallbackOrder) {
+    const hit = ranked.find((r) => r.phone === fallbackPhone)
+    if (hit) return { phone: hit.phone, provenance: hit.provenance }
+  }
+  return { phone: '' }
+}
+
 const enrichLeadWithDeepProbe = async (payload: {
   candidate: Partial<SearchExecuteResult>
   llmEndpoint: string
@@ -959,6 +1075,14 @@ const enrichLeadWithDeepProbe = async (payload: {
   googleKey: string
   icpProfile?: { targetProduct?: string; buyerPersona?: string; coreAdvantage?: string; negativeIcp?: string }
   skipLlmProbe?: boolean
+  /** 是否为高价值线索（matchScore ≥ 60，会进入 Agent 管道）—— Apollo 富化仅对此类触发。 */
+  highValue?: boolean
+  /** 每轮搜索的 Apollo 富化查询预算计数器（总量护栏，Fail-Closed 共享）。 */
+  enrichBudget?: { used: number; limit: number }
+  /** 每轮搜索的 Prospeo **邮箱**富化预算计数器（Apollo 的低成本前置）。 */
+  prospeoEmailBudget?: { used: number; limit: number }
+  /** 每轮搜索的 Prospeo **手机号**富化预算计数器（10 credits/条，独立且更小）。 */
+  prospeoMobileBudget?: { used: number; limit: number }
 }) => {
   const website = normalizeWebsiteUrl(payload.candidate.website)
   const snippet = String(payload.candidate.snippet || '').trim()
@@ -971,6 +1095,59 @@ const enrichLeadWithDeepProbe = async (payload: {
   const extracted = extractContactCandidates(
     [probeText, websiteContent.directEmails.join(' '), websiteContent.directPhones.join(' ')].join(' '),
   )
+
+  /* 2026-10-11：Apollo 联系人富化（Fail-Closed，宪法安全）。
+     仅在「高价值线索 + 预算剩余 + 已配置密钥」时追加一次**串行**查询；
+     不提升并行线索数（红线 SEARCH_ENRICH_CONCURRENCY=2 不变）。
+     缺密钥 / 超预算 / 失败 → apollo = null，静默降级到既有官网抓取，绝不中断搜索。
+     外层再套一层 try/catch：Apollo 只是官网抓取的增量补充，**任何**异常
+     （含密钥存储不可用、适配器加载失败）都不允许反过来中断整条富化链路。 */
+  /* 2026-10-13：Prospeo 作为 Apollo 的**低成本前置**（实测邮箱 ≈2 credits/条：找人 1 + 揭示 1）。
+     仅对「高价值 + 已配置密钥 + 邮箱预算剩余」的线索查询；**命中邮箱即跳过 Apollo**（省成本）。
+     手机揭示昂贵（10 credits/条）→ 独立小预算，且仅在**尚无手机号**时按需揭示（对齐 WhatsApp 触达）。
+     任何异常一律降级为 null，绝不中断搜索。 */
+  let prospeo: ProspeoEnrichResult | null = null
+  try {
+    const prospeoKey = getUserProspeoApiKey()
+    const emailBudget = payload.prospeoEmailBudget
+    if (payload.highValue && prospeoKey && emailBudget && emailBudget.used < emailBudget.limit) {
+      const mobileBudget = payload.prospeoMobileBudget
+      const candidatePhone = String(payload.candidate.phone || '').trim()
+      const alreadyMobile =
+        Boolean(candidatePhone) &&
+        classifyPhoneKind(candidatePhone, resolveCountryCode(payload.country) || '') === 'mobile'
+      const wantMobile = Boolean(mobileBudget) && mobileBudget!.used < mobileBudget!.limit && !alreadyMobile
+      emailBudget.used += 1
+      if (wantMobile) mobileBudget!.used += 1
+      const result = await enrichFromProspeo({
+        domain: website,
+        company: String(payload.candidate.company || '').trim(),
+        country: payload.country,
+        wantMobile,
+        timeoutMs: payload.timeoutMs,
+      })
+      prospeo = result.used ? result : null
+    }
+  } catch {
+    prospeo = null
+  }
+
+  let apollo: ApolloEnrichResult | null = null
+  try {
+    /* Prospeo 已拿到邮箱 → 跳过 Apollo（Prospeo 邮箱成本更低，避免重复付费）。 */
+    if (payload.highValue && payload.enrichBudget && getUserApolloApiKey() && !prospeo?.email) {
+      if (payload.enrichBudget.used < payload.enrichBudget.limit) {
+        payload.enrichBudget.used += 1
+        apollo = await enrichFromApollo({
+          domain: website,
+          company: String(payload.candidate.company || '').trim(),
+          country: payload.country,
+        })
+      }
+    }
+  } catch {
+    apollo = null
+  }
 
   let llmInferred: Record<string, unknown> | null = null
   /* skipLlmProbe：LLM 服务熔断时跳过 LLM 深探，但保留官网抓取（邮箱/电话
@@ -1030,8 +1207,51 @@ const enrichLeadWithDeepProbe = async (payload: {
 
   const contact = String(payload.candidate.contact || extracted.contact || '').trim()
   const contactTitle = String(payload.candidate.contactTitle || extracted.contactTitle || '').trim()
-  const email = String(payload.candidate.email || websiteContent.directEmails[0] || extracted.email || '').trim()
-  const phone = String(payload.candidate.phone || websiteContent.directPhones[0] || extracted.phone || '').trim()
+  /* 数据源标签（用于来源标注）：候选自带 source（如 "Google Maps"）。 */
+  const candidateSourceLabel = String(payload.candidate.source || 'Google Maps').trim()
+  /* 邮箱优先级：线索自带 > **Prospeo 已验证邮箱** > Apollo 已验证邮箱 > 官网正则抽取 > LLM 提取。
+     Prospeo/Apollo 回填的邮箱均经过验证；取值与**来源标注同源**（`pickContactWithProvenance`），
+     杜绝「值来自官网、来源却标成 Prospeo」这类静默错标。 */
+  const emailPick = pickContactWithProvenance([
+    { value: payload.candidate.email, tier: 'extracted', source: candidateSourceLabel },
+    { value: prospeo?.email, tier: 'verified', source: 'Prospeo' },
+    { value: apollo?.email, tier: 'verified', source: 'Apollo' },
+    { value: websiteContent.directEmails[0], tier: 'extracted', source: '官网' },
+    { value: extracted.email, tier: 'extracted', source: '官网' },
+  ])
+  const email = emailPick.value
+  /* 电话优先级：在所有候选中**优先选手机**（最大化 WhatsApp 可达性），无手机则保持
+     既有回退顺序（线索自带 > 官网 > LLM 提取）。返回值同时携带来源与可信度。 */
+  const phonePick = pickBestPhoneForReach(
+    String(payload.candidate.phone || '').trim(),
+    apollo,
+    prospeo,
+    /* 网站挂出的 WhatsApp 直链号码（定义上可用于 WhatsApp）优先于座机 */
+    String(websiteContent.whatsappNumbers[0] || '').trim(),
+    websiteContent.directPhones[0] || '',
+    extracted.phone || '',
+    payload.country,
+    candidateSourceLabel,
+  )
+  const phone = phonePick.phone
+  /* 号码类型（WhatsApp 可用性）：**直接采信来源标注中的 kind**（Prospeo 已验证手机 /
+     WhatsApp 直链 → `mobile`），否则回退双端 SSOT 判定。 */
+  const phoneKind: PhoneKind =
+    phonePick.provenance?.kind || classifyPhoneKind(phone, resolveCountryCode(payload.country) || '')
+  /* 联系方式来源与可信度（三档）：与取值**同源**产出，供前端徽标 / 筛选 / 管道放行使用。 */
+  const contactProvenance: ContactProvenance = {}
+  if (emailPick.provenance) contactProvenance.email = emailPick.provenance
+  if (phonePick.provenance) contactProvenance.phone = phonePick.provenance
+  /* 联系人姓名/职位：来自候选（搜索结果）或官网文本/LLM 提取 → 均属「官网提取」档 */
+  if (contact) {
+    contactProvenance.contact = {
+      tier: 'extracted',
+      source: payload.candidate.contact ? candidateSourceLabel : '官网',
+    }
+  }
+  /* 数据源归因：Apollo 真正贡献了联系数据时才标注，避免误导。 */
+  /* 数据源归因：Prospeo / Apollo **真正贡献了联系数据**时才标注，避免误导（不虚标）。 */
+  const enrichSourceSuffix = (prospeo?.used ? ' · Prospeo' : '') + (apollo?.used ? ' · Apollo' : '')
   const outreachAngle = String(llmInferred?.outreachAngle || '').trim()
 
   if (!websiteContent.ok) {
@@ -1046,6 +1266,9 @@ const enrichLeadWithDeepProbe = async (payload: {
           payload.timeoutMs,
         )
       : ''
+    /* 403 站点：兜底抓取的 LinkedIn/Kompass/Europages 简介里**常含邮箱/电话**，
+       此前只喂给 LLM 生成文案、**未挖掘联系方式**（免费信息被白白丢弃）。此处补齐。 */
+    const socialContacts = socialFallbackText ? extractContactCandidates(socialFallbackText) : null
     const fallbackSnippet = trimWebsiteTextForLlm([snippet, socialFallbackText].filter(Boolean).join(' ')) || snippet
     const { system, user } = buildSnippetFallbackPrompt({
       keyword: payload.keyword,
@@ -1086,7 +1309,7 @@ const enrichLeadWithDeepProbe = async (payload: {
               website,
               phone,
               address: String(payload.candidate.address || '').trim(),
-              source: String(payload.candidate.source || 'Google Maps').trim(),
+              source: (String(payload.candidate.source || 'Google Maps') + enrichSourceSuffix).trim(),
               reason: Array.isArray(payload.candidate.matchReasons) ? payload.candidate.matchReasons[0] : '',
               snippet: fallbackSnippet,
             },
@@ -1103,10 +1326,17 @@ const enrichLeadWithDeepProbe = async (payload: {
       ...payload.candidate,
       ...blindLead,
       website,
-      contact,
-      contactTitle,
-      email,
-      phone,
+      /* 数据溯源必须在**两条返回路径**都成立：`blindLead` 为 null（LLM 盲评超时/失败）时
+       * `...blindLead` 不展开任何字段，source 会退回 `payload.candidate.source`，
+       * 导致邮箱/电话来自 Apollo 却只显示「Google Maps」——静默丢失数据溯源。
+       * 故在此显式覆盖，确保与正常路径口径一致（Apollo 有贡献才加标，不虚标）。 */
+      source: (String(payload.candidate.source || 'Google Maps') + enrichSourceSuffix).trim(),
+      contact: contact || socialContacts?.contact || '',
+      contactTitle: contactTitle || socialContacts?.contactTitle || '',
+      email: email || socialContacts?.email || '',
+      phone: phone || socialContacts?.phone || '',
+      phoneKind,
+      contactProvenance,
       fallbackStatus: usedSocialFallback ? 'social_blind_score' : payload.candidate.fallbackStatus,
       matchReasons: [
         ...(Array.isArray(blindLead?.matchReasons) && blindLead?.matchReasons.length > 0
@@ -1142,6 +1372,9 @@ const enrichLeadWithDeepProbe = async (payload: {
     contactTitle,
     email,
     phone,
+    phoneKind,
+    contactProvenance,
+    source: (String(payload.candidate.source || 'Google Maps') + enrichSourceSuffix).trim(),
     matchReasons: [
       ...(Array.isArray(payload.candidate.matchReasons) ? payload.candidate.matchReasons : []),
       ...(outreachAngle ? [`网页深度探测判断：${sanitizePlainText(outreachAngle, 120)}`] : []),
@@ -1356,7 +1589,15 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
         const llmEndpoint = hasLlmConfig ? buildLlmEndpoint(llmBaseUrl || '') : ''
         if (!googleKey || !googleBaseUrl) {
-          throw new Error(`缺少配置. Debug: key=[${googleKey}], url=[${googleBaseUrl || ''}]`)
+          // ⚠️ 异常消息会沿 IPC 传到渲染层并直接显示在界面上，因此：
+          //  1) 必须对用户可读（「缺少配置. Debug: key=[...], url=[...]」是开发期调试文案）
+          //  2) **绝不能内插密钥或端点原文** —— 用户只填了半个 key 时原文会被回显到 UI
+          //     构成密钥泄露。缺失明细走 probeLog，不进异常消息。
+          probeLog('[Probe-Config] Search config missing:', {
+            hasGoogleKey: Boolean(googleKey),
+            hasGoogleBaseUrl: Boolean(googleBaseUrl),
+          })
+          throw new Error('搜索服务尚未配置：请先在「系统设置 → 基础配置」填写 Google 搜索密钥与接口地址。')
         }
 
         const intentMutation = await mutateSearchIntent({
@@ -1958,6 +2199,18 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           id: (lead as Partial<SearchExecuteResult>).id || crypto.randomUUID(),
           matchScore: computeIcpMatchScore(lead as Partial<SearchExecuteResult>, coreProductTerms),
         }))
+        /* S4a：用户自定义**负向 ICP 确定性护栏** —— 命中即封顶降权 + 写入可解释 riskFlag。
+           此前 negativeIcp 只是 LLM prompt 里的**软约束**（LLM 可能忽略）。
+           放在此处（排序/预筛之前）可同时影响初始排序、高相关过滤与首屏展示。
+           S4c：叠加**用户反馈闭环**（曾标「不相关」→ 封顶；曾标「相关」→ 小幅加分）。 */
+        const negativeIcpProfile = userConfig?.icpProfile?.negativeIcp
+        const leadFeedback = (userConfig as { leadFeedback?: LeadFeedbackMap } | undefined)?.leadFeedback
+        const guardedMergedLeads = scoredMergedLeads.map((lead) =>
+          applyFeedbackAdjustment(
+            applyNegativeIcpPenalty(lead, negativeIcpProfile),
+            leadFeedback?.[deriveFeedbackKey(lead)],
+          ),
+        )
 
         /* 宪法排序（kone-PRD §0.5.1 / L176 / L207 / L211）：确定性预评分（40/30/20/10）
            "在 LLM 评分执行前必运行，为**初始排序与预筛漏斗**服务"，且多源增强字段
@@ -1967,7 +2220,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
            否则切片退化为"按数据源合并顺序取前 50"——合并顺序为 [...local, ...organic]，
            本地(Maps)结果会挤掉有机(Organic)结果，**高相关线索可能根本不进入 AI 评分**，
            与"精准获客"直接冲突。 */
-        const rankedMergedLeads = rankByMatchScore(scoredMergedLeads)
+        const rankedMergedLeads = rankByMatchScore(guardedMergedLeads)
 
         /* L1-2/N1：高相关过滤（只看高相关） —— 严格对齐前端“只看高相关”的语义：
          matchScore >= 60，未评分项视为不通过（0 < 60）。在 ICP 评分完成后、
@@ -1978,9 +2231,9 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
         if (filterOptions?.highRelevanceOnly) {
           probeLog('[Probe-Filter] HighRelevanceOnly discarded:', {
-            input: scoredMergedLeads.length,
+            input: guardedMergedLeads.length,
             kept: relevanceFilteredLeads.length,
-            discarded: scoredMergedLeads.length - relevanceFilteredLeads.length,
+            discarded: guardedMergedLeads.length - relevanceFilteredLeads.length,
           })
         }
 
@@ -2229,7 +2482,22 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           if (cleanedResults.length > 0) {
             emitStage(_event.sender, 'enriching', '正在补全官网与商业信号...')
             const baseResults = cleanedResults.filter(Boolean)
-            const enrichedResults: SearchExecuteResult[] = new Array(baseResults.length)
+            /* 密集数组兜底（2026-10-12 修复真实缺陷）：
+               并发 worker 在「job 被抢占」时会**提前 `return`**（`if (myJobId !== activeJobIdFor()) return`，
+               见下方），该索引**不会被写回**。若用 `new Array(n)` 初始化，数组会留下**空洞（hole）**；
+               随后 `new Map(sparseResults.map(...))` 因 `Array.prototype.map` **跳过空洞**而产出稀疏数组，
+               `new Map()` 迭代空洞时得到 `undefined` → 抛
+               `TypeError: Iterator value undefined is not an entry object` → **整轮搜索直接中断**
+               （实测复现：50 条线索全部评完、富化进行中被此错误打断）。
+               改为以 `baseResults` 浅拷贝初始化：每个索引都有值，未富化者回落为原始线索。 */
+            const enrichedResults: SearchExecuteResult[] = baseResults.slice()
+            /* 2026-10-11：Apollo 富化每轮搜索的查询预算计数器（总量护栏）。
+             * 由 enrichLeadWithDeepProbe 内共享读取/累加，超预算即静默降级到官网抓取。 */
+            const enrichBudget = { used: 0, limit: ENRICH_LOOKUP_BUDGET }
+            /* 2026-10-13：Prospeo 预算（Apollo 的低成本前置）。邮箱与手机**独立计数**：
+               邮箱 ≈2 credits/条、手机 10 credits/条 → 手机预算更小，防止一轮烧光额度。 */
+            const prospeoEmailBudget = { used: 0, limit: PROSPEO_EMAIL_BUDGET }
+            const prospeoMobileBudget = { used: 0, limit: PROSPEO_MOBILE_BUDGET }
             await runLimitedConcurrency(baseResults, SEARCH_ENRICH_CONCURRENCY, async (item, index) => {
               if (myJobId !== activeJobIdFor()) return
               /* 性能/成本平衡：仅对高分线索（≥60，会进入 Agent 管道）做 LLM 深探；
@@ -2250,11 +2518,17 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                     googleKey,
                     icpProfile: userConfig?.icpProfile || undefined,
                     skipLlmProbe,
+                    highValue,
+                    enrichBudget,
+                    prospeoEmailBudget,
+                    prospeoMobileBudget,
                   }),
                   /* 外层守卫必须 ≥ 内部最坏耗时（官网抓取 15s + LLM 深探 20s = 35s），
                    否则高分线索的深探总是被外层守卫砍掉，表现为大量
-                   "官网访问超时或 AI 评估失败"（此前 llmTimeoutMs 恒 60s 掩盖了此问题）。 */
-                  llmTimeoutMs + WEBSITE_PROBE_TIMEOUT_MS,
+                   "官网访问超时或 AI 评估失败"（此前 llmTimeoutMs 恒 60s 掩盖了此问题）。
+                   2026-10-11：追加 Apollo 富化（约 15s，仅高价值线索串行触发）→ 预算上抬至
+                   20 + 15 + 15 = 50s，仍在 SEARCH_TOTAL_TIMEOUT_MS(5min) 总时长预算内。 */
+                  llmTimeoutMs + WEBSITE_PROBE_TIMEOUT_MS * 2,
                   `Enrich lead ${item.company || item.website || index}`,
                 )
                 enrichedResults[index] = applySchemaDefaults(enriched)
@@ -2396,7 +2670,17 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
           const key = extractDomainFromUrl(item.website) || `${String(item.company || '').toLowerCase()}`
           if (key && !deduped.has(key)) deduped.set(key, item)
         }
-        const finalResults = Array.from(deduped.values()).slice(0, SEARCH_TARGETED_LEAD_LIMIT)
+        const finalResults = Array.from(deduped.values())
+          .slice(0, SEARCH_TARGETED_LEAD_LIMIT)
+          /* S4a **安全网**：LLM 可能忽略 prompt 中的负向 ICP → 在**最终结果**上再兜一次底
+             （幂等：未命中即原样返回），确保负向线索不会带着高分进入 Agent 管道。
+             S4c：同样叠加用户反馈（防 LLM 把曾标「不相关」的线索重新打高分）。 */
+          .map((lead) =>
+            applyFeedbackAdjustment(
+              applyNegativeIcpPenalty(lead, negativeIcpProfile),
+              leadFeedback?.[deriveFeedbackKey(lead)],
+            ),
+          )
         /* preserveScore=true：finalResults 已含两波 AI 评分（emitLeadScored 也已流式
            回填），全量替换时保留 matchScore，避免冲掉已评分状态导致「未分析完成」假象。 */
         emitBasicResults(_event.sender, finalResults, true)
@@ -2414,6 +2698,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
       } catch (error: any) {
         probeLog('[Probe-IPC] Search execute catch triggered, emitting stream:error + stream:complete', {
           message: error?.message || 'Search execute failed',
+          /* 临时诊断（定位 "Iterator value undefined is not an entry object"）：打印栈顶 8 帧 */
+          stack: String(error?.stack || '')
+            .split('\n')
+            .slice(0, 8)
+            .join(' | '),
         })
         emitStreamError(_event.sender, error?.message || 'Search execute failed')
         if (isCircuitBreakerOpenError(error))

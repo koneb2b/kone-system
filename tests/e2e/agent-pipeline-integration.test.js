@@ -45,26 +45,62 @@ test('G8-E2E: full search→pipeline→agent flow', async () => {
   const pipeline = require('../../dist-electron/electron/services/agent-pipeline.js')
 
   // qualifiesForPipeline
-  assert.equal(pipeline.qualifiesForPipeline(85, { phone: '+111' }), true, 'high score + phone qualifies')
+  /* 2026-10-13：可触达资产口径修正 —— **座机不是可触达资产**（WhatsApp 只能发手机号，
+     与 `src/shared/phone-kind.ts` SSOT 一致）。故手机须显式 `phoneKind: 'mobile'`。 */
+  assert.equal(
+    pipeline.qualifiesForPipeline(85, { phone: '+14155550100', phoneKind: 'mobile' }),
+    true,
+    'high score + WhatsApp-reachable mobile qualifies',
+  )
   assert.equal(pipeline.qualifiesForPipeline(40, { email: 'a@b.com' }), false, 'low score rejects')
-  assert.equal(pipeline.qualifiesForPipeline(null, { phone: '+333' }), false, 'null score rejects')
+  assert.equal(
+    pipeline.qualifiesForPipeline(null, { phone: '+14155550100', phoneKind: 'mobile' }),
+    false,
+    'null score rejects',
+  )
   assert.equal(pipeline.qualifiesForPipeline(95, {}), false, 'no reachable asset rejects')
   assert.equal(pipeline.qualifiesForPipeline(60, { email: 'a@b.com' }), true, 'score===60 with email qualifies')
+  /* 反例：座机 / 类型未知的电话**不得**被当作可触达资产 */
+  assert.equal(
+    pipeline.qualifiesForPipeline(90, { phone: '+14155550100', phoneKind: 'landline' }),
+    false,
+    'landline-only must NOT qualify (WhatsApp cannot reach a landline)',
+  )
+  assert.equal(
+    pipeline.qualifiesForPipeline(90, { phone: '+14155550100' }),
+    false,
+    'phone without phoneKind must NOT qualify (US LNP → unknown, conservative)',
+  )
 
   const leads = [
     {
       company: 'AlphaCorp',
       website: 'https://alpha.com',
       email: 'ceo@alpha.com',
-      phone: '+111',
+      phone: '+14155550100',
+      phoneKind: 'mobile',
       linkedinUrl: 'https://linkedin.com/in/alpha-ceo',
       matchScore: 85,
     },
-    { company: 'BetaInc', website: 'https://beta.com', phone: '+222', matchScore: 90 },
+    { company: 'BetaInc', website: 'https://beta.com', phone: '+14155550101', phoneKind: 'mobile', matchScore: 90 },
     { company: 'GammaLtd', website: 'https://gamma.com', email: 'info@gamma.com', matchScore: 75 },
     { company: 'DeltaCo', website: 'https://delta.com', email: 'info@delta.com', matchScore: 40 },
-    { company: 'EpsilonLLC', website: 'https://epsilon.com', phone: '+333', matchScore: null },
+    {
+      company: 'EpsilonLLC',
+      website: 'https://epsilon.com',
+      phone: '+14155550102',
+      phoneKind: 'mobile',
+      matchScore: null,
+    },
     { company: 'ZetaInc', website: 'https://zeta.com', matchScore: 95 },
+    /* 座机-only：高分但**无可触达资产** → 不应进入任何队列 */
+    {
+      company: 'LandlineOnly',
+      website: 'https://lo.com',
+      phone: '+14155550103',
+      phoneKind: 'landline',
+      matchScore: 88,
+    },
   ]
 
   // withPipelineIsolation + buildAgentTaskQueue
@@ -84,9 +120,14 @@ test('G8-E2E: full search→pipeline→agent flow', async () => {
   assert.ok(runId2, 'second runId set')
   assert.notEqual(runId1, runId2, 'unique runIds')
 
-  assert.equal(queue1.whatsapp.length, 2, 'whatsapp queue = AlphaCorp + BetaInc')
+  assert.equal(queue1.whatsapp.length, 2, 'whatsapp queue = AlphaCorp + BetaInc（座机 LandlineOnly 不入队）')
   assert.equal(queue1.linkedin.length, 1, 'linkedin queue = AlphaCorp')
   assert.equal(queue1.email.length, 2, 'email queue = AlphaCorp + GammaLtd')
+  /* 2026-10-13 新增反例：座机-only 高分线索**不得**出现在 WhatsApp 队列 */
+  assert.ok(
+    !queue1.whatsapp.some((t) => t.company === 'LandlineOnly'),
+    'landline-only lead must NOT be enqueued for WhatsApp',
+  )
 
   // Priority sorted
   assert.equal(queue1.whatsapp[0].company, 'BetaInc', 'priority sorted (90 > 85)')
@@ -213,7 +254,8 @@ test('G8-E2E: full search→pipeline→agent flow', async () => {
     {
       company: 'DispatchedCo',
       website: 'https://d.com',
-      phone: '+999',
+      phone: '+14155550109',
+      phoneKind: 'mobile',
       email: 'ceo@d.com',
       linkedinUrl: 'https://linkedin.com/in/d',
       matchScore: 80,
@@ -243,11 +285,12 @@ test('G8-E2E: full search→pipeline→agent flow', async () => {
       company: 'AlphaCorp',
       website: 'https://alpha.com',
       email: 'ceo@alpha.com',
-      phone: '+111',
+      phone: '+14155550110',
+      phoneKind: 'mobile',
       linkedinUrl: 'https://linkedin.com/in/a',
       matchScore: 88,
     },
-    { company: 'NoIdCo', website: 'https://noid.com', phone: '+222', matchScore: 77 },
+    { company: 'NoIdCo', website: 'https://noid.com', phone: '+14155550111', phoneKind: 'mobile', matchScore: 77 },
   ])
   const alphaWa = identityQueue.whatsapp.find((t) => t.company === 'AlphaCorp')
   assert.equal(alphaWa.leadKey, 'lead-uuid-123', 'leadKey threaded from SearchExecuteResult.id')

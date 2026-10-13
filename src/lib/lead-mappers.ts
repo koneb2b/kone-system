@@ -170,6 +170,10 @@ export const mapSearchResultToLeadItem = (result: LeadMapperInput, context: Lead
     contactTitle: String(result.contactTitle || '').trim(),
     email: String(result.email || '').trim(),
     phone: String(result.phone || '').trim(),
+    /* 号码类型（WhatsApp 可用性）：透传后端判定（wa.me 直链 → mobile） */
+    phoneKind: result.phoneKind,
+    /* 联系方式来源与可信度（三档）：透传后端产出 */
+    contactProvenance: result.contactProvenance,
     country,
     countryCode: resolveCountryCode(context.countryCode || result.countryCode, country),
     industry,

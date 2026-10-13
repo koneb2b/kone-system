@@ -95,6 +95,11 @@ const mapSearchExecuteResultToSearchResult = (
   contactTitle: (item.contactTitle as string) || '',
   email: (item.email as string) || '',
   phone: (item.phone as string) || '',
+  /* 号码类型（WhatsApp 可用性）：透传后端判定（Prospeo 已验证手机 / wa.me 直链 → mobile） */
+  phoneKind: item.phoneKind === 'mobile' || item.phoneKind === 'landline' ? item.phoneKind : undefined,
+  /* 联系方式来源与可信度（三档）：透传后端产出（取值与来源同源），供卡片徽标与筛选 */
+  contactProvenance:
+    item.contactProvenance && typeof item.contactProvenance === 'object' ? item.contactProvenance : undefined,
   unlocked: Boolean(item.unlocked),
   source: (item.source as string) || 'Google Maps',
   country: context.country || 'Global',

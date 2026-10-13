@@ -58,6 +58,38 @@ export const SEARCH_PRODUCT_TERM_LIMIT = 2
  * 成本控制优先靠「产品词清洗」（剔除垃圾变体）与缓存复用，而非压低覆盖。 */
 export const SEARCH_VARIANT_LIMIT = 12
 
+/* 2026-10-11 新增：Apollo 联系人富化**总量**护栏（每轮搜索最多 N 次富化查询）。
+ *
+ * 与 `SEARCH_VARIANT_LIMIT` 同属「总量域」，但与搜索额度（SerpApi/LLM）无关——
+ * 这是**外部付费 API（Apollo credits）**的护栏：每查一次消耗 credits。
+ * 用户强调「不能烧光额度」，故默认保守；高价值线索（matchScore ≥ 60，会进入 Agent 管道）
+ * 才触发富化，预算仅作硬顶兜底。
+ *
+ * 注意：本常量**不触碰宪法并发红线**（`SEARCH_ENRICH_CONCURRENCY=2` 约束的是
+ * 「并行线索数」，不是「单条线索的数据源数」）。Apollo 查询是在单条线索的富化步骤内
+ * **串行追加**一次，不提升并行度 → 合规。 */
+export const ENRICH_LOOKUP_BUDGET = 20
+
+/**
+ * Prospeo 每轮搜索的**邮箱**富化预算（条数）。
+ *
+ * 2026-10-13 新增。Prospeo 实测成本（FREE 计划 100 credits/月）：
+ *   · `search-person` 1 credit（25 人/页，30 天内同页**免费**）
+ *   · `enrich-person` 仅邮箱 **1 credit**；邮箱+手机 **10 credits**
+ * 即「邮箱」约 **2 credits/条**（找人 1 + 揭示 1）。Prospeo 作为 **Apollo 的前置**：
+ * 命中邮箱即跳过 Apollo（Apollo 单条成本更高）→ 总体更省。
+ * 默认 10 条/轮 ≈ 20 credits，对 100 credits/月 的 FREE 计划保守可承受。
+ */
+export const PROSPEO_EMAIL_BUDGET = 10
+
+/**
+ * Prospeo 每轮搜索的**手机号**富化预算（条数）。
+ *
+ * 手机揭示 **10 credits/条**（昂贵）→ 仅对「高价值 + 尚无手机号」的线索按需揭示，
+ * 默认 2 条/轮 ≈ 20 credits，避免一轮烧光额度。与邮箱预算**独立计数**。
+ */
+export const PROSPEO_MOBILE_BUDGET = 2
+
 export const SCOUT_NEGATIVE_TERMS = [
   'auto repair',
   'body shop',

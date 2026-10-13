@@ -302,6 +302,51 @@ function checkToolEntryFiles() {
   notes.push(`工具入口文件校验 ${TOOL_ENTRY_FILES.length} 份`)
 }
 
+// ── 8. 版本口径一致性（package.json ↔ CHANGELOG）─────────────
+/**
+ * 版本口径的唯一约定：**`package.json.version` = CHANGELOG 最新条目版本**。
+ *
+ * 为什么必须门禁：`electron-builder` 从 `package.json` 取版本决定**安装包文件名**，
+ * 而 `CHANGELOG.md` 是"版本变更时间线的唯一事实源"。二者漂移会导致
+ * **「安装包名与内容不符」**（客户 / 支持 / 自动更新三方口径错位）。
+ *
+ * 历史教训：`package.json` 长期停在 `1.3.15` 而 CHANGELOG 已推进到 `1.4.x`，
+ * **无任何门禁发现** —— 期间产出的每一个安装包都被错误标注为 `1.3.15`。
+ *
+ * 同时校验 CHANGELOG 条目**逆序（最新在前）**：
+ * 曾发生 `[1.4.15]` 被孤立在文件顶部，时间线被破坏（按"最新在前"阅读会得到错误结论）。
+ */
+function checkVersionConsistency() {
+  const pkg = JSON.parse(read('package.json'))
+  const changelog = read('CHANGELOG.md')
+  const versions = [...changelog.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((match) => match[1])
+  if (versions.length === 0) {
+    failures.push('[版本口径] CHANGELOG.md 未找到任何 `## [x.y.z]` 版本条目')
+    return
+  }
+  const latest = versions[0]
+  if (pkg.version !== latest) {
+    failures.push(
+      `[版本口径] package.json.version (${pkg.version}) ≠ CHANGELOG 最新条目 (${latest})` +
+        ' —— 安装包名取自 package.json，漂移会造成「包名与内容不符」',
+    )
+  }
+  const toNum = (v) => v.split('.').map(Number)
+  for (let i = 1; i < versions.length; i += 1) {
+    const [a1, a2, a3] = toNum(versions[i - 1])
+    const [b1, b2, b3] = toNum(versions[i])
+    const prevHigher = a1 !== b1 ? a1 > b1 : a2 !== b2 ? a2 > b2 : a3 > b3
+    if (!prevHigher) {
+      failures.push(
+        `[版本口径] CHANGELOG 条目必须**逆序（最新在前）**：` +
+          `${versions[i - 1]} 之后出现 ${versions[i]}（未严格递减，疑似条目被错放）`,
+      )
+      break
+    }
+  }
+  notes.push(`版本口径一致：package.json ${pkg.version} = CHANGELOG 最新（共 ${versions.length} 条，逆序校验通过）`)
+}
+
 // ── 执行 ────────────────────────────────────────────────────
 checkDocumentChain()
 checkStaleSymbols()
@@ -310,6 +355,7 @@ checkArchitectureRedlines()
 checkTombstonesRemoved()
 checkDocumentReferences()
 checkToolEntryFiles()
+checkVersionConsistency()
 
 console.log('── 规范文档一致性校验 ──────────────────────────')
 for (const note of notes) console.log(`  · ${note}`)

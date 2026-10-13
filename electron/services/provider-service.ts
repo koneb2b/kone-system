@@ -15,9 +15,16 @@ export function getOrCreateProviderRegistry(): ProviderRegistry {
   return registrySingleton
 }
 
-function buildProviderConfig(store: ConfigStore): ProviderConfig {
-  const { googleLeads } = getGoogleConfig(store)
-  const googleKey = getSecret(googleLeads.secretKey).trim()
+/** 构造 Provider 运行配置（导出以便单测锁定 SerpApi 密钥回退语义）。 */
+export function buildProviderConfig(store: ConfigStore): ProviderConfig {
+  const { googleLeads, googleMaps } = getGoogleConfig(store)
+  /* SerpApi 密钥解析：`google-leads` 优先，**回退 `google-maps`**。
+     两者本就是**同一个 SerpApi 账号**（maps / organic / linkedin / customs / trade_show / facebook
+     全部走 SerpApi，见 PROVIDER-CAPABILITY.md）。
+     历史缺陷（2026-10-12 修复）：搜索管线此前**只读** google-leads，
+     用户若只填「谷歌地图」→ 所有 Provider 取不到 key → **整轮搜索无数据**（静默 UX 陷阱）。
+     此处仅补读取回退，不改变任何 Provider 的采集/归一化语义。 */
+  const googleKey = getSecret(googleLeads.secretKey).trim() || getSecret(googleMaps.secretKey).trim()
   const anysearchApiKey = getSecret(SECRET_KEYS.ANYSEARCH_API_KEY).trim()
   const anysearchBaseUrl = getSecret(SECRET_KEYS.ANYSEARCH_BASE_URL).trim()
 

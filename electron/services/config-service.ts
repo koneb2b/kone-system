@@ -29,6 +29,15 @@ export const SECRET_KEYS = {
   EMAIL_SMTP_PASS: 'secrets.email.smtpPass',
   /* Phase 2.5/P2.6：IMAP 回复检测专用密码加密落位。留空即回退到 EMAIL_SMTP_PASS */
   EMAIL_IMAP_PASS: 'secrets.email.imapPass',
+  /* 2026-10-11：Apollo.io 联系人富化 API Key（B2B 邮箱 + 手机号补全，
+     用于弥补官网抓取「不公开邮箱 / 多为座机」的覆盖短板）。经 safeStorage 加密落盘，
+     与 LLM/Google 密钥同级，渲染层设置页必须能写。 */
+  APOLLO_API_KEY: 'secrets.apollo.apiKey',
+  /* 2026-10-13：Prospeo 联系人富化 API Key（**Apollo 的低成本前置**）。
+     实测：search-person 1 credit（25 人/页，30 天内同页免费）/ 仅邮箱 enrich 1 credit /
+     邮箱+手机 enrich 10 credits —— 邮箱成本比 Apollo 低一个数量级。
+     经 safeStorage 加密落盘，渲染层设置页必须能写。 */
+  PROSPEO_API_KEY: 'secrets.prospeo.apiKey',
 } as const
 
 export const PROVIDER_SECRET_KEYS: Record<string, string> = {
@@ -467,6 +476,11 @@ const SECRET_SET_WHITELIST: Set<string> = new Set([
      渲染层必须能写 —— 否则用户在设置页根本无法配置邮箱。 */
   SECRET_KEYS.EMAIL_SMTP_PASS,
   SECRET_KEYS.EMAIL_IMAP_PASS,
+  /* 2026-10-11：Apollo 富化密钥——与 LLM/Google 同级，渲染层设置页必须能写，
+     否则用户无法接入高质量联系人数据源。 */
+  SECRET_KEYS.APOLLO_API_KEY,
+  /* 2026-10-13：Prospeo（Apollo 的低成本前置）同样必须可写，否则设置页无法配置。 */
+  SECRET_KEYS.PROSPEO_API_KEY,
 ])
 
 interface IElectronMain extends Electron.IpcMain {

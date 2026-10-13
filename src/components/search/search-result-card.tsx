@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Check, AlertTriangle, Radar, Mail, Loader2, Copy, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -12,6 +12,35 @@ import { getLeadSettlementMeta } from '@/lib/lead-mappers'
 // 第 113 行的组件级 selector 订阅在运行时真实调用它，若仅保留类型导入，
 // 编译期会被擦除，渲染该卡片时抛出 ReferenceError: useLeadsStore is not defined。
 import { useLeadsStore, type LeadSearchResult } from '@/store/leads-store'
+import { CONTACT_TIER_LABEL, type ContactTier } from '@/shared/contact-provenance'
+/* S4c：用户反馈闭环（标「相关 / 不相关」→ 本地落库 → 下一轮排序据此调整） */
+import { getLeadFeedbackVerdict, setLeadFeedbackVerdict } from '@/lib/lead-feedback-store'
+import type { LeadFeedbackVerdict } from '@/shared/lead-feedback'
+
+/**
+ * 联系方式**来源 / 可信度徽标**（三档，2026-10-13 S2）。
+ *
+ * 产品原则：**明确区分「已验证 / 官网提取 / 推测」**，`source` 以 tooltip 展示（来源明细可见）。
+ * 配色刻意区分信任度：`verified` 正向色、`extracted` 中性色、`inferred` **警示色**（不诱导信任）。
+ * 缺失档位时**不渲染**（诚实：宁可不标，不可谎报 verified）。
+ */
+const renderTierBadge = (tier?: ContactTier, source?: string) => {
+  if (!tier) return null
+  const tone =
+    tier === 'verified'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : tier === 'inferred'
+        ? 'border-amber-300 bg-amber-50 text-amber-700'
+        : 'border-slate-200 bg-slate-50 text-slate-600'
+  return (
+    <span
+      className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${tone}`}
+      title={source ? `来源：${source}` : undefined}
+    >
+      {CONTACT_TIER_LABEL[tier]}
+    </span>
+  )
+}
 
 const INTERNAL_FALLBACK_MARKERS = new Set(['website_403', 'blind_score_failed'])
 
@@ -119,6 +148,37 @@ export const SearchResultCard = memo(function SearchResultCard({
   const [generatingEmail, setGeneratingEmail] = useState(false)
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  /* S4c：该线索的用户反馈判定（null = 未标记）。 */
+  const [feedbackVerdict, setFeedbackVerdict] = useState<LeadFeedbackVerdict | null>(null)
+  useEffect(() => {
+    let alive = true
+    void getLeadFeedbackVerdict(lead).then((verdict) => {
+      if (alive) setFeedbackVerdict(verdict)
+    })
+    return () => {
+      alive = false
+    }
+  }, [lead])
+
+  /** 切换反馈（再点一次即取消）。写入失败**明确提示**，绝不静默失败。 */
+  const toggleFeedback = async (verdict: LeadFeedbackVerdict) => {
+    const next = feedbackVerdict === verdict ? null : verdict
+    const saved = await setLeadFeedbackVerdict(lead, next)
+    if (next !== null && saved === null) {
+      toast({ title: '反馈保存失败', description: '本地配置写入失败，请稍后重试。', variant: 'destructive' })
+      return
+    }
+    setFeedbackVerdict(saved)
+    toast({
+      title: next === null ? '已取消标记' : next === 'relevant' ? '已标记为「相关」' : '已标记为「不相关」',
+      description:
+        next === null
+          ? '该线索已恢复为未标记状态。'
+          : next === 'relevant'
+            ? '下一轮搜索会对该域名小幅加分。'
+            : '下一轮搜索会将该域名封顶降权（仍可见、可复核）。',
+    })
+  }
 
   /* 针对性开发信一键生成（个性化输出）：基于该线索真实情报（角色/跟进建议/
      风险/官网/行业）调用 LLM 生成 subject + body，就地展示可复制。 */
@@ -238,7 +298,34 @@ export const SearchResultCard = memo(function SearchResultCard({
                 {lead.website}
               </a>
             ) : null}
-            {lead.phone ? <span>{lead.phone}</span> : null}
+            {lead.phone ? (
+              <span className="inline-flex items-center gap-1">
+                {lead.phone}
+                {renderTierBadge(lead.contactProvenance?.phone?.tier, lead.contactProvenance?.phone?.source)}
+                {lead.phoneKind === 'mobile' ? (
+                  <span
+                    className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700"
+                    title="已验证手机号，可直接用于 WhatsApp 触达"
+                  >
+                    WhatsApp 可触达
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            {/* 邮箱此前**完全不显示**（结果区零 email 引用）→ 用户看不到哪些线索有邮箱。
+                现补上 mailto 直链 + **来源/可信度徽标**（点击不触发卡片选中，避免误触）。 */}
+            {lead.email ? (
+              <span className="inline-flex items-center gap-1">
+                <a
+                  href={`mailto:${lead.email}`}
+                  className="truncate max-w-[220px] text-blue-600 hover:underline hover:text-blue-700"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {lead.email}
+                </a>
+                {renderTierBadge(lead.contactProvenance?.email?.tier, lead.contactProvenance?.email?.source)}
+              </span>
+            ) : null}
             {'address' in lead && lead.address ? <span className="truncate max-w-[240px]">{lead.address}</span> : null}
             {lead.dataSourceNote ? (
               <Tooltip>
@@ -316,6 +403,36 @@ export const SearchResultCard = memo(function SearchResultCard({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {/* S4c 用户反馈闭环：标记后**本地落库**，下一轮搜索据此调整排序（越用越准、零成本）。
+              刻意做成可撤销（再点一次取消），避免一次误点永久影响结果。 */}
+          <div className="mr-auto flex items-center gap-1" data-testid="lead-feedback">
+            <button
+              type="button"
+              aria-pressed={feedbackVerdict === 'relevant'}
+              onClick={() => void toggleFeedback('relevant')}
+              className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                feedbackVerdict === 'relevant'
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+              }`}
+              title="标记为相关：下一轮搜索会对该域名小幅加分"
+            >
+              相关
+            </button>
+            <button
+              type="button"
+              aria-pressed={feedbackVerdict === 'irrelevant'}
+              onClick={() => void toggleFeedback('irrelevant')}
+              className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                feedbackVerdict === 'irrelevant'
+                  ? 'border-amber-300 bg-amber-50 text-amber-700'
+                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+              }`}
+              title="标记为不相关：下一轮搜索会将该域名封顶降权（仍可见、可复核）"
+            >
+              不相关
+            </button>
+          </div>
           <Button
             size="sm"
             variant="outline"

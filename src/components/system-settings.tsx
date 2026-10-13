@@ -32,9 +32,15 @@ const defaultIcpProfile: IcpProfile = {
 
 const secretKeysByProvider: Record<string, string> = {
   llm: 'secrets.llm.apiKey',
+  /* 2026-10-12：SerpApi 统一入口。原「谷歌获客引擎」与「谷歌地图」是**同一个 SerpApi 账号**
+     （maps/organic/linkedin/customs/trade_show/facebook 全走 SerpApi），两个独立输入框属冗余，
+     且"只填地图→搜索零量"是真实 UX 陷阱。现合并为单一 `google-leads` 密钥槽，
+     读取端（provider-service）保留对旧 `google-maps` 槽的回退，老用户升级不失效。 */
   'google-leads': 'secrets.google-leads.apiKey',
-  'google-maps': 'secrets.google-maps.apiKey',
   anysearch: 'secrets.anysearch.apiKey',
+  apollo: 'secrets.apollo.apiKey',
+  /* 2026-10-13：Prospeo 作为 Apollo 的低成本前置（邮箱 1 credit / 手机 10 credits） */
+  prospeo: 'secrets.prospeo.apiKey',
 }
 
 interface SystemSettingsProps {
@@ -56,9 +62,24 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
   const defaultConfigs: ApiKeyConfig[] = [
     { id: 'llm', name: '智能决策大脑 (LLM)', icon: Cpu, key: '', baseUrl: '', status: 'pending' },
-    { id: 'google-leads', name: '谷歌获客引擎', icon: Globe, key: '', baseUrl: '', status: 'pending' },
-    { id: 'google-maps', name: '谷歌地图', icon: Globe, key: '', baseUrl: '', status: 'pending' },
+    { id: 'google-leads', name: 'SerpApi（Google 搜索 / 地图）', icon: Globe, key: '', baseUrl: '', status: 'pending' },
     { id: 'anysearch', name: '@ AnySearch B2B 多维数据穿透雷达', icon: Radar, key: '', baseUrl: '', status: 'pending' },
+    {
+      id: 'prospeo',
+      name: 'Prospeo 联系人数据源（低成本邮箱 / 手机号）',
+      icon: Radar,
+      key: '',
+      baseUrl: '',
+      status: 'pending',
+    },
+    {
+      id: 'apollo',
+      name: 'Apollo 联系人数据源（邮箱/手机号富化）',
+      icon: Radar,
+      key: '',
+      baseUrl: '',
+      status: 'pending',
+    },
   ]
   const [apiKeys, setApiKeys] = useState<ApiKeyConfig[]>([])
   const [configLoading, setConfigLoading] = useState(true)

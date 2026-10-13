@@ -186,9 +186,10 @@ test('G5-TI: pipeline temporal isolation prevents stale task dispatch', async ()
   await pipeline.withPipelineIsolation(async (runId) => {
     capturedRunId = runId
     const queue = pipeline.buildAgentTaskQueue([
-      { company: 'TestCorp', website: 'https://test.com', phone: '+123456', matchScore: 80 },
+      /* 2026-10-13：WhatsApp 入队要求号码**可用**（手机），座机不入队 —— 故须显式 phoneKind */
+      { company: 'TestCorp', website: 'https://test.com', phone: '+14155550100', phoneKind: 'mobile', matchScore: 80 },
     ])
-    // Queue should contain whatsapp task (has phone)
+    // Queue should contain whatsapp task (has a WhatsApp-reachable mobile)
     assert.equal(queue.whatsapp.length, 1)
     assert.equal(queue.whatsapp[0].taskRunId, runId)
     assert.equal(queue.whatsapp[0].company, 'TestCorp')
@@ -215,9 +216,15 @@ test('G5-TI: pipeline temporal isolation prevents stale task dispatch', async ()
   // Verify qualifiesForPipeline rejects low matchScore
   assert.equal(pipeline.qualifiesForPipeline(50, { email: 'test@test.com' }), false, 'matchScore < 60 must be rejected')
   assert.equal(
-    pipeline.qualifiesForPipeline(70, { phone: '+123' }),
+    pipeline.qualifiesForPipeline(70, { phone: '+14155550100', phoneKind: 'mobile' }),
     true,
     'matchScore >= 60 with reachable asset must qualify',
+  )
+  /* 2026-10-13：座机**不是**可触达资产（WhatsApp 只能发手机号）→ 不得 qualify */
+  assert.equal(
+    pipeline.qualifiesForPipeline(70, { phone: '+14155550100', phoneKind: 'landline' }),
+    false,
+    'landline-only must NOT qualify (not a reachable asset)',
   )
   assert.equal(
     pipeline.qualifiesForPipeline(80, {}),

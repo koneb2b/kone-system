@@ -12,6 +12,8 @@
  */
 
 import type { AgentStatus, CustomsData, DataSourceType, DecisionMaker } from '../../../src/shared/ipc-contracts'
+import type { PhoneKind } from '../../../src/shared/phone-kind'
+import type { ContactProvenance } from '../../../src/shared/contact-provenance'
 
 /* P2-3 Stage-2 结构化机会分（55/35/10 − Risk Penalty） */
 export type OpportunityScore = {
@@ -30,6 +32,11 @@ export type SearchExecuteResult = {
   contactTitle?: string
   email?: string
   phone: string
+  /* 号码类型（WhatsApp 可用性）：来自网页 wa.me 直链的号码定义上为 mobile。
+     P1-3 对齐要求：与 src/shared/ipc-contracts.ts 同名类型保持一致，防序列化丢字段。 */
+  phoneKind?: PhoneKind
+  /* 联系方式来源与可信度（三档）。P1-3 对齐要求：与 src/shared/ipc-contracts.ts 同名类型保持一致。 */
+  contactProvenance?: ContactProvenance
   address: string
   isB2B?: boolean | null
   source?: string

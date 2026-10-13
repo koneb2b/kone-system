@@ -36,6 +36,20 @@ const maskSecret = (value: string) => {
   return `${trimmed.slice(0, 3)}****${trimmed.slice(-4)}`
 }
 
+/**
+ * 将被隔离的密钥文件**留档重命名**（绝不静默删除）。
+ * 解密失败的历史文件先备份为 `kone-secrets.json.corrupt-<ts>`，再由后续写入生成新的可解密文件。
+ */
+const quarantineCorruptSecretFile = (filePath: string) => {
+  try {
+    const backup = `${filePath}.corrupt-${Date.now()}`
+    fs.renameSync(filePath, backup)
+    console.error(`[Secret] 已将被隔离的密钥文件留档为：${backup}`)
+  } catch (renameError: any) {
+    console.error('[Secret] 密钥文件留档重命名失败：', renameError?.message || renameError)
+  }
+}
+
 const readSecretMap = (): SecretMap => {
   const filePath = getSecretFilePath()
   if (!fs.existsSync(filePath)) return {}
@@ -43,13 +57,33 @@ const readSecretMap = (): SecretMap => {
   const raw = fs.readFileSync(filePath, 'utf8')
   if (!raw.trim()) return {}
 
-  const payload = JSON.parse(raw) as SecretStorePayload
+  let payload: SecretStorePayload
+  try {
+    payload = JSON.parse(raw) as SecretStorePayload
+  } catch {
+    return {}
+  }
   if (!payload?.encrypted || typeof payload.data !== 'string') return {}
 
   ensureEncryptionAvailable()
-  const decrypted = safeStorage.decryptString(Buffer.from(payload.data, 'base64'))
-  const parsed = JSON.parse(decrypted)
-  return parsed && typeof parsed === 'object' ? (parsed as SecretMap) : {}
+  try {
+    const decrypted = safeStorage.decryptString(Buffer.from(payload.data, 'base64'))
+    const parsed = JSON.parse(decrypted)
+    return parsed && typeof parsed === 'object' ? (parsed as SecretMap) : {}
+  } catch (error: any) {
+    /* 解密失败（常见原因：secrets 文件由**其它机器 / 其它 DPAPI 上下文**写入，或文件损坏）。
+     *
+     * 绝不能抛错 —— 否则会引发**连锁致命**后果：
+     *   · `getSecret` 全线抛错 → Provider/搜索取不到密钥；
+     *   · `migrateSecrets` 抛错 → `main.ts` 的 whenReady 链中断 → **createMainWindow 不执行 → 应用无窗口、彻底变砖**，
+     *     用户连"进设置页重新录入密钥"这条唯一恢复路径都走不到（2026-10-12 实测复现）。
+     *
+     * 正确语义：Fail-Closed 应作用于**单个能力**（取不到密钥即视为"未配置"），而非整个应用。
+     * 处置：把无法解密的历史文件**留档**，本次返回空映射；用户重新录入密钥即可恢复。 */
+    quarantineCorruptSecretFile(filePath)
+    console.error('[Secret] 密钥文件无法解密（已留档并降级为"无密钥"）：', error?.message || error)
+    return {}
+  }
 }
 
 const writeSecretMap = (secrets: SecretMap) => {

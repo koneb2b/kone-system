@@ -35,7 +35,7 @@ export type DecisionMakerValidation = DecisionMaker
    渲染进程的 WhatsApp 按钮需要同一判定，各写一份必然漂移。
    语义见该文件头注释：WhatsApp 是手机 App，**固定电话不可用**；
    实测 17 条线索中 15 条为美国商家座机（Google Maps 来源）。 */
-export { canReachWhatsApp, classifyPhoneKind, type PhoneKind } from '../../src/shared/phone-kind'
+export { buildWhatsAppDigits, canReachWhatsApp, classifyPhoneKind, type PhoneKind } from '../../src/shared/phone-kind'
 
 export const validateDecisionMakerContacts = (
   decisionMakers?: DecisionMaker[],

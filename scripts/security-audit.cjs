@@ -5,7 +5,13 @@ const { spawn } = require('child_process')
 const puppeteer = require('puppeteer-core')
 
 const rootDir = path.resolve(__dirname, '..')
-const unpackedRoot = path.join(rootDir, 'release', 'win-unpacked')
+/* 2026-10-11：与 packaged-smoke.cjs 对齐的产物目录覆盖能力。
+ * 原先硬编码 `release/win-unpacked`，而 `release/` 被文件锁占用时官方绕行方案就是
+ * 换目录打包（见 packaged-smoke.cjs 的注释与记忆中的 EBUSY 教训）—— 一旦换目录，
+ * 本脚本会直接报 "Unpacked executable not found" 而整条安全审计门禁形同虚设。
+ * 优先级：位置参数 > KONE_PACKAGED_ROOT > 默认 release。 */
+const outputDirOverride = (process.argv[2] || process.env.KONE_PACKAGED_ROOT || 'release').trim()
+const unpackedRoot = path.join(rootDir, outputDirOverride, 'win-unpacked')
 const executablePath = path.join(unpackedRoot, 'KoneAI.exe')
 const reportPath = path.join(rootDir, 'tests', 'security-audit-report.json')
 const debugPort = String(9200 + Math.floor(Math.random() * 600))
@@ -14,9 +20,27 @@ const registryPath = 'HKCU\\Software\\KoneAI\\LicenseAnchor'
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function ensureExecutable() {
-  if (!fs.existsSync(executablePath)) {
-    throw new Error(`Unpacked executable not found: ${executablePath}`)
+  if (fs.existsSync(executablePath)) return
+  /* 刻意**不静默回退**到其它产物目录 —— 安全审计**必须审指定的那个包**，
+     静默换包会让"审了 A、以为审了 B"成为可能。改为**列出候选**，让人显式指定。 */
+  let candidates = []
+  try {
+    candidates = fs
+      .readdirSync(rootDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^release/i.test(entry.name))
+      .map((entry) => entry.name)
+      .filter((name) => fs.existsSync(path.join(rootDir, name, 'win-unpacked', 'KoneAI.exe')))
+  } catch {
+    /* 读目录失败不影响主错误信息 */
   }
+  throw new Error(
+    `Unpacked executable not found: ${executablePath}\n` +
+      `用法：node ./scripts/security-audit.cjs <产物目录>\n` +
+      `     或 npm run test:security-audit -- <产物目录>\n` +
+      (candidates.length > 0
+        ? `检测到可用产物目录（请**显式指定其一**）：\n${candidates.map((name) => `  - ${name}`).join('\n')}`
+        : '未检测到任何含 win-unpacked/KoneAI.exe 的产物目录，请先执行打包。'),
+  )
 }
 
 async function connectToElectron() {

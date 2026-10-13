@@ -13,6 +13,63 @@ import { matchesProductTerm } from './scout'
 import { clampInt, extractDomainFromUrl, mergePromptParts } from './text-utils'
 import type { OpportunityScore, SearchExecuteResult } from './types'
 
+/* ── S4a（2026-10-13）：用户自定义「负向 ICP」的**确定性护栏** ──────────────
+ *
+ * ## 为什么需要
+ * `negativeIcp` 此前**只出现在 LLM 评分 prompt**（`buildSearchScoringPrompt`）里，属**软约束** ——
+ * LLM 完全可能忽略它，把明显不符合的线索仍打高分，从而进入 Agent 管道浪费触达额度。
+ *
+ * ## 为什么用「封顶降权」而非「直接剔除」
+ * 用户输入的负向词是**自由文本**，误伤风险不可忽略。封顶让线索**仍然可见**（透明、可人工复核），
+ * 但**无法跨过 `matchScore >= 60` 的 Agent 管道门槛** —— 既不误伤，也不放过。
+ * 纯函数，导出供测试。
+ */
+
+/** 命中负向 ICP 时的分数上限（低于管道门槛 60 → 不进入自动触达）。 */
+export const NEGATIVE_ICP_SCORE_CAP = 20
+
+/** 解析用户负向 ICP 自由文本为词项（逗号/顿号/分号/竖线/换行分隔；去空白，剔除 <2 字符项）。 */
+export const parseNegativeIcpTerms = (negativeIcp?: string): string[] => {
+  const raw = String(negativeIcp || '').trim()
+  if (!raw) return []
+  return Array.from(
+    new Set(
+      raw
+        .split(/[,，、;；|\n\r]+/)
+        .map((term) => term.trim().toLowerCase())
+        .filter((term) => term.length >= 2),
+    ),
+  )
+}
+
+/** 该线索命中哪些负向 ICP 词项（返回命中项，便于**可解释**展示；未命中返回空数组）。 */
+export const matchNegativeIcp = (candidate: Partial<SearchExecuteResult>, negativeIcp?: string): string[] => {
+  const terms = parseNegativeIcpTerms(negativeIcp)
+  if (terms.length === 0) return []
+  const text = [candidate.company, candidate.snippet, candidate.reason, (candidate.matchReasons || []).join(' ')]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  if (!text) return []
+  return terms.filter((term) => text.includes(term))
+}
+
+/**
+ * 应用负向 ICP **封顶**：命中即把 `matchScore` 封顶到 `NEGATIVE_ICP_SCORE_CAP`，
+ * 并追加**可解释**的 `riskFlags`（写明命中了哪个词）。未命中时**原样返回**（零副作用）。
+ */
+export const applyNegativeIcpPenalty = <T extends Partial<SearchExecuteResult>>(lead: T, negativeIcp?: string): T => {
+  const hits = matchNegativeIcp(lead, negativeIcp)
+  if (hits.length === 0) return lead
+  const current = typeof lead.matchScore === 'number' ? lead.matchScore : null
+  const capped = current === null ? NEGATIVE_ICP_SCORE_CAP : Math.min(current, NEGATIVE_ICP_SCORE_CAP)
+  const flag = `命中负向 ICP：${hits.slice(0, 2).join('、')}`
+  /* **前置**插入：`applySchemaDefaults` 只保留首个 riskFlag，前置才能保证
+     「为什么被降权」这条**可解释信息**不被丢弃。 */
+  const riskFlags = Array.from(new Set([flag, ...(lead.riskFlags || [])])).slice(0, 2)
+  return { ...lead, matchScore: capped, riskFlags }
+}
+
 export const computeIcpMatchScore = (candidate: Partial<SearchExecuteResult>, coreProductTerms: string[]): number => {
   let score = 0
   const domain = extractDomainFromUrl(candidate.website)
@@ -94,6 +151,11 @@ export const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchE
   contactTitle: item.contactTitle ? String(item.contactTitle).trim() : '',
   email: item.email ? String(item.email).trim() : '',
   phone: String(item.phone || '').trim(),
+  /* 号码类型（WhatsApp 可用性）：来自 wa.me 直链的号码为 'mobile'；缺失时不臆造。 */
+  phoneKind: item.phoneKind === 'mobile' || item.phoneKind === 'landline' ? item.phoneKind : undefined,
+  /* 联系方式来源与可信度（三档）：透传，缺失时不臆造（前端诚实降级）。 */
+  contactProvenance:
+    item.contactProvenance && typeof item.contactProvenance === 'object' ? item.contactProvenance : undefined,
   address: String(item.address || '').trim(),
   isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : (item.isB2B ?? undefined),
   source: String(item.source || '').trim() || 'Google Maps',

@@ -1,3 +1,6 @@
+import type { PhoneKind } from './phone-kind'
+import type { ContactProvenance } from './contact-provenance'
+
 export type IpcResponse<T = unknown> = {
   success: boolean
   canceled?: boolean
@@ -216,6 +219,14 @@ export type SearchExecuteResult = {
   contactTitle?: string
   email?: string
   phone: string
+  /* 号码类型（WhatsApp 可用性判定）。来自网页 `wa.me` 直链的号码**定义上**即为
+     `mobile` —— 否则 US 号码会因 LNP 被判 `unknown`，前端 WhatsApp 按钮被禁用。
+     前端应优先采信本字段，缺失时才回退 `classifyPhoneKind(phone, countryCode)`。 */
+  phoneKind?: PhoneKind
+  /* 联系方式的**来源与可信度**（三档：verified / extracted / inferred）。
+     用于：结果卡片徽标、默认高置信度优先、`inferred` 不自动入 Agent 队列 + 发送前二次确认。
+     缺失时前端**诚实降级**（不谎报 verified）。SSOT 见 `src/shared/contact-provenance.ts`。 */
+  contactProvenance?: ContactProvenance
   address: string
   isB2B?: boolean | null
   matchReasons?: string[]

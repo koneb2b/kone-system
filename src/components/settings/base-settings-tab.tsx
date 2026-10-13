@@ -22,10 +22,15 @@ export interface ApiKeyConfig {
 
 const secretKeysByProvider: Record<string, string> = {
   llm: 'secrets.llm.apiKey',
+  /* 2026-10-12：SerpApi 统一入口（原 google-maps 冗余项已合并；读取端保留旧槽回退） */
   'google-leads': 'secrets.google-leads.apiKey',
-  'google-maps': 'secrets.google-maps.apiKey',
   anysearch: 'secrets.anysearch.apiKey',
+  apollo: 'secrets.apollo.apiKey',
+  prospeo: 'secrets.prospeo.apiKey',
 }
+
+/* 无 Base URL 的服务商：密钥本身即完整凭据，服务端点固定，无需用户填写地址。 */
+const providersWithoutBaseUrl = new Set(['apollo', 'prospeo'])
 
 const providerBaseUrlHints: Record<string, { placeholder: string; hint: string }> = {
   llm: {
@@ -34,11 +39,7 @@ const providerBaseUrlHints: Record<string, { placeholder: string; hint: string }
   },
   'google-leads': {
     placeholder: '例如：https://serpapi.com',
-    hint: '谷歌获客引擎通过 SerpApi 账号校验，密钥即 SerpApi 的 API Key。',
-  },
-  'google-maps': {
-    placeholder: '例如：https://serpapi.com',
-    hint: '谷歌地图搜索与获客引擎共用 SerpApi 账号体系。',
+    hint: 'SerpApi 一个密钥即驱动全部 Google 系数据源（网页搜索 / 地图 / LinkedIn / 海关 / 展会 / Facebook）。',
   },
   anysearch: {
     placeholder: '例如：https://api.anysearch.example.com',
@@ -53,6 +54,13 @@ const providerDescriptions: Record<string, string> = {
   // 现按文档与代码事实改写，字段以服务商返回为准。
   anysearch:
     '安全保存 AnySearch 垂直实体级 API 密钥，用于多源 B2B 实体检索（海关线索、展会名录、社媒画像等，字段以服务商返回为准，仅供参考），燃料自理支持本地持久化。',
+  /* 2026-10-11：Apollo 联系人富化源。**诚实口径**——只描述其真实能力
+     （补全已验证邮箱与手机号，覆盖官网不公开的联系方式），不夸大；并明确
+     「按线索计费、仅对高价值线索启用、失败自动降级」，避免误导用户对成本与行为。 */
+  apollo:
+    '安全保存 Apollo.io API 密钥，用于补全高价值线索的已验证邮箱与手机号（弥补官网不公开联系方式的覆盖短板）。按线索计费，仅对高价值线索（匹配分 ≥ 60）启用，受每轮搜索查询额度上限约束；查询失败时自动降级为官网抓取，不影响搜索。',
+  prospeo:
+    '安全保存 Prospeo API 密钥，作为 Apollo 的**低成本前置**：优先补全已验证邮箱（成本极低），命中后即跳过 Apollo 以节省费用。仅在缺邮箱/缺手机号的高价值线索上按需查询，受每轮搜索额度上限约束；失败自动降级，不影响搜索。',
 }
 
 type SecretState = {
@@ -313,6 +321,71 @@ export function BaseSettingsTab({
     const key = drafts[api.id]?.key?.trim() || ''
     const baseUrl = drafts[api.id]?.baseUrl?.trim() || ''
 
+    /* 2026-10-11：Apollo 无 Base URL、也无「测试连接」端点。此处做**软校验**
+     * （非空 + 形似凭据）后直接保存，**不做主动探测**（避免消耗 Apollo credits）；
+     * 真实连通性在下次搜索的高价值线索富化时验证，失败即 fail-closed 降级到官网抓取。 */
+    if (api.id === 'apollo') {
+      setTestingById((prev) => ({ ...prev, [api.id]: true }))
+      try {
+        if (!secretKey || !key) {
+          setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
+          onUpdateConfig(api.id, { status: 'error' })
+          toast({
+            title: '无法开始校验',
+            description: '请先在上方填写 Apollo API Key。',
+            variant: 'destructive',
+          })
+          return
+        }
+        if (key.length < 12 || !/^[A-Za-z0-9_.-]+$/.test(key)) {
+          setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
+          onUpdateConfig(api.id, { status: 'error' })
+          toast({
+            title: '密钥格式异常',
+            description: 'Apollo API Key 通常为较长的字母数字串，请检查是否复制完整。',
+            variant: 'destructive',
+          })
+          return
+        }
+
+        const result = await secretSet({ key: secretKey, value: key })
+
+        setSecretState((prev) => ({
+          ...prev,
+          [api.id]: { exists: Boolean(result?.exists), masked: result?.masked || '' },
+        }))
+        setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'connected' }))
+        updateDraft(api.id, { key: '' })
+        onUpdateConfig(api.id, {
+          key: '',
+          exists: true,
+          masked: result?.masked || '',
+          status: 'connected',
+        })
+        await onPersistProviderConfig(
+          api.id,
+          { key: '', baseUrl: '', exists: true, masked: result?.masked || '', status: 'connected' },
+          { connectionStatus: 'connected' },
+        )
+        toast({
+          title: 'Apollo 密钥已保存',
+          description: '将在下次搜索的高价值线索富化时启用；查询失败会自动降级到官网抓取，不影响搜索。',
+        })
+      } catch (error) {
+        setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
+        onUpdateConfig(api.id, { status: 'error' })
+        const detail = error instanceof Error ? error.message : ''
+        toast({
+          title: '保存 Apollo 密钥失败',
+          description: detail || '保存失败，请稍后重试。',
+          variant: 'destructive',
+        })
+      } finally {
+        setTestingById((prev) => ({ ...prev, [api.id]: false }))
+      }
+      return
+    }
+
     if (!secretKey || !key || !baseUrl) {
       setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
       onUpdateConfig(api.id, { status: 'error' })
@@ -468,19 +541,21 @@ export function BaseSettingsTab({
                   </div>
                 </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor={`${api.id}-base`}>Base URL</Label>
-                  <Input
-                    id={`${api.id}-base`}
-                    value={draft.baseUrl}
-                    placeholder={providerBaseUrlHints[api.id]?.placeholder}
-                    onChange={(e) => handleBaseUrlChange(api.id, e.target.value)}
-                    className="h-10 focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:ring-offset-0"
-                  />
-                  {providerBaseUrlHints[api.id] ? (
-                    <p className="text-xs text-slate-500">{providerBaseUrlHints[api.id].hint}</p>
-                  ) : null}
-                </div>
+                {providersWithoutBaseUrl.has(api.id) ? null : (
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${api.id}-base`}>Base URL</Label>
+                    <Input
+                      id={`${api.id}-base`}
+                      value={draft.baseUrl}
+                      placeholder={providerBaseUrlHints[api.id]?.placeholder}
+                      onChange={(e) => handleBaseUrlChange(api.id, e.target.value)}
+                      className="h-10 focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:ring-offset-0"
+                    />
+                    {providerBaseUrlHints[api.id] ? (
+                      <p className="text-xs text-slate-500">{providerBaseUrlHints[api.id].hint}</p>
+                    ) : null}
+                  </div>
+                )}
 
                 {api.id === 'llm' ? (
                   <div className="flex flex-wrap items-center gap-3">

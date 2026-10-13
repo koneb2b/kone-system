@@ -69,7 +69,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { AnalysisDrawer } from '@/components/analysis-drawer'
 import { LeadItem, LeadStatus, useLeadsStore } from '@/store/leads-store'
 /* 号码类型判定（双端共用 SSOT）—— WhatsApp 仅支持手机号，座机不可用 */
-import { buildWhatsAppDigits, classifyPhoneKind } from '@/shared/phone-kind'
+import { buildWhatsAppDigits, classifyPhoneKind, type PhoneKind } from '@/shared/phone-kind'
+/* S3：来源档位 —— 推测数据发送前必须二次确认 */
+import { requiresSendConfirmation } from '@/shared/contact-provenance'
 import { analysisGenerate, ElectronApiError, saveExportFile } from '@/lib/electron-api'
 import { useFeatureGate } from '@/lib/feature-gate'
 
@@ -377,6 +379,12 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null)
   /* P1-1：删除线索是**不可逆**操作（deleteLead 立即持久化），必须先经用户确认。 */
   const [pendingDelete, setPendingDelete] = useState<LeadItem | null>(null)
+  /* S3：待二次确认的 WhatsApp 唤起（目标号码为「推测」档时先确认再发）。 */
+  const [pendingWhatsAppConfirm, setPendingWhatsAppConfirm] = useState<{
+    url: string
+    phone: string
+    source: string
+  } | null>(null)
   const [focusReplyCoachInputKey, setFocusReplyCoachInputKey] = useState(0)
   const [isExporting, setIsExporting] = useState(false)
   /* 客户资料下载端：字段组勾选（默认全选，行为与收敛前一致）。
@@ -705,7 +713,10 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
       toast({ title: '无法唤起 WhatsApp', description: '该线索没有可用电话号码。', variant: 'destructive' })
       return
     }
-    const kind = classifyPhoneKind(raw, countryCode)
+    /* 优先采信**后端判定**：来自网站 `wa.me` 直链的号码定义上可用于 WhatsApp（`mobile`）；
+       否则 US 号码会因 LNP 被判 `unknown`，即使来自 WhatsApp 直链也会被误禁。 */
+    const kind: PhoneKind =
+      (emailComposerLead.phoneKind as PhoneKind | undefined) || classifyPhoneKind(raw, countryCode)
     if (kind !== 'mobile') {
       toast({
         title: '该号码不可用于 WhatsApp',
@@ -728,6 +739,22 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
     }
     const text = getExternalEmailBody(emailBody) || emailSubject.trim()
     const url = `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`
+    /* S3 产品原则：**发送前二次提示风险**。
+       目标号码为「推测」档（`inferred`）时**不直接唤起**，先弹确认 ——
+       避免用低置信度数据触达真实客户（这是"专业严谨"的底线）。 */
+    if (requiresSendConfirmation(emailComposerLead.contactProvenance?.phone?.tier)) {
+      setPendingWhatsAppConfirm({
+        url,
+        phone: raw,
+        source: emailComposerLead.contactProvenance?.phone?.source || '未标注',
+      })
+      return
+    }
+    await openWhatsAppUrl(url)
+  }
+
+  /** 真正唤起 WhatsApp（确认后复用）。 */
+  const openWhatsAppUrl = async (url: string) => {
     try {
       const res = await window.electronAPI.system.openExternal(url)
       if (!res?.success) {
@@ -1446,6 +1473,38 @@ export function LeadsManagement({ userRole = 'trial', onAcquireNavigate }: Leads
             </Button>
             <Button className="bg-red-600 text-white hover:bg-red-700" onClick={() => void confirmDeleteLead()}>
               确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* S3 产品原则：**发送前二次提示风险**。
+          目标号码为「推测」档（inferred）时，不得静默触达真实客户 —— 先确认号码无误再发。 */}
+      <Dialog
+        open={pendingWhatsAppConfirm !== null}
+        onOpenChange={(open) => (!open ? setPendingWhatsAppConfirm(null) : undefined)}
+      >
+        <DialogContent className="max-w-md rounded-2xl border-slate-200 bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-slate-900">该号码为「推测」，确认发送？</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              「{pendingWhatsAppConfirm?.phone}」并非官网提取或第三方验证的手机号，而是推测得到（来源：
+              {pendingWhatsAppConfirm?.source}）。发送前请确认号码无误 —— 错误触达会损害客户体验与发件信誉。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setPendingWhatsAppConfirm(null)}>
+              取消
+            </Button>
+            <Button
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                const url = pendingWhatsAppConfirm?.url
+                setPendingWhatsAppConfirm(null)
+                if (url) void openWhatsAppUrl(url)
+              }}
+            >
+              确认发送
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -6,6 +6,10 @@ import {
   configSet,
 } from '@/lib/electron-api'
 import type { DataSourceType, DecisionMaker, CustomsData, AgentStatus } from '@/shared/ipc-contracts'
+/* 号码类型（WhatsApp 可用性）：来自 wa.me 直链的号码为 mobile，前端据此放行 WhatsApp 按钮 */
+import type { PhoneKind } from '@/shared/phone-kind'
+/* 联系方式来源与可信度（三档）：结果卡片徽标 / 筛选 / 发送前确认共用 */
+import type { ContactProvenance } from '@/shared/contact-provenance'
 /* 国家名 → ISO alpha-2：用于校正历史遗留的假国家码（见 normalizeLeadItem 注释） */
 import { resolveCountryCode } from '@/lib/country-code'
 
@@ -57,6 +61,10 @@ export type LeadItem = {
   contactTitle: string
   email: string
   phone: string
+  /* 号码类型（WhatsApp 可用性）：后端判定优先（wa.me 直链 → mobile）；缺失时前端回退本地判定 */
+  phoneKind?: PhoneKind
+  /* 联系方式来源与可信度（三档）：verified / extracted / inferred */
+  contactProvenance?: ContactProvenance
   country: string
   countryCode: string
   industry: string
@@ -129,6 +137,10 @@ export type LeadSearchResult = {
   contactTitle: string
   email: string
   phone: string
+  /* 号码类型（WhatsApp 可用性）：来自 Prospeo 已验证手机 / wa.me 直链 → mobile */
+  phoneKind?: PhoneKind
+  /* 联系方式来源与可信度（三档）：verified / extracted / inferred */
+  contactProvenance?: ContactProvenance
   unlocked: boolean
   address?: string
   matchReasons?: string[]
