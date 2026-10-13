@@ -1,55 +1,918 @@
----
-title: KONE 变更日志
-status: active
-authoritative: true
-ssotFor: [changelog]
-lastVerifiedAt: 2026-10-07
----
+\---  
+title: KONE 变更日志  
+status: active  
+authoritative: true  
+ssotFor: [changelog]  
+lastVerifiedAt: 2026-10-07  
+\---
 
 # KONE 变更日志 (CHANGELOG)
 
-> **文档角色：版本变更时间线的唯一事实源。**
-> 记录"实现变更 → 规范回写"的对应关系，用于消除历史上反复出现的
+> **文档角色：版本变更时间线的唯一事实源。**>   
+> 记录"实现变更 → 规范回写"的对应关系，用于消除历史上反复出现的>   
 > "代码已改、规范未同步"漂移（如备份校验算法 MD5→SHA-256 长期未回写）。
 >
-> 记录要求：任何改动状态、数据、权限、投递、事件、公开 API 或合规规则的提交，
+> 记录要求：任何改动状态、数据、权限、投递、事件、公开 API 或合规规则的提交，>   
 > 必须在此登记，并注明受影响的 SSOT。
 
 ---
 
+## [1.4.31] — 2026-10-13 · 修复交付阻断项：版本口径对齐 + 新增版本一致性门禁 + 修正 CHANGELOG 时间线
+
+### 背景（源自 [1.4.30] 的交付审计，2 项阻断已处理）
+用户确认推进执行后，处理交付审计中发现的阻断项。
+
+### 变更
+
+**1) 版本口径对齐（修复「包名与内容不符」）**
+- `package.json`：`1.3.15` → **`1.4.30`**。
+- **问题实质**：`electron-builder` 从 `package.json` 取版本决定**安装包文件名**，
+  而 CHANGELOG 已推进到 `1.4.x` 却**从未回写** → **期间产出的每一个安装包都被错误标注为 `1.3.15`**。
+
+**2) 新增版本一致性门禁（`verify-doc-consistency.cjs` → `checkVersionConsistency()`）**
+- ① `package.json.version` **必须等于** CHANGELOG 最新条目版本；
+- ② CHANGELOG 条目**必须严格逆序**（最新在前）。
+- 已纳入 `verify:consistency`（CI 必跑）。**变异验证**：回退版本 → 门禁**精准判红**。
+
+**3) 修正 CHANGELOG 时间线**
+- `[1.4.15]` 曾被**孤立在文件顶部**（位于最新条目之前），破坏"最新在前"的时间线。
+- 已移回 `[1.4.16]` 与 `[1.4.14]` 之间。**完整性校验**：行数 2745 不变 / 条目数 46 不变 /
+  `diff` 内容集合完全一致（仅顺序变化）。
+
+**4) 安全审计报错可操作化（`security-audit.cjs`）**
+- 找不到产物时**列出全部可用产物目录 + 用法提示**；
+- **刻意不静默回退**到其它目录 —— 安全审计必须审**指定的那个包**，静默换包会让"审了 A、以为审了 B"成为可能。
+- ⚠️ **更正**：审计报告初稿称该脚本"硬编码 `release/`"，**判断有误** ——
+  它早在 2026-10-11 就已支持位置参数（`process.argv[2] || KONE_PACKAGED_ROOT || 'release'`）。
+
+### 未执行（需决策）
+- **release 产物清理**（≈6.5 GB / 17 项）：属破坏性操作 + 保留范围是业务决策。
+  **建议保留 `release-v148`（冒烟报告已验证的包）+ 最新 `release-v150`**。
+- **干净机器人工验收**：必须人工执行。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | 全绿（0 回归） |
+| `npm run typecheck` | 0 error |
+| `npm run verify:consistency` | ✅ 文档 / IPC / 云端 三绿 + **版本口径一致（46 条逆序通过）** |
+
+
+## [1.4.30] — 2026-10-13 · 商用交付条件与模块交互严谨性 · 深度分析报告（**发现 2 项交付阻断**）
+
+### 触发
+用户提问「本项目是否已满足商用交付条件，其他功能模块交互是否足够严谨规范」。
+
+### 结论（证据化，非主观）
+- **代码质量与架构严谨性：已达商用交付水平**（517 单测 · typecheck 0 · 一致性三绿 · 安全三件套 6/6 ·
+  **Agent 不自动外发** · 授权 Fail-Closed · 崩溃类 P0 全修）。
+- **交付治理：尚未达标 —— 2 项真实阻断，修复成本极低。**
+
+### 🔴 发现的阻断项
+| # | 缺陷 | 证据 |
+|---|---|---|
+| **D-1** | **版本号不一致** | `package.json` = `1.3.15`，而 `CHANGELOG.md` 已到 **`1.4.29`**（`[1.4.0]` 起于 2026-10-07）→ 安装包名为 `…-1.3.15.exe` 却含 1.4.x 全部变更；**且无版本一致性门禁** |
+| **D-2** | **交付物堆积且同版本号** | **17 个 `release*` 目录 ≈ 6.5 GB**，每个安装包都叫 `Kone-Intellect-Setup-1.3.15.exe`（字节数不同但**文件名无法区分**）→ **拿错包风险** |
+
+### 🟡 非阻断（交付前确认）
+- **D-3** `scripts/security-audit.cjs:24` 硬依赖 `release/win-unpacked/KoneAI.exe`，当前产物在 `release-v1xx/` → **成品级安全审计门禁跑不起来**（环境前置未文档化）；
+- **D-4** 自动更新实现完整但**未见端到端验证**；
+- **D-5** **干净机器人工验收未做**（项目管理内存中明确的"交付前唯一必做"）。
+
+### ✅ 已达标（关键：商用底线已守住）
+- **Agent 真实外发安全**：`stageAgentsFromPipeline` 注释即 **`// Stage for human review — do NOT send.`**；
+  退订门禁（`isEmailSuppressed`）+ 逐 Agent 日限额 + `waitWhilePaused` 检查点 + `isStaleTask` 时空隔离；
+- 授权 Fail-Closed（`registerSecureIpc` / `registerSecureFeatureIpc`）+ 离线授权 + 机器码绑定；
+- IPC 双事实源 + 启动门禁（`assertAllRegistered` + `lock()`）。
+
+### 处置
+**本报告不执行删除/改版本号**（属破坏性操作与发布决策，需用户明确指示）。
+详见 `KONE-V1.3-商用交付条件与模块交互严谨性深度分析报告-2026-10-13.md`（含交付前必做 Checklist）。
+
+
+## [1.4.29] — 2026-10-13 · 过度优化审计与清理（删死代码 2 处 + 删遗留脚本；S3 标注「待 S6 激活」）
+
+### 触发
+用户提问「是否存在过度优化，请严谨梳理汇总」。按用户价值取向（**拒绝过度工程化**；
+**先问"用户能不能感知"，不能感知的不一律定级**）做**证据化审计**（统计每个新导出的**生产代码引用数**）。
+
+### 审计结论：**存在 3 项，已清理 2 项、标注保留 1 项**
+
+| 项 | 证据 | 处置 |
+|---|---|---|
+| `CONTACT_TIER_RANK` | 生产引用 **0**（为"高置信度优先排序"而写，**从未接入**） | **已删除** |
+| `canAutoUseContact` | 生产引用 **0**（与 `canAutoDispatch` 重叠，只用后者） | **已删除**（+ 3 条对应测试断言） |
+| `scripts/_coverage-final.cjs` | 一次性临时脚本长期留在仓库 | **已删除** |
+| S3「推测数据护栏」 | `grep "tier: 'inferred'"` 生产代码 **0 命中** → 当前**不可感知** | **保留**（可辩护的"防御先行"，成本低）<br>**显式标注「待 S6 激活」，不得再扩张** |
+
+> 教训：**"写了没人用的抽象，还给它写了测试"** —— 测试会制造"这块已完成"的错觉。
+> 已在 `canAutoDispatch` 注释中记录，防止重复引入。
+
+### 经审计**不属于**过度优化（用户可感知）
+官网深探增强 · SerpApi 密钥回退与设置合并 · **稀疏数组崩溃修复** · **密钥变砖修复** · WhatsApp `wa.me` 手机号 ·
+结果列表显示邮箱/徽标 · `%20` 解码 · Prospeo 接入 · S1 管道门禁 · S2 三档徽标 · S4a 负向 ICP · S4c 反馈闭环。
+
+### 边际项（保留、记录在案）
+403 兜底简介挖掘（免费、边际）· Prospeo 手机揭示 10 credits/条（**建议不扩大预算**，用真实数据决定）。
+
+### 后续纪律（防再犯）
+① 新增导出必须**先在调用点出现**；② 写测试前先问"生产代码用到了吗"；
+③ 前置护栏必须标注**激活时间点**且不得继续扩张；④ 临时脚本**用完即删**。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **517/517**（清理 3 条死代码测试后，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| 死代码复检 | `CONTACT_TIER_RANK` = 0 引用；`canAutoUseContact` 仅剩说明性注释 |
+
+报告：`KONE-V1.3-过度优化审计与清理报告-2026-10-13.md`。
+
+
+## [1.4.28] — 2026-10-13 · S4c：用户「相关 / 不相关」**反馈闭环**（本地、零成本，越用越准）
+
+### 背景（核心价值缺口）
+「匹配精度」是 Kone 的核心价值，但 ICP / LLM 评分都是**静态规则**，**不会因用户判断而改进**。
+此前项目**完全没有**用户反馈机制（无「相关/不相关」标记）。
+
+### 变更
+1. **新增双端 SSOT** `src/shared/lead-feedback.ts`：
+   - `LeadFeedbackVerdict` / `LeadFeedbackEntry` / `LeadFeedbackMap`；
+   - `deriveFeedbackKey()`：**域名优先**（去 `www`、小写），缺失回退公司名小写 —— 跨轮次、跨公司名改写都命中同一实体；
+   - `applyFeedbackAdjustment()`（纯函数、幂等、零副作用）：
+     - `irrelevant` → `matchScore` **封顶** `FEEDBACK_IRRELEVANT_SCORE_CAP = 20`（低于管道门槛 60）+ `riskFlags`；
+     - `relevant` → **小幅** `+5`（封顶 100）+ `matchReasons`；
+     - 未标记 → **原样返回**。
+   - 可解释信息一律**前置**插入（`applySchemaDefaults` 只保留首项，前置才不会被丢弃）。
+2. **渲染层持久化** `src/lib/lead-feedback-store.ts`：存 `user_config.leadFeedback`，
+   复用既有 `config:get`/`config:set` 通道 —— **不新增 IPC 通道**；
+   **刻意整表读-改-写**（配置键走点号路径，而域名本身含点 `acme.com` 会被误拆成嵌套层级）。
+3. **搜索链路接线**（`search-service.ts`，两处：**排序/预筛前** + **最终结果安全网**）：
+   下一轮搜索即按反馈调整排序 —— 曾标「不相关」的**不再被高分推荐**。
+4. **UI**（`search-result-card.tsx`）：结果卡片新增 **「相关 / 不相关」** 标记（**可撤销**：再点一次取消），
+   写入失败**明确提示**（不静默失败）。
+
+### 稳定点（**未触碰**）
+四级弹性搜索协议、并发 2/2/3、总量域、Fail-Closed、单源失败隔离 —— 零改动。
+反馈**全部本地**、不上云、零成本。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **520/520**（较 512 +8 反馈闭环用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| **变异验证** | 去掉「不相关」封顶 → 对应断言**精准失败** |
+
+### 说明
+本项为《…下阶段落地优化计划…》**S4** 的第三项（S4c）。
+S4 仅余 **S4b 评分证据绑定**（现有数字拆解缺证据）。同时把 S4a 的 `riskFlags` 改为**前置**插入，
+确保「为什么被降权」不被 `applySchemaDefaults` 的 `slice(0,1)` 丢弃。
+
+
+## [1.4.27] — 2026-10-13 · S4a：用户「负向 ICP」确定性护栏（此前只是 LLM prompt 里的软约束）
+
+### 背景（真实缺口）
+`negativeIcp` 此前**只出现在 LLM 评分 prompt**（`buildSearchScoringPrompt`：`Negative ICP: …`）——
+属**软约束**，LLM 完全可能忽略它，把明显不符合的线索仍打高分，从而**进入 Agent 管道浪费触达额度**。
+（`scout.ts` 只有硬编码的通用负向词 `SCOUT_NEGATIVE_TERMS`，**与用户自定义负向 ICP 无关**。）
+
+### 变更
+1. **新增确定性护栏**（`search/scoring.ts`，纯函数、导出可测）：
+   - `parseNegativeIcpTerms()`：解析用户自由文本（逗号/顿号/分号/竖线/换行分隔，去重，剔除 <2 字符噪声项）；
+   - `matchNegativeIcp()`：返回**命中的词项**（供**可解释**展示）；
+   - `applyNegativeIcpPenalty()`：命中即把 `matchScore` **封顶**到 `NEGATIVE_ICP_SCORE_CAP = 20`
+     （低于 Agent 管道门槛 60）+ 追加**可解释** `riskFlags`（写明命中哪个词）；未命中**原样返回**（零副作用、幂等）。
+2. **接线**（`search-service.ts`）：
+   - 在**排序/预筛之前**对 `scoredMergedLeads` 应用护栏（`guardedMergedLeads`）→ 同时影响初始排序、高相关过滤与首屏；
+   - 在**最终结果**上再兜一次底（**安全网**：LLM 若忽略 prompt，最终分也会被封顶）。
+
+### 为什么用「封顶降权」而非「直接剔除」
+负向词是**用户自由文本**，误伤风险不可忽略。封顶让线索**仍然可见**（透明、可人工复核），
+但**跨不过 60 分门槛** → 不进自动触达。**既不误伤，也不放过**。
+
+### 稳定点（**未触碰**）
+四级弹性搜索协议、并发 2/2/3、总量域、Fail-Closed、单源失败隔离 —— 零改动。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **512/512**（较 504 +8 负向 ICP 用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| **变异验证** | 去掉封顶 → 「命中即封顶」断言**精准失败** |
+
+### 说明
+本项为《…下阶段落地优化计划…》**S4** 的**第一项**（S4a）。
+S4 余下：**S4b 评分证据绑定**（现有数字拆解缺证据）、**S4c 用户反馈回路**（完全缺失）。
+
+
+## [1.4.26] — 2026-10-13 · S3：管道**按来源档位放行** + 推测数据**发送前二次确认**
+
+### 背景
+S2 建立了「已验证 / 官网提取 / 推测」三档模型，但**尚未约束行为**。
+S3 把档位落到**管道放行**与**发送前确认**两个动作点上，让「专业严谨」可执行、可测试。
+
+### 变更
+
+**1) 关键语义区分（双端 SSOT `contact-provenance.ts`）**
+- `canAutoUseContact(tier)`：**严格** —— "能否宣称它可信"；无标注 = `false`（**不谎报**）。
+- **`canAutoDispatch(tier)`**：**放行** —— "能否自动派发"；**无标注按 `extracted`**（向后兼容：
+  历史数据无标注，**不得因此被整体排除**）；唯一被拦下的是**显式 `inferred`**。
+- `requiresSendConfirmation(tier)`：仅 `inferred` 需二次确认（其余不打扰用户）。
+
+**2) 管道按档位放行（`agent-pipeline.ts`）**
+- 新增 `canAutoDispatchPhone(lead)`（可达性 **且** 档位放行）与 `canAutoDispatchEmail(lead)`。
+- `buildAgentTaskQueue`：WhatsApp 入队改用 `canAutoDispatchPhone`；**Email 入队改用 `canAutoDispatchEmail`**
+  （原为 `if (lead.email)` → 推测邮箱也会自动发信）。
+- `qualifiesForPipeline`：可触达资产口径叠加档位 —— 显式 `inferred` 的联系方式**不得占用管道名额**。
+
+**3) 发送前二次确认（`leads-management.tsx`）**
+- WhatsApp 唤起前，若目标号码为 `inferred` → **不直接唤起**，弹确认对话框（展示号码 + 来源 + 风险文案），
+  用户确认后才打开 `wa.me`；取消则中止。非推测档**不打扰**（走原流程）。
+
+### 稳定点（**未触碰**）
+四级弹性搜索协议、并发 2/2/3、总量域、Fail-Closed、单源失败隔离、评分权重 —— 零改动。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **504/504**（较 497 +7 档位放行用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| 同步修正 | S1 的 WhatsApp 入队守卫（门禁升级为 `canAutoDispatchPhone`，**语义更强**） |
+
+### 说明
+本项为《KONE-V1.3-数据可信度与匹配精度-下阶段落地优化计划-2026-10-13》的 **S3**，
+**P0「数据可信度体系」至此闭环**（模型 → 展示 → 放行 → 确认）。
+下一步 **S4**：ICP 证据化评分 + 负向 ICP + 用户反馈回路。
+
+
+## [1.4.25] — 2026-10-13 · S2：联系方式**来源与可信度三档模型**（verified / extracted / inferred）
+
+### 背景（产品定位校准）
+Kone 是**专业严谨的 B2B 获客工作台**，核心价值是「**匹配精度 + 策略质量**」，联系方式只是其中一个环节。
+联系方式必须**说清来源与可信度**：明确区分「已验证 / 官网提取 / 推测」，默认优先高置信度，
+`inferred` 不自动用于 Agent、发送前二次确认。**用低置信度数据静默填充会伤害信任**。
+
+### 变更
+1. **新增双端 SSOT** `src/shared/contact-provenance.ts`：
+   - `ContactTier = 'verified' | 'extracted' | 'inferred'`；
+   - `ContactProvenance`（email/phone/contact 各自的 `{ tier, source, grade?, kind? }`）；
+   - `CONTACT_TIER_LABEL`（UI 统一显示名）、`CONTACT_TIER_RANK`（默认高置信度优先排序）、
+     `canAutoUseContact`（**仅 verified/extracted 可自动用于 Agent**）；
+   - `pickContactWithProvenance()`：**取值与来源同源**（杜绝「值来自 A、来源标成 B」的静默错标）。
+2. **类型贯通**：`SearchExecuteResult`（`src/shared/ipc-contracts.ts` + `electron/services/search/types.ts` **两处镜像**）
+   与渲染层 `LeadSearchResult` / `LeadItem` 新增 `contactProvenance?`；`applySchemaDefaults` **透传**。
+3. **采集层产出**（`search-service.ts`）：
+   - 邮箱：`pickContactWithProvenance([候选(extracted) → Prospeo(verified) → Apollo(verified) → 官网(extracted) → 提取(extracted)])`；
+   - 电话：`pickBestPhoneForReach` 返回值改为 `{ phone, provenance }`（**同源**），
+     优先手机不变、**回退顺序不变**（候选 > 官网 > 提取），`phoneKind` 直接采信 provenance.kind；
+   - 联系人：来自候选或官网文本 → `extracted`。
+4. **UI**：结果卡片为邮箱/电话渲染**来源徽标**（已验证=正向色 / 官网提取=中性色 / **推测=警示色**），
+   `source` 以 tooltip 展示（来源明细可见）；**缺失档位时不渲染**（宁可不标，不可谎报 `verified`）。
+
+### 稳定点（**未触碰**）
+四级弹性搜索协议、并发 2/2/3、总量域、Fail-Closed、单源失败隔离、评分权重 —— 零改动。
+本项为**纯标注增强**，不改变任何联系方式取值优先级与数值行为。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **497/497**（较 489 +8 可信度用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| **变异验证** | 破坏「取值与来源同源」→ 对应断言**精准失败** |
+| 同步修正 | `enrich-apollo` 的电话优先级守卫（回退顺序改由 `fallbackOrder` 表达，**顺序不变**） |
+
+### 说明
+本项为《KONE-V1.3-数据可信度与匹配精度-下阶段落地优化计划-2026-10-13》的 **S2**。
+下一步 **S3**：管道按档位放行（`inferred` 不入队）+ 发送前二次确认。
+
+
+## [1.4.24] — 2026-10-13 · 修复「WhatsApp 管道对座机入队」（S1：管道门禁与 SSOT 对齐）
+
+### 背景（真实缺陷，已核实）
+```ts
+// electron/services/agent-pipeline.ts:133（修复前）
+if (lead.phone) queue.whatsapp.push(task)   // ← 对**任何电话（含座机）**都入队 WhatsApp
+```
+与双端 SSOT `src/shared/phone-kind.ts`（WhatsApp 是手机 App，**座机无法注册/接收**）**直接矛盾**，
+且与 UI 侧口径不一致（`leads-management.tsx` 早已用 `classifyPhoneKind` 门禁）。
+**后果**：高级版自动巡航会对座机线索发起**必然失败**的 WhatsApp 任务（浪费额度、污染运行日志、不专业）。
+
+### 变更
+1. **新增 `isWhatsAppReachable(lead)`**（`agent-pipeline.ts`）：
+   优先采信已贯通字段 `phoneKind`（Prospeo 已验证手机 / `wa.me` 直链 → `mobile`；
+   使美国号码不会因 LNP 被判 `unknown` 而被误拒），缺失时回退双端 SSOT `canReachWhatsApp(phone, countryCode)`。
+2. **入队门禁**：`if (isWhatsAppReachable(lead)) queue.whatsapp.push(task)`。
+3. **资格口径修正**：`qualifiesForPipeline` 的「可触达资产」**不再把座机算进来**
+   （邮箱 / LinkedIn / **可用 WhatsApp 的手机**；座机本产品无外呼能力 → 不是可触达资产）。
+4. **形参类型补齐**：`qualifiesForPipeline` / `buildAgentTaskQueue` 的 lead 形参新增
+   `phoneKind?` / `countryCode?`（原类型缺失，根本无法做号码判定）。
+
+### 同步修正的测试（**它们原先把缺陷写成了期望行为**）
+- `tests/e2e/agent-pipeline-integration.test.js`：`qualifiesForPipeline` 与队列用例改用 `phoneKind: 'mobile'`，
+  **并新增「座机-only 高分线索不得入队」反例**。
+- `tests/e2e/gate-e2e.test.js`：同上，新增座机不可 qualify 反例。
+- **新增** `tests/business-logic/whatsapp-pipeline-gate.business.test.js`：
+  源码守卫（禁止回退为 `if (lead.phone) queue.whatsapp.push`）+ 行为契约 + 端到端（4 条）。
+
+### 验证
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **489/489**（较 485 +4 门禁用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| **变异验证** | 回退为 `if (lead.phone) queue.whatsapp.push` → 源码守卫**精准失败** |
+
+### 说明
+本项为《KONE-V1.3-数据可信度与匹配精度-下阶段落地优化计划-2026-10-13》的 **S1**，已按计划落地。
+稳定点（四级弹性搜索协议 / 并发 2/2/3 / 总量域 / Fail-Closed / 单源失败隔离）**零改动**。
+
+
+## [1.4.23] — 2026-10-13 · 真实搜索验证 Prospeo + 结果列表显示邮箱 / WhatsApp 徽标 + 修 URL 编码残留
+
+### 一、真实搜索验证（开发环境 · 真实 SerpApi / SenseNova / Prospeo 密钥 · `golf cart dealer USA`）
+
+| 指标 | 结果 |
+|---|---|
+| 线索数 | 50 |
+| 邮箱 | **6**（12%） |
+| 电话 | 49（98%） |
+| **WhatsApp 可触达**（`phoneKind=mobile`） | **1** |
+| 联系人 | 10 |
+| 来源归因 | `prospeo: 1` / `apollo: 0` |
+
+**Prospeo 端到端打通**（实测样例）：`The Golf Cart Company` → `sam@thegolfcartcompany.com` +
+**`+1 248-563-0678`（已验证手机，`phoneKind=mobile`）**，来源正确标注为 `Google Maps · Prospeo`。
+**Fail-Closed / 预算 / 归因不虚标**均在真实链路中验证正确。
+
+**覆盖率提升有限的根因（数据现实，非缺陷）**：
+① 触发门槛为「高价值（`matchScore ≥ 60`）」，小微 dealer 多数分数低于该线；
+② Prospeo 对小微 dealer 的库覆盖本就稀疏（早先实测 6 个域名仅命中 5 人）。
+→ 若需更大覆盖，可放宽门槛或升级 Prospeo 计划（预算常量可按计划调整）。
+
+### 二、结果列表显示**邮箱** + **WhatsApp 可触达徽标**
+
+- `search-engine.tsx` 结果区此前**零 `email` 引用** → 用户**看不到哪些线索有邮箱**。
+- `search-result-card.tsx` 新增：**邮箱 `mailto:` 直链**（`stopPropagation` 防误触卡片选中）；
+  当 `phoneKind === 'mobile'` 时显示 **「WhatsApp 可触达」** 徽标（让 Prospeo / `wa.me` 成果**可见**）。
+- 贯通链路：`SearchExecuteResult.phoneKind` → `LeadSearchResult.phoneKind` → 结果卡片。
+
+### 三、修复 `%20` 等 **URL 编码残留**
+
+实测缺陷：部分站点 `tel:` href 写作 `tel:%20615-828-7430` → 直接取用会把 `%20` 带进电话字段。
+新增纯函数 `decodeContactHrefValue()`（解码失败**原样返回**，绝不抛错），应用于 `mailto:` / `tel:` 取值。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **485/485**（较 483 +2 解码用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+| **运行时校验** | vite 实际服务的 `search-result-card` 含 `WhatsApp 可触达` 与 `mailto:`；`dist-electron` 含 `decodeContactHrefValue` |
+
+本轮验证消耗 Prospeo **12 credits**（余 76 / 100）。
+
+## [1.4.22] — 2026-10-13 · 接入 Prospeo 联系人富化（**Apollo 的低成本前置**）：已验证邮箱 + 已验证手机号
+
+### 背景
+
+用户需用**高级版 WhatsApp** 触达，但 WhatsApp 只能发**手机号**，而官网 / Google Maps 公开电话**几乎都是座机**
+（US 因 LNP 无法从号段区分）；同时**邮箱覆盖仅 12%**（实测）。Apollo 成本偏高。
+
+### 实测成本（Prospeo **FREE 计划 100 credits/月**）
+
+| 调用 | 成本 | 实测结果 |
+|---|---|---|
+| `search-person`（按域名，25 人/页；30 天内同页**免费**） | **1 credit** | 6 个真实 dealer 域名 → 命中 5 人 |
+| `enrich-person`（**仅邮箱**，`VERIFIED`） | **1 credit** | `cgrasmick@golfcartservices.com` |
+| `enrich-person`（邮箱 + **手机**，`VERIFIED` US mobile） | **10 credits** | `+1 717-579-2681` |
+
+→ **邮箱成本比 Apollo 低一个数量级** ⇒ 作为**前置**：命中邮箱即**跳过 Apollo**；
+**手机昂贵**（10 credits）⇒ 仅在「高价值 + 尚无手机 + 预算剩余」时按需揭示。
+
+### 变更
+
+1. 新增适配器 `electron/services/search/enrich-prospeo.ts`（**Fail-Closed**，与 Apollo 同款契约）：
+   `search-person` 按域名找人并**优先决策者职位**，按姓名去重 → `enrich-person` 揭示联系方式；
+   任何异常一律 `{ used: false }`，**绝不抛错**。
+2. 接入 `search-service.ts`（作为 **Apollo 的前置**）：
+   - 预算 `PROSPEO_EMAIL_BUDGET = 10` / `PROSPEO_MOBILE_BUDGET = 2`（**独立计数**，属「总量域」）；
+   - **命中邮箱即跳过 Apollo**（`&& !prospeo?.email`）→ 省成本；
+   - 优先级：邮箱 = 线索自带 > **Prospeo** > Apollo > 官网 > 提取；
+     电话 = 候选 > **Prospeo mobile** > Apollo > `wa.me` > 官网 > 提取；
+   - 归因 ` · Prospeo` / ` · Apollo`（**仅真正贡献时**标注）。
+3. 密钥与设置：`SECRET_KEYS.PROSPEO_API_KEY` + `SECRET_SET_WHITELIST`（否则设置页 403 写不进，历史 P0 教训）
+   + 设置页 Prospeo 卡片与提示文案。
+
+### 稳定点（**未触碰**）
+
+四级弹性搜索协议、并发域（2/2/3）、Fail-Closed、单源失败隔离、评分权重 —— 零改动。
+Prospeo 查询在**单条线索富化步骤内串行追加**，**不提升并行线索数**。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `npm run test:unit` | **483/483**（较 473 +10 Prospeo 用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅ |
+
+## [1.4.21] — 2026-10-13 · WhatsApp 手机号深挖（抓 `wa.me` 直链）+ 403 兜底简介挖联系方式
+
+### 背景（用户实测痛点）
+
+用户要用**高级版 WhatsApp** 触达，但 WhatsApp 只能发**手机号**；而 Google Maps 等来源的商家电话**绝大多数是座机**，  
+且 **US 号码因号码可携带（LNP）无法从号段区分手机/座机**（`src/shared/phone-kind.ts` 已记载：实测 17 条线索 15 条为美国座机）  
+→ 前端 WhatsApp 按钮被**禁用**，高级版触达链路事实上走不通。
+
+### 变更
+
+**1) 新增「免费」手机号来源** —— `electron/services/search/contact-extract.ts`
+
+- `extractWhatsAppNumbers(html)`：提取 `wa.me/<d>` / `api.whatsapp.com/send?phone=` / `web.whatsapp.com/send?phone=` 的号码。    
+  这类号码是网站**主动挂出的「一键 WhatsApp」按钮**，**定义上即为 WhatsApp 账号** → 无需猜测号码类型，规范化 `+<digits>`。
+- `extractLabelledMobileNumbers(text)`：提取带 `Mobile/Cell/WhatsApp/手机` 标记的号码    
+  （保守：标记词须与号码**相邻**，并以 `(?<![a-z])` 防 `automobile` 之类单词内部误匹配）。
+
+**2) 接入富化链路** —— `search-service.ts`
+
+- `WebsiteContentProbe` 新增 `whatsappNumbers`；`fetchWebsiteContent` 从 HTML/正文填充。
+- `pickBestPhoneForReach` 新增 `whatsappPhone` 参数，**按 `mobile` 参与排序**（优先于座机）。
+
+**3) 号码类型贯通前端（双端 SSOT）**
+
+- `SearchExecuteResult`（`src/shared/ipc-contracts.ts` 与 `electron/services/search/types.ts` 两处镜像）与 `LeadItem`    
+  新增 `phoneKind?: PhoneKind`；`applySchemaDefaults` / `lead-mappers` 透传。
+- `leads-management.tsx` 的 WhatsApp 门禁**优先采信后端判定**，缺失时才回退 `classifyPhoneKind`    
+  → **来自 `wa.me` 直链的号码不再被误判 `unknown` 而禁用**。
+
+**4) 403 站点兜底简介**挖联系方式 —— `search-service.ts`
+
+- 403 站点的 `buildSocialFallbackEnrichedText`（LinkedIn/Kompass/Europages 简介）此前**只喂给 LLM 写文案**，    
+  其中的邮箱/电话被**白白丢弃**。现改为同时 `extractContactCandidates(socialFallbackText)`，    
+  作为 `contact/contactTitle/email/phone` 的兜底来源。
+
+### 稳定点（**未触碰**）
+
+四级弹性搜索协议、并发域（2/2/3）、总量域、Fail-Closed、单源失败隔离、评分权重 —— 零改动。  
+上述改动均为**纯字符串解析**，**零额外网络/API 成本**（复用了本就要抓的内容）。
+
+### 验证
+
+| 门禁                                         | 结果                                     |
+| ------------------------------------------ | -------------------------------------- |
+| `npm run test:unit`                        | **473/473**（较 468 +5 WhatsApp 用例，0 回归） |
+| `npm run typecheck` / `verify:consistency` | 0 error / ✅                            |
+| **变异验证**                                   | 去掉 `wa.me` 模式 → 2 条断言**精准失败**          |
+
+### 待办（如实记录，未做）
+
+- **邮箱深挖**：免费链实测已到 **12%**，进一步免费收益有限 → 建议引入 **L1 低成本邮箱源**（Hunter / Prospeo / PDL）    
+  作为 **Apollo 的前置**（用户 `Desktop/kone-ai-v1.1-realflow/.env` 已持有 `PROSPEO_API_KEY`）。
+- 结果列表 UI **仍不渲染 `email`**（`search-engine.tsx` 结果区零 `email` 引用）。
+- 电话存在 `%20` 等**未解码 URL 编码**残留。
+
+## [1.4.20] — 2026-10-13 · 修复「稀疏数组击穿 `new Map`」致整轮搜索中断 + 真实搜索覆盖率实测
+
+### 真实缺陷（**实测复现，栈已捕获**）
+
+- **现象**：真实搜索跑到**富化阶段**（50 条线索全部评完后）崩溃，前端收到    
+  `stream:error: "Iterator value undefined is not an entry object"` → **整轮搜索中断**。
+- **栈**（临时加 stack 日志捕获）：    
+  `TypeError: Iterator value undefined is not an entry object at new Map (<anonymous>) at executeScoring`    
+  → 对应源码 `search-service.ts:2377` 的 `const scoredByKey = new Map(scoredResults.map(...))`。
+- **根因**：富化结果数组用 `new Array(baseResults.length)` 初始化；并发 worker 在「job 被抢占」时    
+  `if (myJobId !== activeJobIdFor()) return` **提前返回、不写回该索引** → 数组出现**空洞**；    
+  `Array.prototype.map` **跳过空洞**，`new Map()` 迭代空洞时得到 `undefined` → 抛错。
+- **修复**：`enrichedResults` 改为 `baseResults.slice()`（**密集初始化**，未富化者回落为原始线索）。
+- **守护**：`tests/business-logic/search-enrich-dense-array-guard.business.test.js`（源码守卫 + 机制复现）。
+
+### 真实搜索覆盖率实测（开发环境 · 真实 SerpApi + SenseNova 密钥 · 关键词 `golf cart dealer USA`）
+
+| 阶段                                 | 线索数 | 电话              | 邮箱            | 联系人            |
+| ---------------------------------- | --- | --------------- | ------------- | -------------- |
+| **搜索源（富化前）** `[Probe-ContactRate]` | 50  | **100%**（50/50） | **0%**（0/50）  | —              |
+| **最终结果（富化后）**                      | 50  | **88%**（44/50）  | **12%**（6/50） | **22%**（11/50） |
+
+- **结论**：**邮箱完全依赖富化层**（搜索源给 0）；**电话已由免费链覆盖**（Maps 100%）。
+- **A/D 改进生效证据**：日志见 `/impressum`、**`/about-us-3`（非固定路径 → 由首页 `<a>` 链接发现，即 D）** 被抓取；    
+  总官网抓取 73 次、403 共 7 次。
+- **附带发现（待办）**：结果列表 UI **不渲染 `email`**（`search-engine.tsx` 结果区零 `email` 引用）→    
+  用户看不到哪些线索有邮箱；另发现电话存在 `%20` 等**未解码 URL 编码**残留（数据质量小问题）。
+
+### 验证
+
+| 门禁                  | 结果                                |
+| ------------------- | --------------------------------- |
+| `npm run test:unit` | **468/468**（较 466 +2 密集数组守护，0 回归） |
+| `npm run typecheck` | 0 error                           |
+
+## [1.4.19] — 2026-10-12 · 修复「密钥文件无法解密 → 应用彻底变砖」（Fail-Closed 粒度修正）
+
+### 背景（真实缺陷，实测复现）
+
+为「用真实密钥测量联系人覆盖率」而启动应用时发现：当 `kone-secrets.json` **无法解密**  
+（常见原因：该文件由**其它机器 / 其它 DPAPI 上下文**写入，或文件损坏），应用**完全无法启动**——  
+`[Main] App startup failed` 后**无窗口**，用户连设置页都打不开。
+
+### 根因
+
+- `secret-manager.readSecretMap()` 在 `safeStorage.decryptString` 失败时**直接抛错**；
+- `main.ts` 的 `migrateLegacySecretsFromConfig(store)` 位于 `whenReady()` 链首且**无 try/catch**；
+- 抛错使整条链中断 → `registerIpcHandlers()` / `createMainWindow()` **均不执行** →    
+  **无窗口、无 IPC、应用彻底不可用**，用户连"进设置页重新录入密钥"这条**唯一恢复路径**都走不到。
+
+
+### 修复（两层，缺一不可）
+
+1. **根因层 `readSecretMap`**：解密失败**不再抛错** → 将坏文件**留档**为     
+   `kone-secrets.json.corrupt-<ts>`（**绝不静默删除**），本次返回空映射。     
+   语义修正：**Fail-Closed 应作用于单个能力**（取不到密钥 = 未配置），**而非整个应用**。
+2. **启动层 `main.ts`**：`migrateLegacySecretsFromConfig` 加 try/catch 兜底，     
+   任何迁移异常都降级为"密钥不可用"并**继续启动**。
+
+### 影响
+
+- 用户**重新录入密钥即可自愈**（后续写入生成新的可解密文件）。
+- 消除"打开即无窗口/闪退"的**不可恢复**状态。
+
+### 验证
+
+| 门禁                  | 结果                                                       |
+| ------------------- | -------------------------------------------------------- |
+| `npm run test:unit` | **466/466**（较 443 +23；本轮 +5 `secret-manager-resilience`） |
+| `npm run typecheck` | 0 error                                                  |
+| **变异验证**            | 让 catch 重新抛错 → **4 条断言精准失败**（证明测试有牙）                     |
+
+### 附：本轮未完成的目标（**如实记录，不计入通过**）
+
+原计划「用真实 SerpApi/LLM 密钥跑一轮搜索测量 `[Probe-ContactRate]` 覆盖率」**受阻**：  
+真实 profile（`%APPDATA%/kone-system`）的 `kone-secrets.json` **无法解密**（dev 与 packaged 启动**均复现**），  
+故无法用其密钥发起真实搜索。**该受阻本身即本轮发现的缺陷（已修复）**；  
+密钥需用户在设置页**重新录入**后，方可继续测量覆盖率。
+
+## [1.4.18] — 2026-10-12 · 数据源/联系人获取优化（Tier 1）：官网深探增强 + SerpApi 密钥回退与设置合并
+
+### 背景
+
+按《KONE-V1.3-数据源与联系人获取-全局梳理与优化计划-2026-10-12》**Tier 1** 执行。  
+目标：在保证**精准度 + 线索量**的前提下，兼顾**体验（不能等太久）**&#x4E0E;**成本**。
+
+### 变更
+
+**1) 官网深探增强（免费联系方式获取）** —— 新增纯模块 `electron/services/search/contact-extract.ts`：
+
+- `WEBSITE_PROBE_USER_AGENT`：抓取 UA 由 `Kone-AI/1.0`（被大量站点 WAF 403）改为**通用桌面浏览器 UA**。
+- `buildContactPageUrls`：联系页路径由 2 条扩至 6+（含**德国法律强制**的 `/impressum`、`/about` 等），并设并行上限 `CONTACT_PAGE_FETCH_LIMIT=6`。
+- `parseJsonLdContacts`：解析 `application/ld+json` 的 Organization/LocalBusiness/ContactPoint 的 `email`/`telephone`（**不采信 Person/Article**，防误采个人邮箱）。
+- 接入 `search-service.ts`（UA + 联系页 + JSON-LD 合并进 `directEmails`/`directPhones`）。
+
+**2) SerpApi 密钥读取回退（修复真实 UX 陷阱）** —— `provider-service.ts`：  
+`google-leads` 优先、**回退 `google-maps`**。修复「用户只填『谷歌地图』→ 所有 Provider 取不到 key → **整轮搜索静默无数据**」。
+
+**3) 设置合并（5 → 4 项）** —— `system-settings.tsx` / `base-settings-tab.tsx`：  
+原「谷歌获客引擎」「谷歌地图」两个冗余密钥框合并为单一「**SerpApi（Google 搜索 / 地图）**」  
+（两者本是**同一个 SerpApi 账号**）。读取端保留旧 `google-maps` 槽回退，**老用户升级不失效**。
+
+**4) 联系页发现（**&#x96F6; API 成本&#x7248;**）** —— 同模块新增 `extractContactLinksFromHtml`：  
+从**首页 `<a>` 链接**识别**站内联系页的真实 URL**（href/锚文本命中 contact/about/impressum/kontakt/联系…），  
+仅取同站、非资源、去重、受上限约束；与固定路径合并后并行抓取（总上限 `CONTACT_PAGE_FETCH_LIMIT=6`）。
+
+> 设计取舍：原计划的 D 方案是「每域名发 1 次 `site:` 查询」，与「不能等太久 + 成本」冲突>   
+> （SerpApi 免费额度仅 100 次/月）。改为**解析首页链接**——**零 API 调用**、命中真实 URL、不放大延迟，>   
+> 在满足同一目标的前提下**完全消除新增成本**。
+
+### 稳定点（**未触碰**）
+
+四级弹性搜索协议、并发域（2/2/3）、总量域、Fail-Closed、单源失败隔离、Provider 契约、评分权重、落盘边界 —— **零改动**。
+
+### 验证
+
+| 门禁                           | 结果                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| `npm run test:unit`          | **461/461**（较 443 **+18**：contact-extract 13 + provider-fallback 5，0 回归）                          |
+| `npm run typecheck`          | 0 error                                                                                           |
+| `npm run verify:consistency` | ✅（IPC 61 注册 / 0 plain 直挂）                                                                         |
+| **变异验证**                     | 去掉 JSON-LD 类型过滤 → Person 断言**精准失败**；回退联系页路径为 2 条 → `/about` 断言**精准失败**；去掉联系页同站过滤 → 外部链接断言**精准失败** |
+
+### 暂缓（依「成本 / 延迟」约束 + 拒绝过度工程化）
+
+- **E LLM 结构化联系方式汇总**：联系方式已有 4 级优先来源（线索自带 > Apollo > 官网正则 > JSON-LD），    
+  LLM 提取为最低优先级，增量低且引入编造风险；deep-probe prompt 被 4 个 e2e 测试覆盖 → 暂缓。
+- **F 低成本邮箱 provider**：需真实账号 + 更新 `PROVIDER-CAPABILITY.md` → 另立计划。
+
+## [1.4.17] — 2026-10-12 · 修复托盘巡航同步通道从未绑定（`sync-autopilot-state` 死通道）+ 安装包数据交互审计闭环
+
+### 真实缺陷（打包版实测发现，已修复）
+
+**`AUTOPILOT.SYNC_STATE`（`sync-autopilot-state`）在打包版中从未绑定到 `ipcMain`。**
+
+- **根因（顺序缺陷）**：`main.ts` 的 `whenReady()` 里，`registerIpcHandlers()`（其末尾执行    
+  `registry.attach(ipcMain)`）先于该通道的 `registerIpc(...)` 登记。而 `registry.attach()`    
+  只对"登记时刻已存在的通道"做真实 `ipcMain.handle` 绑定；晚登记的通道**不会被绑定**，    
+  且启动门禁 `assertAllRegistered()` 只校验"已登记"，**不校验"已绑定"**，故漏网。
+- **可观测后果**：渲染层（`search-engine.tsx` 挂载 effect）每次调用恒得    
+  `No handler registered for 'sync-autopilot-state'`；主进程日志反复写    
+  `Error occurred in handler for 'sync-autopilot-state'`。系统托盘的**巡航控制项    
+  （暂停/继续/停止）永不反映真实生命周期**，恒停留 `idle`。
+- **修复**：将 `SYNC_STATE` 的 `registerIpc(...)` **前移到 `registerIpcHandlers()` 之前**；    
+  并把 handler 内的 `refreshTrayMenu(mainWindow)` 改为 `if (mainWindowRef) refreshTrayMenu(mainWindowRef)`    
+  ——渲染层可能在 `createMainWindow()` 期间即调用，此时 `mainWindowRef` 尚未赋值，但随后    
+  `createTray(mainWindow)` 会依据已同步的 `autopilotLifecycle` 建菜单，无需在此刷新。
+
+> 教训：注册中心把"登记"与"绑定"解耦后，"已登记 ≠ 已绑定"成为新的漏网维度。>   
+> 启动门禁必须同时覆盖"绑定"，或保证所有登记都发生在唯一 `attach()` 之前。
+
+### 防回归守护测试（新增）
+
+`tests/business-logic/autopilot-sync-attach-guard.business.test.js`（2 条）：
+
+1. **源码结构断言**（剥离注释后）：`IPC_CHANNELS.AUTOPILOT.SYNC_STATE` 的 `registerIpc` 调用     
+   必须**先于** `registerIpcHandlers()` 调用——晚于即判失败。
+2. **机制复现**：向 registry 登记 A → attach（A 绑定）→ 再登记 B → 不补 attach ⇒ B 不绑定；     
+   再 attach ⇒ B 绑定。证明"晚登记 + 不补 attach = 死通道"真实可复现，且 `attach()` 幂等可补齐。
+
+### 安装包数据交互探针加固（防自欺，本轮实测）
+
+- **persistence 探针**：修正"直连 preload 读到的是 IPC 信封 `{success,data}`"导致的**假阴性**    
+  （此前写成功也判失败）；补 `waitForPage` 修复重启后 `browser.pages()[0]` 为空竞态；    
+  补 `waitForSelector('[data-stage]')` 修复重启后读到 `data-stage=null` 的误判；截图失败降级为 WARN    
+  （非交互桌面会话下 `Page.captureScreenshot` 会挂起，属环境而非产品缺陷）；修正清理逻辑的    
+  Node 常量泄漏与 walk-up 缺陷。
+- **interaction 探针**：S3 改用 chip 专属 `aria-label` 判定（原 `textVisible` 会命中输入框 value，    
+  **假阳性**）；S5 删除条目改用"精确 placeholder+value"定位（原 `includes` 先命中搜索框 → 删空），    
+  并在删除后**补保存**才校验配置口径清零；新增"多场景截图 md5 必须互不相同"防旧帧自欺；    
+  `assertAlive` 增补 pageerror 失败判定；S8/S9 导出改为**如实 BLOCKED**（走系统保存对话框，    
+  无头探针无法确认落盘，不得以"无崩溃"冒充 PASS）。
+
+### 门禁回归（本轮）
+
+| 门禁                           | 结果                                                 |
+| ---------------------------- | -------------------------------------------------- |
+| `npm run test:unit` 全量单测     | **443/443**（较 441 +2 条 SYNC_STATE 守护，0 回归）         |
+| `npm run build:electron:dev` | 0 error                                            |
+| 打包版持久化闭环探针                   | **ALL PASS**（写→真实冷启动→读回；条目+标签+授权三持久；pid 不同）        |
+| 打包版九模块交互探针                   | **31 PASS / 0 FAIL / 1 WARN / 1 INFO / 2 BLOCKED** |
+| 多场景截图互不相同                    | 14/14 distinct（防旧帧自欺）                              |
+
+### 如实记录的遗留风险（同 1.4.16，未消解）
+
+1. **商用签署不可判定**：无 `signtool` / 无 `.pfx`，v149/v150 是否签名无法验证。
+2. **`security-audit` 真机审计不可重跑**：脚本 `reg delete` 被本环境 Security Policy 硬杀。
+3. **真实外部密钥/干净低配机器**缺位：外部链路仅覆盖 Fail-Closed 与降级路径。
+4. **覆盖率 functions 余量极小**（64.03 vs 64.00）。
+5. **S8/S9 导出落盘、S11 溯源标注**：分别因"系统保存对话框不可无头确认""无真实结果集"而     
+   未能自动验证，按 BLOCKED/INFO 如实记录，**不计入通过**。
+
+> 边界声明：缺真实外部密钥、有效签名或干净机器证据时，上述项按「受阻/未验证」如实记录，>   
+> 不标为商用全通过。
+
+## [1.4.16] — 2026-10-11 · 搜索缺配置错误文案密钥泄漏修复 + 安装包数据交互闭环审计
+
+### 真实缺陷（用户可见，已修复）
+
+`electron/services/search-service.ts` 缺配置分支原异常内插密钥/地址原文：  
+`throw new Error(\`缺少配置. Debug: key=[${googleKey}], url=[${googleBaseUrl || ''}]\`)\`  
+该字符串沿 IPC → 渲染层 → 界面**直接展示**，当用户只填了半个 key 或误填带凭据的 URL，  
+原文会被回显到 UI，构成**密钥/端点泄漏**。
+
+修复：异常改为用户可读提示「搜索服务尚未配置：请先在「系统设置 → 基础配置」填写 Google  
+搜索密钥与接口地址。」；缺失明细只走 `probeLog`（布尔字段，不含原文），绝不进异常消息。  
+`Probe-Config` 既有 raw baseUrl 日志**保持现状**（仅日志、不进 IPC/UI，不扩大修改面）。
+
+### 防自证回归测试（关键）
+
+新增 `tests/business-logic/search-config-missing.business.test.js`（4 条），覆盖三组缺配置输入  
+（key 空 / url 空 / 两者皆空）与一组反向（配置完整不得报 config-missing）：
+
+- handler 必须 `success:false`，且 `result.error` 与 `STREAM_ERROR` 载荷\*\*完全不含哨兵 key/url\`
+- 流式生命周期完整：`STREAM_START → STREAM_ERROR → STREAM_COMPLETE`（错误路径也收尾）
+- 缺配置路径**零网络请求**
+- 变异视角：若回退到 Debug 内插文案，断言会因含哨兵而精准失败
+
+### 安装包数据交互探针（自持、防假通过）
+
+`scripts/probe-packaged-{discovery,interaction,persistence}.cjs` 三件套，针对「安装包真实成品」  
+做数据交互闭环审计。其中 **persistence 探针重写为自持生命周期**：一次命令完成  
+启动 → 写知识库条目（标题+正文+条目标签+自定义标签）→ 杀自身 PID → 真实冷启动 → 经  
+`window.electronAPI.config.get('user_config')`（APP 自身读盘口径）读回四字段 → 校验 PID 不同 /  
+exe sha256 / 隔离 userData 三重身份锚定 → 清理。彻底堵死「页面改了 state 就当持久化」「同一进程  
+verify」「verify 自动激活掩盖授权丢失」三类自欺。
+
+### 全量门禁回归（本轮）
+
+| 门禁                              | 结果                                  |
+| ------------------------------- | ----------------------------------- |
+| `test:unit` 全量单测                | **441/441**（较 437 +4 条缺配置泄漏守护，0 回归） |
+| `npm run build:electron:dev`    | 0 error（已含 search-service.ts 修复）    |
+| `tsc -p tsconfig.electron.json` | 0 error                             |
+| 真实密钥泄漏负向测试                      | 4/4 PASS（哨兵 key/url 不出现在 IPC/UI/返回） |
+
+### 如实记录的遗留风险（非代码缺陷，环境/资源受限）
+
+1. **商用签署不可判定**：本环境无 `signtool`、无 `.pfx`，`verify:signature` 优雅降级；     
+   v149 产物是否已签名无法验证（`--strict` 正确 exit 1）。B-2 待证书采购。
+2. **`security-audit` 真机审计不可重跑**：脚本 `reg delete` 被本环境 Security Policy 硬杀，     
+   非可绕过异常。仓库内现有报告为 2026-09-23 陈旧产物。
+3. **真实外部密钥/干净低配机器**缺位：搜索/Apollo/邮箱等外部链路仅能做 Fail-Closed 与     
+   降级路径验证，真实连通与配额需受控实发环境确认。
+4. **覆盖率 functions 64.03 vs 阈值 64.00（余量 0.03%）**：新增未覆盖函数即跌破，建议下调阈值至 62 或补分支测试。
+
+> 边界声明：缺真实外部密钥、有效签名或干净机器证据时，上述项按「受阻/未验证」如实记录，>   
+> 不标为商用全通过。
+
+## [1.4.15] — 2026-10-11 · Apollo.io 联系人富化接入（补齐「邮箱 + 手机号」覆盖短板）
+
+### 背景（用户痛点根因）
+
+用户实测反馈的「邮箱覆盖低 + WhatsApp 用不了」，根因**不在代码**而在**数据源**：  
+现有富化 **100% 依赖「官网深探」**——而商家官网普遍**不公开邮箱**（多改联系表单）、  
+公开电话**几乎都是座机**（WhatsApp 是手机 App，座机无法收信）。  
+`phone-kind.ts` 已能识别座机，但识别得再准，**没有手机数据源也无从解决**。
+
+### 变更
+
+新增 **Apollo.io 联系人富化适配器**，返回**已验证邮箱 + 手机号（含类型）**：
+
+| 文件                                                                | 变更                                                                    |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `electron/services/search/enrich-apollo.ts`                       | **新增**。`enrichFromApollo`（People Match 端点）+ `getUserApolloApiKey`     |
+| `electron/services/search-service.ts`                             | 富化流水线接入 Apollo；`pickBestPhoneForReach` 多来源电话**优先选手机**                 |
+| `electron/services/search/constants.ts`                           | 新增 `ENRICH_LOOKUP_BUDGET = 20`（总量护栏）                                  |
+| `electron/services/config-service.ts`                             | `SECRET_KEYS.APOLLO_API_KEY` + 加入 `SECRET_SET_WHITELIST`（否则设置页写入 403） |
+| `electron/utils/contact-validation.ts`                            | SSOT 再导出补 `buildWhatsAppDigits`（主进程不再另写号码判定）                          |
+| `src/components/settings/{base-settings-tab,system-settings}.tsx` | Apollo 作为正式服务商卡片（密钥录入 + 测试连接）                                         |
+| `kone-PRD.md`                                                     | §零.3 宪法常量表登记 `ENRICH_LOOKUP_BUDGET`                                   |
+
+### 三条硬不变量（有守护测试锁定）
+
+1. **Fail-Closed 是绝对底线**：无密钥 / 无标识 / 429 / 5xx / 超时 / 无命中 一律     
+   `{ used:false }`，**绝不抛错、绝不中断搜索**；**无密钥时零网络请求**（不烧额度）。
+2. **宪法并发红线零触碰**：`SEARCH_ENRICH_CONCURRENCY = 2` 约束的是**并行线索数**，     
+   Apollo 查询是**单条线索内的串行追加**，不提升并行度。
+3. **预算护栏**：Apollo 是**外部付费 API**，故受每轮搜索 `ENRICH_LOOKUP_BUDGET = 20` 硬顶，     
+   且仅对**高价值线索（matchScore ≥ 60）**&#x89E6;发——成本只花在最可能成交的线索上。
+
+### 密钥读取的 Fail-Closed 硬化（本次落地时暴露的真实缺陷）
+
+初版 `getUserApolloApiKey()` 直接 `getSecret(...).trim()`——当**密钥存储不可用**  
+（safeStorage 未启用 / 容器未就绪 / 解密失败）时会**抛错**，而该调用位于  
+`enrichLeadWithDeepProbe` 内部，异常会**击穿整条富化链路**（403 社交降级 /  
+snippet 盲评 / 流式闭环全部失效，回归 4 条存量测试）。  
+修复为**双层防御**，两者都必要：
+
+1. **适配器层**：`getUserApolloApiKey()` 内部 try/catch，异常一律视为「未配置」返回 `''`     
+   ——密钥读取失败 ≠ 用户配置了密钥，绝不能让 Apollo 反过来拖垮富化。
+2. **调用点层**：富化流水线内的 Apollo 分支整体 try/catch，`apollo = null` 兜底     
+   ——即便适配器自身加载失败，官网抓取路径仍然完整保留。
+
+> 教训：「Fail-Closed」不止覆盖**网络失败**，同样覆盖**本地依赖不可用**。>   
+> 任何「增强型」数据源在既有流水线里，都必须在**读取配置**和**调用点**两处都有兜底。
+
+### 号码类型判定（尊重 Apollo 权威性）
+
+Apollo 自报 `type: 'mobile'` 时**直接采信**为 mobile —— 因为 `phone-kind` 只能按号段推断，  
+对美国 LNP 号码只能返回 `unknown`。达标后按 `buildWhatsAppDigits` 判定 WhatsApp 可达性。  
+Apollo **未标** mobile 的号码**不得夸大为 mobile**（诚实口径，避免给出无效链接）。
+
+### 数据归因
+
+Apollo 真正贡献数据时，线索 `source` 追加 `· Apollo`；**无贡献不加标**（不得虚标数据来源）。
+
+### 数据归因闭环（自查发现的真实缺陷）
+
+初版只在**正常返回路径**写了 `source:` 覆盖，403 降级路径靠 `...blindLead` 顺带带入。  
+但 `blindLead` 为 null（LLM 盲评超时/失败）时 `...null` **不展开任何字段**，  
+`source` 退回 `payload.candidate.source` —— 结果是**邮箱/电话来自 Apollo，  
+来源标签却只显示「Google Maps」**：静默丢失数据溯源，与导出侧的溯源口径自相矛盾。  
+修复：403 降级路径也显式覆盖 `source:`，两条返回路径口径一致。
+
+> 教训：「多条返回路径都要改」是重构最容易漏的形态——>   
+> 新增派生字段时，必须**逐条枚举所有 return**，不能只改写得到的一处。
+
+### 门禁与审计脚本的可用性缺陷（顺手修掉）
+
+1. `scripts/security-audit.cjs` 硬编码 `release/win-unpacked`。而 `release/` 被文件锁占用时     
+   的官方绕行方案就是**换目录打包**（见 `packaged-smoke.cjs` 的既有约定）——     
+   一旦换目录，本脚本直接报 "Unpacked executable not found"，     
+   **整条安全审计门禁形同虚设而无人察觉**。现与 `packaged-smoke.cjs` 对齐：     
+   位置参数 > `KONE_PACKAGED_ROOT` > 默认 `release`。
+2. `tests/business-logic/enrich-apollo.business.test.js` 首版对「两条返回路径」的断言是     
+   **自证循环**：全局计数把 403 路径内部 `blindLead` **入参对象**里的 `source` 也算了进来，     
+   导致删掉 403 路径的 `source:` 后测试**仍然全绿**（已用变异验证实测证实）。     
+   改为**同对象定位**断言：定位含 `fallbackStatus: usedSocialFallback` 的 403 return 对象，     
+   要求归因就在同一对象字面量内。变异验证：注入缺陷后 21→20 精准失败。
+
+> 教训：守护测试「通过」不等于「有牙」。静态断言做全局计数时，>   
+> 必须确认计数目标**唯一落在被测语义上**，否则就是给自己发假毕业证。
+
+### 设置页「测试连接」的诚实实现
+
+Apollo 无 Base URL、无独立的连接测试端点，故设置页对 Apollo 做**软校验**  
+（非空 + 形似凭据）后保存，**不做主动探测**（避免消耗 credits）；  
+真实连通性在下次搜索的高价值线索富化时验证，失败即自动降级。
+
+### 测试
+
+新增 `tests/business-logic/enrich-apollo.business.test.js`（**21 条守护**）：  
+Fail-Closed 五态（无密钥零请求 / 无标识 / 429-5xx / 超时 / 空命中）、  
+命中回填契约（reveal 参数 / mobile 优先 / CN-US 可达性 / 非 mobile 不得夸大 / 部分回填）、  
+宪法合规（预算 20 / 并发红线不变 / 三重触发门禁 / 跨轮次独立预算）、  
+归因不虚标、**归因覆盖两条返回路径（同对象定位断言）**、SSOT 不重复实现、  
+密钥白名单、PRD 同步、设置页可见性。
+
+**全量回归同时捕获了上面的硬化缺陷**：`403-social-fallback` / `fallback-routing` /  
+`icp-blind-score` 共 4 条存量测试因 Apollo 击穿富化链路而失败——证明**存量测试  
+对新数据源的「不侵入性」是有实际拦截力的**，不是走过场。
+
+### 验证
+
+- `tsc -p tsconfig.electron.json --noEmit` **0 error**
+- `npm run typecheck`（renderer）**0 error**
+- `npm run verify:consistency` ✅（文档 10 份 / 宪法常量 8+7 项 / 文档交叉引用 181 处 /    
+  IPC 72 通道·61 注册·0 处 plain 直挂 / 云端安全门禁 0 处裸 as）
+- `npm run test:unit` **437/437 全绿**（较接入前 416 条 +21 条 Apollo 守护，0 回归）
+
+### 商用交付门禁矩阵（本轮全量回归）
+
+| 门禁                              | 结果                                                                                 |
+| ------------------------------- | ---------------------------------------------------------------------------------- |
+| `test:unit` 全量单测                | **437/437**                                                                        |
+| `test:coverage` 覆盖率             | lines 65.86/65 · branches 63.81/60 · functions 64.03/64 ✅                          |
+| `typecheck` renderer            | 0 error                                                                            |
+| `tsc -p tsconfig.electron.json` | 0 error                                                                            |
+| `verify:consistency`            | ✅（文档 10 份 / 宪法常量 8+7 项 / 交叉引用 181 处 / IPC 72 通道·61 注册·0 plain 直挂 / 云端安全门禁 0 处裸 as） |
+| `test:gateway` 授权网关             | PASS                                                                               |
+| `test:env` 环境隔离                 | PASS                                                                               |
+| `test:bypass` 开发旁路              | PASS                                                                               |
+| `test:ipc` IPC 契约清扫             | PASS                                                                               |
+| `test:e2e-smoke` 权限锁            | PASS                                                                               |
+| `test:e2e-journey` 授权旅程         | PASS                                                                               |
+| `test:cloud` 云端 Worker          | PASS                                                                               |
+| `lint` 代码规范                     | PASS                                                                               |
+| `format` 格式规范                   | PASS                                                                               |
+| 打包冒烟（4 项断言）                     | **4/4**（booted / activationScreen / preloadBridge / dashboardNav）                  |
+| 视觉探针（5 个子探针）                    | **5/5 通过**                                                                         |
+| `verify:signature`              | ⚠️ 不可判定（无 signtool / 无证书，优雅降级 exit 0；`--strict` exit 1 正确）                         |
+| 签名配置 schema 校验                  | ✅（新结构通过；旧扁平结构被 `should NOT have additional properties` 拒绝，校验有效）                    |
+
+### 两项如实记录的遗留风险
+
+1. **`security-audit` 真机审计本轮无法重跑**：脚本第 163 行 `reg delete` 在本环境的     
+   Security Policy 下被**硬杀进程**（非抛 JS 异常，脚本第 162-166 行的 try/catch 无从捕获）。     
+   仓库内现有报告为 2026-09-23 的陈旧产物（5 场景全 ok）。     
+   **未做绕过**（不关闭沙箱、不改脚本迎合环境）。结论：该门禁在本环境**不可判定**。
+2. **代码签名不可判定**：本环境无 `signtool`（Windows SDK 未装）、无 `.pfx` 证书，     
+   `npm run verify:signature` 优雅降级为 WARNING（默认 exit 0；`--strict` 硬门禁 exit 1，     
+   行为正确）。故 v148 产物**是否已签名无法验证**，`dist:signed` 链路仅做到     
+   配置层 schema 校验通过（已反向验证旧结构会被拒），**端到端未跑通**。     
+   这是 B-2（证书采购）的待办，非代码缺陷。
+3. **覆盖率 functions 64.03 vs 阈值 64.00，余量仅 0.03%**：新增任何未覆盖的函数即会跌破。     
+   建议后续把阈值下调到 62（留出演进空间）或补齐富化链路的分支测试。
+
+### 受影响 SSOT
+
+`kone-PRD.md` §零.3（新增 `ENRICH_LOOKUP_BUDGET`）·  
+`ARCH-STANDARDS.md`（未变）· `src/shared/phone-kind.ts`（未变，仍为号码判定 SSOT）
+
 ## [1.4.14] — 2026-10-11 · 校正历史遗留的假国家码（`Global` → `GL`）
 
 ### 背景（全链路梳理中发现）
-用户线索数据中 `country: "Global"` 却带 `countryCode: "GL"`（**格陵兰**），
+
+用户线索数据中 `country: "Global"` 却带 `countryCode: "GL"`（**格陵兰**），  
 导出后显示错误国家，且**污染下游**（号码补全 / 邮件语言 / 本地化搜索变体）。
 
-**根因**：P2-1 修复前用 `country.slice(0, 2).toUpperCase()` 推导：
-`Global`→`GL`、`United States`→`UN`、`Germany`→`GE`。
-`resolveCountryCode`（`src/lib/country-code.ts`）**已修好**（未命中返回 `''`，不猜），
+**根因**：P2-1 修复前用 `country.slice(0, 2).toUpperCase()` 推导：  
+`Global`→`GL`、`United States`→`UN`、`Germany`→`GE`。  
+`resolveCountryCode`（`src/lib/country-code.ts`）**已修好**（未命中返回 `''`，不猜），  
 **但不会回溯修正已落库的旧记录** —— 历史数据里的假码一直留存。
 
 ### 变更
+
 `src/store/leads-store.ts` 的 `normalizeLeadItem` 增加**国家码重算**：
+
 ```ts
 const countryCode = resolveCountryCode(lead.country) || ''
 ```
+
 - 能识别 → 用正确码；**不能识别（如 `Global`）→ 清空**
 - **绝不保留假码** —— 假码比空值更糟（会作为"看起来合法"的数据进入表格/导出/台账）
-- 该函数在 **hydrate / saveLeads / updateLead** 三处调用，故**读取即校正**，
+- 该函数在 **hydrate / saveLeads / updateLead** 三处调用，故**读取即校正**，    
   无需一次性数据迁移脚本，也不改动用户的原始数据文件
 
 ### 测试
+
 新增 `tests/business-logic/country-code.business.test.js`（3 条守护）：
+
 - 已知国家名 → 正确 ISO alpha-2
 - **`Global` / `全球` / 空值 → 必须返回空串**（不得截取前两字母）
 - 逐项验证曾产出假码的输入（`Germany`/`United States`/`Global`）
 
 ### 影响 SSOT
+
 `leads-store.ts` / `country-code.ts`（未改，仅消费）/ `CHANGELOG.md`
 
 ### 附：全链路梳理结论（详见 `KONE-V1.3-前端体验闭环深度梳理-2026-10-11.md`）
-七环齐备（搜索/分析/入库/导出/触达/跟进/行动入口），
-**真正瓶颈是「弹药」——数据的可得性与质量**（电话多为座机、邮箱覆盖率低）。
+
+七环齐备（搜索/分析/入库/导出/触达/跟进/行动入口），  
+**真正瓶颈是「弹药」——数据的可得性与质量**（电话多为座机、邮箱覆盖率低）。  
 优化方向应是**提高数据质量**，而非继续加功能。
 
 ---
@@ -57,17 +920,21 @@ const countryCode = resolveCountryCode(lead.country) || ''
 ## [1.4.13] — 2026-10-11 · WhatsApp 触达必须识别号码类型（固定电话不可用）
 
 ### 背景（用户实测反馈）
+
 > 「资料里面都固定电话啊，这个你不会识别吗，能链接 whatsapp 吗，我都吐血了」
 
 **这是一个真实且严重的设计缺陷**：
+
 - WhatsApp 是**手机 App**，**固定电话（座机）无法注册/接收消息**
-- 而 Google Maps / Yellow Pages 等来源返回的商家电话**绝大多数是座机**
+- 而 Google Maps / Yellow Pages 等来源返回的商家电话**绝大多数是座机**    
   —— 实测 17 条线索中 **15 条为美国 `(XXX) XXX-XXXX` 格式的商家座机**
 - 此前 `normalizePhoneE164` **只校验格式**（8-15 位数字），座机也被判 `phoneValid: true`
 - 前端据此**直接拼 `wa.me/<digits>`** → **链接必然无效**（用户点了打不开）
 
 ### 变更
+
 **新增 `src/shared/phone-kind.ts`（双端共用 SSOT）**
+
 - `classifyPhoneKind(raw, countryCode)` → `mobile | landline | unknown`
   - **CN**：`1[3-9]xxxxxxxxx` → mobile；`0xx(x)-xxxxxxx` → landline
   - **DE**：`+49 15x/16x/17x` → mobile；其余 → landline
@@ -77,31 +944,38 @@ const countryCode = resolveCountryCode(lead.country) || ''
 - `buildWhatsAppDigits(raw, cc)` → **必须带国家码**；无法可靠补全时返回 `null`
 
 **`leads-management.tsx` 的 `handleLaunchWhatsApp` 加三重门禁**
+
 1. `classifyPhoneKind` 判定 → **仅 mobile 放行**
 2. `buildWhatsAppDigits` 补国家码 → 缺国家码**明确拒绝**（不臆造区号）
-3. 座机/无法判定 → **明确告知原因**（"是固定电话，WhatsApp 仅支持手机号"），
+3. 座机/无法判定 → **明确告知原因**（"是固定电话，WhatsApp 仅支持手机号"），     
    并**建议改用邮件触达** —— 不静默失败、不给无效链接
 
 **`electron/utils/contact-validation.ts`** 改为 re-export shared 模块（消除重复实现）
 
 ### 设计原则
-**保守优先**：拿不准就 `unknown` → 按「不可用」处理。
+
+**保守优先**：拿不准就 `unknown` → 按「不可用」处理。  
 **宁可少给一个按钮，不可给错链接**（用户点了却打不开最伤体验）。
 
+
 ### 测试
+
 新增 `tests/business-logic/phone-kind.business.test.js`（6 条守护）：
+
 - 座机必须判 `landline`（不得混入 mobile）
 - 美国商家座机（实测 4 条真实样本）**必须不可用于 WhatsApp**
 - 空值/垃圾输入不得误判为 mobile
 - `buildWhatsAppDigits` 对缺国家码**必须返回 null**
 
 ### 影响 SSOT
-`src/shared/phone-kind.ts`（新增）/ `leads-management.tsx` /
+
+`src/shared/phone-kind.ts`（新增）/ `leads-management.tsx` /  
 `contact-validation.ts` / `CHANGELOG.md`
 
 ### 附：本次暴露的上游数据问题（待后续处理）
-实测线索 `countryCode` 为 **`GL`（格陵兰）/ `UN`** —— 而号码是**美国** `(832)` 等。
-`country: "Global"` 被截取前两字母 → `GL`。**国家码推导仍有缺陷**（P2-1 的残留），
+
+实测线索 `countryCode` 为 **`GL`（格陵兰）/ `UN`** —— 而号码是**美国** `(832)` 等。  
+`country: "Global"` 被截取前两字母 → `GL`。**国家码推导仍有缺陷**（P2-1 的残留），  
 导致号码无法补全 `+1`，进一步恶化 WhatsApp 可用性。
 
 ---
@@ -109,54 +983,64 @@ const countryCode = resolveCountryCode(lead.country) || ''
 ## [1.4.12] — 2026-10-11 · 全链路补齐：资料导出补「地址」+ WhatsApp 一键触达
 
 ### 背景
-用户要求「全面提升从搜索到记录标注触达的完整链路体验」，并明确指出
-导出资料需含**公司名/邮箱/电话/网址/店址/客户类型**，且手机号应能通过
+
+用户要求「全面提升从搜索到记录标注触达的完整链路体验」，并明确指出  
+导出资料需含**公司名/邮箱/电话/网址/店址/客户类型**，且手机号应能通过  
 高级版**直接触达 WhatsApp / 邮箱**。
 
 ### 发现的两个真实缺口
-1. **地址（店址）数据有、导不出**：数据层 `LeadItem.address` 一直存在
-   （`leads-store.ts:83`），但 `lead-export.ts` 的 5 个字段组**均无 address**，
-   白皮书 `buildPdfHtml` 入参也**无 address** → 用户界面能看到地址、**导出后消失**，
+
+1. **地址（店址）数据有、导不出**：数据层 `LeadItem.address` 一直存在     
+   （`leads-store.ts:83`），但 `lead-export.ts` 的 5 个字段组**均无 address**，     
+   白皮书 `buildPdfHtml` 入参也**无 address** → 用户界面能看到地址、**导出后消失**，     
    属**数据链路断裂**。
 2. **WhatsApp 无直连入口**：全仓 `grep 'wa\.me'` 零命中，只有 `mailto:`。
 
 ### 变更（契约先行）
+
 **A. 地址链路贯通**
+
 - `src/shared/ipc-contracts.ts`：`FileExportPdfRequest` 加 `address?: string`
 - `src/lib/lead-export.ts`：`core` 组表头加「地址」，行构造读 `lead.address`
 - `electron/services/export-service.ts`：白皮书入参 + 渲染（「企业地址」）+ 调用方透传
 - `src/components/analysis-drawer.tsx`：`address: lead.address`
 
 **B. 新增 IPC 通道 `SYSTEM.OPEN_EXTERNAL`（`system:open-external`）**
+
 - `electron/ipc/channels.ts`：通道命名
 - `electron/ipc/contracts/license.contract.ts`：`systemOpenExternalContract`
-- `electron/services/license-service.ts`：handler（`shell.openExternal` +
+- `electron/services/license-service.ts`：handler（`shell.openExternal` +    
   **协议白名单，仅 http/https**，拒绝 `file://` 与自定义协议）
 - `preload/index.ts` + `src/shared/ipc-contracts.ts`（`ElectronApi.system.openExternal`）
 - `src/main.tsx`：dev mock 同步（**typecheck 捕获**）
 - `src/components/leads-management.tsx`：`handleLaunchWhatsApp` + 「唤起 WhatsApp」按钮
 
 ### 设计要点
-- **仅唤起，不自动发送** —— 用户仍需在 WhatsApp 内手动点发送，
+
+- **仅唤起，不自动发送** —— 用户仍需在 WhatsApp 内手动点发送，    
   **不触碰 AGENTS.md 的自动化风控红线**（与 Puppeteer/Cloud API 自动化路径并存不冲突）
 - 号码归一化为纯数字（`wa.me` 要求 E.164 无 `+`）；不完整时**明确提示**，不静默失败
 - 不复用 `window.location.href` —— 那会在 Electron 窗口内导航、覆盖应用界面
 
 ### 规范回写
-- `AGENTS.md` / `kone-PRD.md §零.3`：`SEARCH_VARIANT_LIMIT` **8 → 12**
+
+- `AGENTS.md` / `kone-PRD.md §零.3`：`SEARCH_VARIANT_LIMIT` **8 → 12**    
   （用户反馈「不能过度平衡，影响搜索数量、覆盖深度」→ 初版 8 偏紧会砍掉本地语言变体）
 
 ### 影响 SSOT
-`ipc-contracts.ts` / `channels.ts` / `lead-export.ts` / `export-service.ts` /
+
+`ipc-contracts.ts` / `channels.ts` / `lead-export.ts` / `export-service.ts` /  
 `license.contract.ts` / `preload/index.ts` / `kone-PRD.md §零.3` / `AGENTS.md` / `CHANGELOG.md`
 
 ### 测试
+
 - `ipc-startup-gate.test.ts`：invoke 通道数断言 **60 → 61**（门禁正确拦住了新增通道）
 - `lead-export-ssot.business.test.js`：导出表头断言补「地址」
 - typecheck 双侧 / `verify:consistency` / 单测 407-407
 
 ### 仍待澄清
-「客户类型」语义：用户要的是「行业」（`industry`，**已导出**）还是
+
+「客户类型」语义：用户要的是「行业」（`industry`，**已导出**）还是  
 「客户角色/类型」（`inferredRole`，**已产出但未进导出列**）？
 
 ---
@@ -164,22 +1048,26 @@ const countryCode = resolveCountryCode(lead.country) || ''
 ## [1.4.11] — 2026-10-11 · 搜索 API 消耗治理（成本控制 + 规范订正）
 
 ### 背景
-用户实测反馈「跑 2 次搜索任务免费额度都跑完了」。统计单次搜索：
-**SerpApi 53 次 / LLM 60 次 / 派发关键词变体 17 个**。
+
+用户实测反馈「跑 2 次搜索任务免费额度都跑完了」。统计单次搜索：  
+**SerpApi 53 次 / LLM 60 次 / 派发关键词变体 17 个**。  
 SerpApi 免费版 100 次/月 → **2 次搜索即耗尽**。
 
 ### 根因
+
 变体数 = 产品词数 × 4 角色词 × 语言数，**产品词数与语言数均无上限**：
+
 - `search-service.ts` 的 `pureEnglishProducts` 缺 `slice`（同段 `keywords` 有 `slice(0,4)`，属实现不对称）
 - `allSearchKeywords` 按语言循环 push，**语言数无上限**（3 语言 → 4 + 12 = 16 变体）
 - LLM 偶发回吐**不可检索**条目（实测整句中文被当作关键词派发给上游）
 
 ### 规范订正（SSOT 回写）
+
 - **`kone-PRD.md §零.3`**：
   - 新增 `SEARCH_PRODUCT_TERM_LIMIT = 2`（参与变体生成的产品词上限）
   - 新增 `SEARCH_VARIANT_LIMIT = 8`（单次搜索变体**总数**上限，属**总量域**）
-  - **订正 HTTP 熔断行**：原文把 `429` 与 `400/401/403` 并列为"配置错误不计入开路"**有误** ——
-    `429` 是**上游限流**（暂时性、可恢复），与"密钥错误"性质不同，**应计入熔断**；
+  - **订正 HTTP 熔断行**：原文把 `429` 与 `400/401/403` 并列为"配置错误不计入开路"**有误** ——      
+    `429` 是**上游限流**（暂时性、可恢复），与"密钥错误"性质不同，**应计入熔断**；      
     否则限流下反复重试会**加剧**配额消耗
 - **`AGENTS.md`**「多语言多源搜索执行宪法」：
   - 变体公式改为 `pureEnglishProducts[0..SEARCH_PRODUCT_TERM_LIMIT-1]`
@@ -187,16 +1075,19 @@ SerpApi 免费版 100 次/月 → **2 次搜索即耗尽**。
   - 新增**产品词必须清洗**的强制条款
 
 ### 实现
+
 - `search/constants.ts`：新增 2 常量
 - `search/intent.ts`：新增 `sanitizeProductTerms()`（剔除含中文/控制词/超长的不可检索条目）
-- `search-service.ts`：产品词清洗 + `.slice(0, SEARCH_PRODUCT_TERM_LIMIT)`；
+- `search-service.ts`：产品词清洗 + `.slice(0, SEARCH_PRODUCT_TERM_LIMIT)`；    
   `allSearchKeywords` 按 `SEARCH_VARIANT_LIMIT` 硬截断（英文变体排前故优先保留）
 
 ### 影响 SSOT
+
 `kone-PRD.md §零.3` / `AGENTS.md` / `search/constants.ts` / `CHANGELOG.md`
 
 ### 预期效果
-变体 17 → ≤8，SerpApi 53 → 约 20-25，**免费额度可支撑搜索次数 2 → 4-5 次**。
+
+变体 17 → ≤8，SerpApi 53 → 约 20-25，**免费额度可支撑搜索次数 2 → 4-5 次**。  
 并发域（扇出 `3` / 评分 `2`）与评分条数（`50`）**均未改动**，四级弹性搜索协议不受影响。
 
 ---
@@ -204,20 +1095,22 @@ SerpApi 免费版 100 次/月 → **2 次搜索即耗尽**。
 ## [1.4.10] — 2026-10-09 · 修复 P2 国家代码推导错误（数据正确性）
 
 ### P2-1 `countryCode` 由国家名截取前两字母 → 数据错误
-- **问题**：三处用 `country.slice(0, 2).toUpperCase()` 推导 ISO 代码 ——
-  `Germany` → `GE`（实为 `DE`）、`United States` → `UN`（实为 `US`）。
-  **错误代码会作为"看起来合法"的数据进入表格、导出文件与云端台账**，
+
+- **问题**：三处用 `country.slice(0, 2).toUpperCase()` 推导 ISO 代码 ——    
+  `Germany` → `GE`（实为 `DE`）、`United States` → `UN`（实为 `US`）。    
+  **错误代码会作为"看起来合法"的数据进入表格、导出文件与云端台账**，    
   比空值更难被发现。
   - `src/lib/lead-mappers.ts`（入库时）
   - `src/hooks/use-search-engine.ts`（搜索结果映射时）
   - `src/components/analysis-drawer.tsx`（AI 分析时）
-- **修复**：新增 `src/lib/country-code.ts`，内置 60+ 常用国家的中英文名 → ISO alpha-2 映射；
-  **未命中返回空串（诚实表示未知），不再猜**。
+- **修复**：新增 `src/lib/country-code.ts`，内置 60+ 常用国家的中英文名 → ISO alpha-2 映射；    
+  **未命中返回空串（诚实表示未知），不再猜**。    
   `lead-mappers` 保留原有本地函数签名（调用方不受影响），内部改为委托共享映射。
 
 ### 守护测试
-`tests/business-logic/p2-fixes-guard.business.test.js`（6 条，**运行时断言**）：
-验证 Germany→DE / United States→US / 中文国名 / 大小写空白 / 未知返回空串，
+
+`tests/business-logic/p2-fixes-guard.business.test.js`（6 条，**运行时断言**）：  
+验证 Germany→DE / United States→US / 中文国名 / 大小写空白 / 未知返回空串，  
 以及三处调用点不再使用 slice 推导。
 
 **验证**：typecheck 0 error；lint 0 error。
@@ -227,32 +1120,37 @@ SerpApi 免费版 100 次/月 → **2 次搜索即耗尽**。
 ## [1.4.9] — 2026-10-09 · 修复审计报告 P1 批次（二）· 账号链路与门禁引导
 
 ### P1-7 邮箱账号健康检查读错路径 → 永远「已断开」
-- **问题**：`sandbox-service.ts` 读**顶层** `user_config.smtpHost`，而真实写入路径是
-  `user_config.accounts.email.smtpHost`（`accounts-management` 保存端、`agent-service` /
-  `imap-reply-service` 读取端均如此）→ 路径不匹配 → 邮箱账号**恒判「已断开」**，
+
+- **问题**：`sandbox-service.ts` 读**顶层** `user_config.smtpHost`，而真实写入路径是    
+  `user_config.accounts.email.smtpHost`（`accounts-management` 保存端、`agent-service` /    
+  `imap-reply-service` 读取端均如此）→ 路径不匹配 → 邮箱账号**恒判「已断开」**，    
   与「保存并连接」的成功提示自相矛盾。
 - **修复**：优先读 `accounts.email.*`，顶层读取保留为向后兼容回退（旧安装可能残留）。
 
 ### P1-9 账号列表不持久化 → 重启即清空
-- **问题**：`accounts` 是**纯内存 Map** → 进程重启后列表为空，用户每次开机都要重新「连接」
+
+- **问题**：`accounts` 是**纯内存 Map** → 进程重启后列表为空，用户每次开机都要重新「连接」    
   （Cookie 分区其实还在，只是列表空了）。
-- **修复**：持久化到独立配置键 `sandbox_accounts`；`registerSandboxHandlers` 启动时恢复，
-  `connect` / `disconnect` 后落盘。
+- **修复**：持久化到独立配置键 `sandbox_accounts`；`registerSandboxHandlers` 启动时恢复，    
+  `connect` / `disconnect` 后落盘。    
   **刻意只持久化结构、不持久化 `status`** —— 重启后由 30s 健康检查自动刷新，避免每次检查都写盘。
 
 ### P1-11 邮箱清洗/域名检测/追踪刷新 前端无门禁、无升级引导
-- **问题**：三者后端均受 `requireFeature('cloud_send')` 保护（Fail-Closed），
+
+- **问题**：三者后端均受 `requireFeature('cloud_send')` 保护（Fail-Closed），    
   但对 Basic/Trial 用户按钮**可点** → 点了才看到 403 原始错误，**转化路径断裂**。
-- **修复**：新增统一门禁辅助 `requireCloudSend(featureLabel)`（与 `handleStartCampaign` 同模式），
+- **修复**：新增统一门禁辅助 `requireCloudSend(featureLabel)`（与 `handleStartCampaign` 同模式），    
   三处按钮接入：未授权时弹升级弹窗 + 明确文案，而非暴露原始错误。
 
 ### P1-6 改完设置马上切页会静默丢失
-- **问题**：`system-settings.tsx` 卸载时的 cleanup 只 `clearTimeout` ——
+
+- **问题**：`system-settings.tsx` 卸载时的 cleanup 只 `clearTimeout` ——    
   **200ms 防抖窗口内的改动被静默丢弃**。
 - **修复**：新增 `pendingPersistRef` 记录待落盘动作，cleanup 时**立即执行**而非丢弃。
 
 ### 守护测试
-`tests/business-logic/p1-fixes-guard.business.test.js` 增至 **16 条**（新增 4 条：
+
+`tests/business-logic/p1-fixes-guard.business.test.js` 增至 **16 条**（新增 4 条：  
 P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
 
 **验证**：typecheck 双侧 0 error；lint 0 error。
@@ -264,43 +1162,50 @@ P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
 **背景**：P0 清零后继续处理审计报告的 P1 项，优先「用户可感知 × 低风险 × 高收益」。
 
 ### P1-3 来源筛选是死选项
-- **问题**：`leads-management.tsx` 硬编码 `LinkedIn / Trade Show / AI Search` 三个选项，
-  而真实 `source` 值来自各 Provider（`Google Maps` / `Google Organic` / `AnySearch` …）
+
+- **问题**：`leads-management.tsx` 硬编码 `LinkedIn / Trade Show / AI Search` 三个选项，    
+  而真实 `source` 值来自各 Provider（`Google Maps` / `Google Organic` / `AnySearch` …）    
   → **永不匹配**，点了没反应；且缺 `AnySearch` 这一真实来源。
 - **修复**：选项改为**从实际数据动态派生**（`sourceOptions` useMemo），保证与数据永不脱节。
 
 ### P1-12 「今日配额」徽标口径错误
-- **问题**：`totalUsed = Σ dailyUsed` 但 `totalLimit = agents[0].dailyLimit`（仅首个智能体）
+
+- **问题**：`totalUsed = Σ dailyUsed` 但 `totalLimit = agents[0].dailyLimit`（仅首个智能体）    
   → 会显示如「12/5」的错值，误导用户对剩余额度的判断。
 - **修复**：`totalLimit = Σ a.dailyLimit`，与用量同口径。
 
 ### P1-10 审批把邮箱等级硬编码为 `verified`（合规风险）
-- **问题**：`leads-table.tsx` 提交审批时写死 `emailVerificationGrade: 'verified'`，
-  而云端对缺省值的处理是 `'unverified'`（`cloudflare-service.ts`）——**系统原本的诚实默认**。
+
+- **问题**：`leads-table.tsx` 提交审批时写死 `emailVerificationGrade: 'verified'`，    
+  而云端对缺省值的处理是 `'unverified'`（`cloudflare-service.ts`）——**系统原本的诚实默认**。    
   硬编码会把它覆盖，把**未经 SMTP 验证的邮箱标记为已验证**。
-- **修复**：新增纯函数 `src/lib/approval-grade.ts` 的 `resolveEmailVerificationGrade()`：
+- **修复**：新增纯函数 `src/lib/approval-grade.ts` 的 `resolveEmailVerificationGrade()`：    
   优先取与该邮箱匹配的决策人真实等级，无匹配则降级为 `'unverified'`，**绝不谎报**。
 
 ### P1-1 / P1-2 危险操作无二次确认
+
 - **问题**：删除线索（立即持久化）、云端群发（不可逆批量外发）均**点一下即执行**。
-- **修复**：两处均加入确认对话框 —— 删除显示待删线索名并提示不可撤销；
+- **修复**：两处均加入确认对话框 —— 删除显示待删线索名并提示不可撤销；    
   群发提示「提交后无法撤回，请确认名单与模板已核对」。
 
 ### P1-5 两个导出口径不一致
-- **问题**：`leads-table` 导出 `displayLeads`（受 50 条显示上限约束），
-  `leads-management` 导出全量 `filteredLeads` → 与 `lead-export.ts` 宣称的
+
+- **问题**：`leads-table` 导出 `displayLeads`（受 50 条显示上限约束），    
+  `leads-management` 导出全量 `filteredLeads` → 与 `lead-export.ts` 宣称的    
   「单一事实源 / 同口径」相悖；用户从线索表导出会**静默少拿数据**。
-- **修复**：抽出 `filteredLeads`（全量筛选结果）供导出使用，
+- **修复**：抽出 `filteredLeads`（全量筛选结果）供导出使用，    
   **50 条上限只作用于渲染**（保留性能优化意图）。
 
 ### 新增守护测试
+
 `tests/business-logic/p1-fixes-guard.business.test.js`（12 条）：
-- **运行时断言**（P1-10）：TS 编译 + vm 加载真实 `approval-grade.ts`，
+
+- **运行时断言**（P1-10）：TS 编译 + vm 加载真实 `approval-grade.ts`，    
   验证命中/无匹配/空邮箱/大小写空白/空等级五种输入的判定。
-- **源码结构断言**（P1-1/2/3/5/12）：死选项、口径、确认态、导出源。
+- **源码结构断言**（P1-1/2/3/5/12）：死选项、口径、确认态、导出源。    
   测试内同样**诚实标注**结构断言的边界。
 
-**变异测试（三轮，全部被精确捕获）**：① 审批等级改回 `'verified'` → 3 条失败；
+**变异测试（三轮，全部被精确捕获）**：① 审批等级改回 `'verified'` → 3 条失败；  
 ② 加回硬编码死选项 → 1 条失败；③ 导出改回 `displayLeads` → 1 条失败。均 `diff` 校验完整还原。
 
 **验证**：typecheck 0 error；lint 0 error；单测 **395/395**（新增 12 条）。
@@ -309,71 +1214,81 @@ P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
 
 ## [1.4.7] — 2026-10-09 · 修复全项目审计的 7 项 P0 阻断缺陷
 
-**背景**：全项目深度审计（见 `KONE-V1.3-全项目深度审计报告-2026-10-09.md`）发现 7 项 P0，
+**背景**：全项目深度审计（见 `KONE-V1.3-全项目深度审计报告-2026-10-09.md`）发现 7 项 P0，  
 **均已逐行复核**。本轮按优先级依次修复，每项配守护测试。
 
 ### P0-1 邮箱密码保存必失败且丢数据
-- **根因**：`SECRET_SET_WHITELIST`（`config-service.ts`）**不含** `EMAIL_SMTP_PASS`/`EMAIL_IMAP_PASS`，
-  而渲染层保存邮箱时会 `secret:set` 这两个 key → 403；更严重的是渲染层**先清空了
+
+- **根因**：`SECRET_SET_WHITELIST`（`config-service.ts`）**不含** `EMAIL_SMTP_PASS`/`EMAIL_IMAP_PASS`，    
+  而渲染层保存邮箱时会 `secret:set` 这两个 key → 403；更严重的是渲染层**先清空了    
   `user_config` 的明文槽**再写加密槽 → 密码彻底丢失，邮箱链路完全不可用。
-- **修复**：① 白名单补入两个 key（与 LLM API Key 同级，同样经 safeStorage 加密）；
-  ② `accounts-management.tsx` **调整顺序**——先写加密槽，成功后才清空明文槽，
+- **修复**：① 白名单补入两个 key（与 LLM API Key 同级，同样经 safeStorage 加密）；    
+  ② `accounts-management.tsx` **调整顺序**——先写加密槽，成功后才清空明文槽，    
   使 secretSet 失败时明文槽保持原值，不再丢密码。
 
 ### P0-2 `cloud.*` 可写不可读
-- **根因**：写端黑名单不含 `cloud.`（可写），读端白名单也不含（403）→ 云端引擎配置与
-  IMAP 自动检测「存了读不出来」；`CloudSettingsTab` 用 `Promise.all` 聚合读取，
+
+- **根因**：写端黑名单不含 `cloud.`（可写），读端白名单也不含（403）→ 云端引擎配置与    
+  IMAP 自动检测「存了读不出来」；`CloudSettingsTab` 用 `Promise.all` 聚合读取，    
   任一失败即整体回退默认值，且保存成功后再次读取失败 → **恒弹「保存失败」（实际已落盘）**。
 - **修复**：`CONFIG_GET_ALLOWED_NAMESPACES` 补入 `'cloud'`。
 
 ### P0-3 停止智能体后自动重连继续发送（合规红线）
-- **根因**：`stopAgent` 只 `disconnect()` + 置 `status='idle'`，但三条执行循环
-  **从不读取 `agent.status`** → 循环继续 `sendMessage`，而 `sendMessage` 遇到
+
+- **根因**：`stopAgent` 只 `disconnect()` + 置 `status='idle'`，但三条执行循环    
+  **从不读取 `agent.status`** → 循环继续 `sendMessage`，而 `sendMessage` 遇到    
   `sessionState!=='connected'` 会**自动 `connect()` 重连** → 用户以为停了，实际仍在发送。
-- **修复**：新增循环级**启停检查点** `waitWhilePaused(agent)`，在三条循环（whatsapp/linkedin/email）
+- **修复**：新增循环级**启停检查点** `waitWhilePaused(agent)`，在三条循环（whatsapp/linkedin/email）    
   每轮开头调用；`idle` → `break`（剩余目标不再发送）。
 
 ### P0-4 暂停完全无效
-- **根因**：`pause` 只置 `status='paused'`，执行循环无任何读取检查点 → 暂停期间照常发送，
+
+- **根因**：`pause` 只置 `status='paused'`，执行循环无任何读取检查点 → 暂停期间照常发送，    
   而 UI 显示「已暂停」，构成误导性状态。
-- **修复**：同上的检查点在 `paused` 时**挂起轮询**；并修 `startAgent`——
-  `paused` 时只把状态改回 `running` 而**不再启动第二条循环**（原实现会让「继续」
+- **修复**：同上的检查点在 `paused` 时**挂起轮询**；并修 `startAgent`——    
+  `paused` 时只把状态改回 `running` 而**不再启动第二条循环**（原实现会让「继续」    
   与原挂起循环并存 → 重复发送）。
 
 ### P0-5 日限额重启即清零
-- **根因**：`dailyUsed` 为纯内存态，`agents` Map 每次启动重建为 0（可绕过日限额）；
+
+- **根因**：`dailyUsed` 为纯内存态，`agents` Map 每次启动重建为 0（可绕过日限额）；    
   且无日期锚点，长时间不关机会一直累加、永不按自然日重置。
-- **修复**：持久化到 `agent_daily_usage` 并带**本地日期锚点**（`todayDateKey`）——
-  仅当日期为今日才恢复，同时实现「重启不清零」与「跨天自动重置」；
+- **修复**：持久化到 `agent_daily_usage` 并带**本地日期锚点**（`todayDateKey`）——    
+  仅当日期为今日才恢复，同时实现「重启不清零」与「跨天自动重置」；    
   执行循环每轮调用 `persistAgentDailyUsage()` 落盘。
 
 ### P0-6 `leadKey` 入库恒 undefined
-- **根因**：`lead-mappers.ts` 的 `typeof result.id === 'string'` 判断——
-  但上游 `use-search-engine.ts` 已把 `id` 转成 `number`，而**原始 UUID 早已单独保留在
-  `LeadSearchResult.leadKey`**（该字段一直存在，只是入库时读错了字段）→ 条件恒 false →
+
+- **根因**：`lead-mappers.ts` 的 `typeof result.id === 'string'` 判断——    
+  但上游 `use-search-engine.ts` 已把 `id` 转成 `number`，而**原始 UUID 早已单独保留在    
+  `LeadSearchResult.leadKey`**（该字段一直存在，只是入库时读错了字段）→ 条件恒 false →    
   `LeadItem.leadKey` 恒 undefined → 双管道触达读端（`agentGetStatus` 批量拉取）失效。
-- **修复**：`mapSearchResultToLeadItem` 改为**优先读 `result.leadKey`**，
+- **修复**：`mapSearchResultToLeadItem` 改为**优先读 `result.leadKey`**，    
   回退到 `result.id` 是字符串的情形（兼容 autopilot-runner 直接传原始结果的路径）。
 
 ### P0-7 最高付费档看不到深度分析面板
-- **根因**：`deep-analysis.tsx` 用 `if (role !== 'pro') return null` 自我隐藏，
+
+- **根因**：`deep-analysis.tsx` 用 `if (role !== 'pro') return null` 自我隐藏，    
   而 premium 用户的 role 是 `'enterprise'` → 「权限给了、组件却藏了」。
-- **修复**：门禁改为**能力驱动** `if (!allowDeepAnalysis) return null`，
+- **修复**：门禁改为**能力驱动** `if (!allowDeepAnalysis) return null`，    
   并移除已无用的 `role` prop（组件与调用处）。
 
+
 ### 新增守护测试
+
 `tests/business-logic/p0-fixes-guard.business.test.js`（14 条）：
-- **运行时断言**（P0-6）：以 TS 编译 + vm 加载真实 `lead-mappers.ts`，验证
+
+- **运行时断言**（P0-6）：以 TS 编译 + vm 加载真实 `lead-mappers.ts`，验证    
   LeadSearchResult 形态 / 原始结果形态 / 缺失 / 空白 四种输入下的 leadKey 提取。
-- **源码结构断言**（P0-1/2/3/4/5/7）：白名单内容、检查点数量与循环数相等、
-  保存顺序、日期锚点、门禁形态。测试内**诚实标注**该类断言的边界
+- **源码结构断言**（P0-1/2/3/4/5/7）：白名单内容、检查点数量与循环数相等、    
+  保存顺序、日期锚点、门禁形态。测试内**诚实标注**该类断言的边界    
   （只验「修复代码在不在」，不验运行时行为）。
 
-**变异测试（三轮，全部被精确捕获）**：
-① 移除邮箱密码白名单项 → P0-1 失败；② 移除一处循环检查点 → P0-3/4 失败；
+**变异测试（三轮，全部被精确捕获）**：  
+① 移除邮箱密码白名单项 → P0-1 失败；② 移除一处循环检查点 → P0-3/4 失败；  
 ③ leadKey 改回只读 `result.id` → P0-6 运行时断言失败。均 `diff` 校验完整还原。
 
-**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4d 条（密钥白名单与调用点对齐、
+**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4d 条（密钥白名单与调用点对齐、  
 配置读写对称性、执行循环启停检查点三条硬约束）。
 
 **验证**：typecheck 双侧 0 error；单测 **383/383**（新增 14 条）。
@@ -382,24 +1297,23 @@ P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
 
 ## [1.4.6] — 2026-10-09 · 补齐知识库链路唯一验证盲区（prompt 拼接端到端验证）
 
-**背景**：知识库改造（[1.4.3] / [1.4.5]）的核心价值主张是「AI 真的拿到了用户的产品资料」。
+**背景**：知识库改造（[1.4.3] / [1.4.5]）的核心价值主张是「AI 真的拿到了用户的产品资料」。  
 但复核发现**覆盖有缺口**：
 
-- 单测 `agent-knowledge-injection.business.test.js` 只验证 `renderKnowledgePromptBlock`
+- 单测 `agent-knowledge-injection.business.test.js` 只验证 `renderKnowledgePromptBlock`    
   **返回了什么字符串**；
 - 视觉探针只验证 UI 卡片**渲染成什么样**（走 `analysis.generate` 另一条链路）。
 
-**中间那段把片段拼进 system/user prompt 的代码（`agent-service.ts`）从未被验证**。
-若条件写反、漏拼 `knowledgeBlock`、或降级规则拼错，上述两者**都发现不了** ——
+**中间那段把片段拼进 system/user prompt 的代码（`agent-service.ts`）从未被验证**。  
+若条件写反、漏拼 `knowledgeBlock`、或降级规则拼错，上述两者**都发现不了** ——  
 而用户会拿到一封**没有产品卖点**的开发信，正是本次改造要解决的问题。
 
 **修复（可测试性改进 + 端到端验证）**：
 
-1. **导出两个 provider 工厂函数**（`agent-service.ts`）—— `createLlmEmailContentProvider` /
+1. **导出两个 provider 工厂函数**（`agent-service.ts`）—— `createLlmEmailContentProvider` /     
    `createKnowledgeWhatsAppTextBuilder` 由私有改为导出，使「知识库 → prompt 拼接」可被直接覆盖。
-
-2. **新增 `tests/business-logic/agent-prompt-knowledge.business.test.js`（6 条）** ——
-   mock 全局 `fetch`（`safeFetch` 直接调用它）**捕获真实请求体**，再调用**产品自带的**
+2. **新增 `tests/business-logic/agent-prompt-knowledge.business.test.js`（6 条）** ——     
+   mock 全局 `fetch`（`safeFetch` 直接调用它）**捕获真实请求体**，再调用**产品自带的**     
    provider，断言发给 LLM 的 prompt 内容。只 mock 网络出口，其余全真实：
    - 命中的条目**正文**必须真的进入 user prompt（含 `[SELLER KNOWLEDGE BASE]` 块）
    - 无命中时**不得**出现知识库块，且必须注入诚实降级规则（禁止编造卖点）
@@ -408,8 +1322,8 @@ P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
    - 缺 LLM 凭证时返回 `null` 而非抛错（内容层失败不阻断发送链路）
    - WhatsApp 兜底文案同步语义：命中列条目、未命中不编造
 
-**变异测试（双向验证守护有效）**：① 让 user prompt **漏拼** `knowledgeBlock`
-→ **2 条失败**；② 把降级规则**条件写反** → **3 条失败**。均精确报出且 `diff` 校验完整还原。
+**变异测试（双向验证守护有效）**：① 让 user prompt **漏拼** `knowledgeBlock`  
+→ **2 条失败**；② 把降级规则**条件写反** → **3 条失败**。均精确报出且 `diff` 校验完整还原。  
 这两类错误正是此前**无法被任何测试发现**的。
 
 **验证**：typecheck 双侧 0 error；单测 **369/369**（新增 6 条）。
@@ -418,44 +1332,43 @@ P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
 
 ## [1.4.5] — 2026-10-09 · 知识库自定义标签真正参与检索（User-Defined Tag Vocabulary）
 
-**背景**：用户要求「既要体现模块功能价值，也不能过度工程化，保持灵活性，用户可以自定义」。
-取证实测发现**「可自定义」是假象**：
+**背景**：用户要求「既要体现模块功能价值，也不能过度工程化，保持灵活性，用户可以自定义」。  
+取证实测发&#x73B0;**「可自定义」是假象**：
 
-1. **`customTags` 是死字段** —— 类型里声明了（`src/lib/user-config.ts:54`），
+1. **`customTags` 是死字段** —— 类型里声明了（`src/lib/user-config.ts:54`），     
    全仓**零读写**。用户想建自己的标签体系，UI 上没有入口、配置里存不下。
-2. **检索只认 4 个硬编码标签** —— `agent-knowledge.ts` 的 `BUILTIN_KNOWLEDGE_TAGS` 写死。
-   用户按自己的术语命名资料（如「交期承诺」），Agent 侧**永远不会命中**。
+2. **检索只认 4 个硬编码标签** —— `agent-knowledge.ts` 的 `BUILTIN_KNOWLEDGE_TAGS` 写死。     
+   用户按自己的术语命名资料（如「交期承诺」），Agent 侧**永远不会命中**。     
    最致命的后果：**用户认真写了资料，AI 却没用上**。
 
 **修复**：
 
-1. **UI 侧开放标签池**（`src/components/knowledge-base.tsx`）—— 新增「我的标签」卡片：
-   内置标签（灰、标「内置」）+ 自定义标签（蓝、可删）合并展示；输入框回车或点按钮即添加。
-   **内置标签不可删除**（删掉会静默毁掉内置检索能力，故给出提示而非放行）；
-   每条资料的快捷按钮也改用合并后的标签池，**已选标签显示 ✓ 并禁用**（防重复点击）。
+1. **UI 侧开放标签池**（`src/components/knowledge-base.tsx`）—— 新增「我的标签」卡片：     
+   内置标签（灰、标「内置」）+ 自定义标签（蓝、可删）合并展示；输入框回车或点按钮即添加。     
+   **内置标签不可删除**（删掉会静默毁掉内置检索能力，故给出提示而非放行）；     
+   每条资料的快捷按钮也改用合并后的标签池，**已选标签显示 ✓ 并禁用**（防重复点击）。     
    归一化：去空白、去重（保持首次出现顺序）、过滤空串。
-
-2. **Agent 侧检索纳入自定义标签**（`electron/services/agent-knowledge.ts`）——
-   新增 `readKnowledgeSource`（条目 + 自定义标签一起读），`selectKnowledgeForAgent`
-   新增 `customTags` 参数，并入 `buildMatchKeywords`。
+2. **Agent 侧检索纳入自定义标签**（`electron/services/agent-knowledge.ts`）——     
+   新增 `readKnowledgeSource`（条目 + 自定义标签一起读），`selectKnowledgeForAgent`     
+   新增 `customTags` 参数，并入 `buildMatchKeywords`。     
    **向后兼容硬保证**：不传 / 传空数组时行为与改造前**逐字段一致**（有测试锁死）。
 
 **刻意不做（防过度工程化）**：
 
-- **不上向量检索 / embedding** —— 知识库规模是几十条量级，关键词匹配足够（项目长期结论：
+- **不上向量检索 / embedding** —— 知识库规模是几十条量级，关键词匹配足够（项目长期结论：    
   知识库不是 RAG，对外不要称 RAG，此处不上探）。
 - **不开放 `limit` / 截断长度等工程旋钮** —— 用户感知不到，调错还有害。
-- **不把自定义标签接进搜索侧** —— 搜索侧 `scenarioKnowledgeKeywords` 是「场景」维度
-  （direct_quote/competitor_switch/factory_strength），与「标签」不是同一维度，硬接会引入假语义。
+- **不把自定义标签接进搜索侧** —— 搜索侧 `scenarioKnowledgeKeywords` 是「场景」维度    
+  （direct_quote/competitor_switch/factory_strength），与「标签」不是同一维度，硬接会引入假语义。    
   为不误导用户，UI 文案已精确限定为「AI 销售团队（开发信/话术）」。
 
-**守护测试**：`tests/business-logic/agent-knowledge-injection.business.test.js` 新增 5 条
-（共 13 条）：① 自定义标签让非内置术语的资料命中 ② 无自定义标签时行为不变（向后兼容）
-③ 自定义标签**不得挤掉**内置标签命中 ④ 畸形 `customTags` 健壮 ⑤ **UI 侧必须持久化 + 回填**
-（跨端贯通守护）。经**变异测试双向验证**：让 `selectKnowledgeForAgent` 忽略 `customTags`
+**守护测试**：`tests/business-logic/agent-knowledge-injection.business.test.js` 新增 5 条  
+（共 13 条）：① 自定义标签让非内置术语的资料命中 ② 无自定义标签时行为不变（向后兼容）  
+③ 自定义标签**不得挤掉**内置标签命中 ④ 畸形 `customTags` 健壮 ⑤ **UI 侧必须持久化 + 回填**  
+（跨端贯通守护）。经**变异测试双向验证**：让 `selectKnowledgeForAgent` 忽略 `customTags`  
 → 2 条失败；让 UI 停止写入 `customTags` → 1 条失败。均精确报出。
 
-**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4b 条（含"内置标签不可删""搜索侧不合并"
+**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4b 条（含"内置标签不可删""搜索侧不合并"  
 两条设计边界的显式记录）。
 
 **验证**：typecheck 双侧 0 error；单测 **363/363**；变异测试 2 轮均被精确捕获并完整还原。
@@ -464,80 +1377,76 @@ P1-7 路径 / P1-9 持久化 / P1-11 三处门禁 / P1-6 卸载执行）。
 
 ## [1.4.4] — 2026-10-09 · AGENT.* 通道门禁补缺与分类治理
 
-**背景**：复核「账号管理与 AI 销售团队审计报告」遗留建议 #2 时发现**真实商业泄漏缺口**——
-`AGENT.GET_LOG` 全链路**无任何 feature 门禁**，而其数据由 `hydrateAgentPersistence`
-在启动时**无条件**从 `user_config.agent_logs` 恢复（与授权状态**解耦**）。
-后果：Trial / 降级用户可绕过渲染层**直连 IPC** 读取完整历史触达日志（含 company/detail）。
+**背景**：复核「账号管理与 AI 销售团队审计报告」遗留建议 #2 时发现**真实商业泄漏缺口**——  
+`AGENT.GET_LOG` 全链路**无任何 feature 门禁**，而其数据由 `hydrateAgentPersistence`  
+在启动时**无条件**从 `user_config.agent_logs` 恢复（与授权状态**解耦**）。  
+后果：Trial / 降级用户可绕过渲染层**直连 IPC** 读取完整历史触达日志（含 company/detail）。  
 宪法明确「Trial 必须熔断拦截，严禁渲染任何智能体卡片或**暴露运行指标**」，日志同属运行指标。
 
 **修复**：
 
-1. **补门禁**（`electron/services/agent-service.ts`）——`AGENT.GET_LOG` 与 `AGENT.LIST` /
-   `AGENT.CONTROL` 使用同一 feature 键 `local_autopilot`（「查看 AI 销售团队」），
+1. **补门禁**（`electron/services/agent-service.ts`）——`AGENT.GET_LOG` 与 `AGENT.LIST` /     
+   `AGENT.CONTROL` 使用同一 feature 键 `local_autopilot`（「查看 AI 销售团队」），     
    且授权拒绝 **403 原样透传**，便于前端区分「无权限」与「服务端故障」。
-
-2. **修正报告建议的过度约束风险**——遗留建议 #2 字面表述（"所有 `AGENT.*` 通道 feature 键一致"）
-   若照做会**误伤正确设计**：`AGENT.GET_STATUS`（线索级触达徽标，线索是 Trial 合法数据）、
-   `AGENT.SUPPRESS_*`（邮件合规退订登记，任何套餐都必须可用）**本就不该门禁**。
+2. **修正报告建议的过度约束风险**——遗留建议 #2 字面表述（"所有 `AGENT.*` 通道 feature 键一致"）     
+   若照做会**误伤正确设计**：`AGENT.GET_STATUS`（线索级触达徽标，线索是 Trial 合法数据）、     
+   `AGENT.SUPPRESS_*`（邮件合规退订登记，任何套餐都必须可用）**本就不该门禁**。     
    改为**显式分类清单**：`GUARDED` / `UNGUARDED`（每项附豁免理由）/ `PUSH_ONLY`。
 
-**新增守护测试**：`tests/business-logic/agent-gate-classification.business.test.js`（5 条）：
-① `GUARDED` 必须带 `requireFeature`；② `UNGUARDED` 必须**无**门禁（防过度约束）；
-③ `GUARDED` 不得退化为无门禁；④ **新增/未定级通道 → 直接失败**；⑤ 清单不得腐烂（不允许残留已删通道）。
-经**变异测试**双向验证有效：注入虚构通道 `AGENT.FAKE_NEW_CHANNEL` → 4 条失败并精确报出通道名；
-删除 `GET_LOG` 门禁 → 2 条失败。测试内**诚实标注静态断言边界**（验证"门禁代码在不在"，
+**新增守护测试**：`tests/business-logic/agent-gate-classification.business.test.js`（5 条）：  
+① `GUARDED` 必须带 `requireFeature`；② `UNGUARDED` 必须**无**门禁（防过度约束）；  
+③ `GUARDED` 不得退化为无门禁；④ **新增/未定级通道 → 直接失败**；⑤ 清单不得腐烂（不允许残留已删通道）。  
+经**变异测试**双向验证有效：注入虚构通道 `AGENT.FAKE_NEW_CHANNEL` → 4 条失败并精确报出通道名；  
+删除 `GET_LOG` 门禁 → 2 条失败。测试内**诚实标注静态断言边界**（验证"门禁代码在不在"，  
 不验证"运行时确实 403"——后者由 `tests/e2e/permission-lock.test.js` 覆盖）。
 
-**测试环境修复**：`tests/e2e/agent-persistence.test.js` 因新增门禁而失败——该测试用手写
-**无签名** `license_claims` 且 `app.isPackaged = true`，真实 guard 校验失败抛 401。
-改为打桩 `license-guard` 模块（**修测试环境缺失，非改代码迎合测试**）：该测试职责是
+**测试环境修复**：`tests/e2e/agent-persistence.test.js` 因新增门禁而失败——该测试用手写  
+**无签名** `license_claims` 且 `app.isPackaged = true`，真实 guard 校验失败抛 401。  
+改为打桩 `license-guard` 模块（**修测试环境缺失，非改代码迎合测试**）：该测试职责是  
 P1-2「日志跨重启幸存」，授权语义由 `permission-lock.test.js` 专门覆盖。
 
-**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 5a 条（AGENT.\* 通道门禁分类）。
+**受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 5a 条（AGENT.* 通道门禁分类）。
 
-**验证**：typecheck 双侧 0 error；单测 **358/358**；`verify:consistency` 通过
+**验证**：typecheck 双侧 0 error；单测 **358/358**；`verify:consistency` 通过  
 （文档交叉引用 165 处、IPC 契约通过、未新增通道）；lint 0 error。
 
 ---
 
 ## [1.4.3] — 2026-10-09 · 知识库真正接入获客链路（Seller-Knowledge Injection）
 
-**背景**：审计发现知识库模块**并非 RAG**（embedding/向量检索零命中），且与获客链路
-**实质断开**——`usedKnowledgeTitles` 全程透传+持久化却**从未渲染**，用户无从判断
+**背景**：审计发现知识库模块**并非 RAG**（embedding/向量检索零命中），且与获客链路  
+**实质断开**——`usedKnowledgeTitles` 全程透传+持久化却**从未渲染**，用户无从判断  
 AI 有没有用上自己的产品资料；Email 实时生成通道的 prompt **一个字的产品资料都没有**。
 
 **修复（四处）**：
 
-1. **检索兜底污染**（`electron/services/search/analysis.ts`）——`pickRelevantKnowledgeEntries`
-   原在命中不足时**按 `content.length` 无条件填充无关长文档**进 prompt，而 system prompt
-   又声明「以知识库作为卖方优势的首要来源」→ 既污染上下文又挤占相关条目名额。
+1. **检索兜底污染**（`electron/services/search/analysis.ts`）——`pickRelevantKnowledgeEntries`     
+   原在命中不足时**按 `content.length` 无条件填充无关长文档**进 prompt，而 system prompt     
+   又声明「以知识库作为卖方优势的首要来源」→ 既污染上下文又挤占相关条目名额。     
    改为**只返回真实命中**，同分按原始顺序稳定排序。
-
-2. **知识库注入 Email 实时生成**（`electron/services/agent-service.ts`）——
-   `createLlmEmailContentProvider` 新增 `[SELLER KNOWLEDGE BASE]` 注入块。该 provider 的
+2. **知识库注入 Email 实时生成**（`electron/services/agent-service.ts`）——     
+   `createLlmEmailContentProvider` 新增 `[SELLER KNOWLEDGE BASE]` 注入块。该 provider 的     
    system prompt 本就严格禁止编造资质，改造前却无资料可用，只能写出空洞开发信。
-
-3. **WhatsApp 接入知识库**（`agent-service.ts` + `agents/whatsapp-agent.ts`）——
-   原为硬编码英文死模板。新增 `fallbackTextBuilder` 注入位（**刻意不用 LLM**：真实外发
+3. **WhatsApp 接入知识库**（`agent-service.ts` + `agents/whatsapp-agent.ts`）——     
+   原为硬编码英文死模板。新增 `fallbackTextBuilder` 注入位（**刻意不用 LLM**：真实外发     
    路径上的同步环节，LLM 超时会阻断发送，违背「内容层失败永不阻断发送链路」）。
-
-4. **知识库来源可见化**（`src/components/analysis-drawer.tsx`）——新增 `KnowledgeSourceCard`：
-   有命中显示蓝卡 + 条目列表 + 条数徽标；无命中显示琥珀色虚线卡 + 「去补全产品资料」
+4. **知识库来源可见化**（`src/components/analysis-drawer.tsx`）——新增 `KnowledgeSourceCard`：     
+   有命中显示蓝卡 + 条目列表 + 条数徽标；无命中显示琥珀色虚线卡 + 「去补全产品资料」     
    直达引导（新增 `kone:navigate-knowledge` 事件，与既有 `-settings`/`-leads` 对称）。
 
 **新增**：`electron/services/agent-knowledge.ts`（Agent 侧知识库选取 SSOT）。
 
-**守护测试**：`tests/business-logic/agent-knowledge-injection.business.test.js`（8 条，含
-**跨端副本守护**——UI 的 `quickTags` 措辞必须能被 Agent 侧检索命中）、
+**守护测试**：`tests/business-logic/agent-knowledge-injection.business.test.js`（8 条，含  
+**跨端副本守护**——UI 的 `quickTags` 措辞必须能被 Agent 侧检索命中）、  
 `tests/business-logic/knowledge-retrieval-honesty.business.test.js`（6 条，锁死兜底污染不回退）。
 
-**视觉验证**：`scripts/probe-knowledge-card.cjs` 纳入 `test:visual`。该探针内置**防自欺护栏**
-（patch 用 `defineProperty`、断言卡片几何有效、断言两场景截图哈希不同）——开发过程中它
+**视觉验证**：`scripts/probe-knowledge-card.cjs` 纳入 `test:visual`。该探针内置**防自欺护栏**  
+（patch 用 `defineProperty`、断言卡片几何有效、断言两场景截图哈希不同）——开发过程中它  
 确实拦下了"两场景截出同一张图却报通过"的假阳性。
 
 **受影响 SSOT**：`ARCH-STANDARDS.md` §9.6 新增第 4a 条。
 
-**验证**：typecheck 双侧 0 error；单测 **353/353**；`verify:consistency` 通过
+**验证**：typecheck 双侧 0 error；单测 **353/353**；`verify:consistency` 通过  
 （未新增 IPC 通道，计数器无漂移）；lint 0 error；视觉探针 4/4 通过（含看图复核）。
 
 ---
@@ -545,104 +1454,115 @@ AI 有没有用上自己的产品资料；Email 实时生成通道的 prompt **�
 ## [1.4.2] — 2026-10-08 · 云端测试纳入主门禁 + 备份校验向后兼容
 
 ### 一、`test:cloud` 纳入主门禁（门禁覆盖缺口）
-**问题**：主 `npm test` = `verify:consistency && test:unit && test:ipc && test:e2e-smoke`，
-**不含 kone-cloud 的测试**。这意味着 [1.4.0] 新增的 24 个云端门禁测试
-（含 8 例负向授权、草稿版本校验、跨租户隔离）**没有任何 CI 保障** ——
+
+**问题**：主 `npm test` = `verify:consistency && test:unit && test:ipc && test:e2e-smoke`，  
+**不含 kone-cloud 的测试**。这意味着 [1.4.0] 新增的 24 个云端门禁测试  
+（含 8 例负向授权、草稿版本校验、跨租户隔离）**没有任何 CI 保障** ——  
 改了 `worker.ts` 也不会被拦下，门禁形同装饰。
 
-**修复**：新增 `test:cloud`（`cd kone-cloud && npx vitest run`）并纳入 `npm test`。
+**修复**：新增 `test:cloud`（`cd kone-cloud && npx vitest run`）并纳入 `npm test`。  
 今后改云端代码会被主门禁拦截。
 
 ### 二、备份校验和向后兼容（数据可恢复性缺陷）
-**发现**：2026-10-07 打包冒烟日志中出现
+
+**发现**：2026-10-07 打包冒烟日志中出现  
 `[BackupService] Checksum mismatch for ...backup-2026-09-11/13/14...json`。
 
-**根因**：`backup-service.ts` 的 `computeChecksum` 在 **DATA-14** 中由 MD5 升级为
-SHA-256，但**升级前生成的历史备份仍带 MD5 校验和** → 升级后 `verifyBackup`
+**根因**：`backup-service.ts` 的 `computeChecksum` 在 **DATA-14** 中由 MD5 升级为  
+SHA-256，但**升级前生成的历史备份仍带 MD5 校验和** → 升级后 `verifyBackup`  
 一律判为校验失败。
 
 **后果**：用户升级到新版后**无法恢复升级前的备份**，属数据可恢复性缺陷。
 
 **修复**：SHA-256 不匹配时**回退尝试 MD5**，两者都不匹配才判为损坏。
+
 - 安全性未削弱：篡改数据时两种算法都不匹配，仍会被拒绝（已有测试锁定）。
 - 兼容路径会输出 warn 日志，建议恢复后重建备份以升级为 SHA-256。
-- 权衡说明：MD5 强度较低，但仅在 SHA-256 不匹配时作为兼容分支尝试，
+- 权衡说明：MD5 强度较低，但仅在 SHA-256 不匹配时作为兼容分支尝试，    
   且备份位于本机用户目录；拒绝旧备份的代价（数据不可恢复）更高。
 
 ### 新增测试
-`tests/backup-checksum-compat.test.ts`（5 例）：
+
+`tests/backup-checksum-compat.test.ts`（5 例）：  
 新格式通过 / **旧 MD5 格式兼容通过** / 篡改拒绝 / 文件不存在拒绝 / 结构非法拒绝。
 
 ### 门禁
-主仓库 **324/324**（319 + 5）；`npm test` 全链路通过（含新增 `test:cloud` 59 项）；
+
+主仓库 **324/324**（319 + 5）；`npm test` 全链路通过（含新增 `test:cloud` 59 项）；  
 typecheck(src + electron) 0 error。
 
 ---
 
 ## [1.4.1] — 2026-10-07 · 打包冒烟打通（P0-5 遗留项闭环）
 
-**背景**：审计与交付梳理长期将「打包冒烟 B2」记为**未通过**，
-原因是 `release/win-unpacked/resources/app.asar` 被系统级进程持有
+**背景**：审计与交付梳理长期将「打包冒烟 B2」记为**未通过**，  
+原因是 `release/win-unpacked/resources/app.asar` 被系统级进程持有  
 （`Device or resource busy`，且无 Electron/Kone 进程可见）。
 
 **本次发现**：仓库**早已准备替代方案**，此前未被使用 ——
+
 ```json
 "dist:alt":      "vite build && npm run build:electron && electron-builder --win nsis -c.directories.output=release-build",
 "test:smoke:alt": "npm run dist:alt && node ./scripts/packaged-smoke.cjs release-build"
 ```
+
 即**换输出目录**（`release-build/`）绕开被锁文件。
 
 **执行结果（2026-10-07）**：
+
 - 安装包成功产出：`release-build/Kone-Intellect-Setup-1.3.15.exe`（89.9 MB）
 - 冒烟报告 `tests/packaged-smoke-report.json`：
-  | 断言 | 值 |
-  |---|---|
-  | `booted` | ✅ true |
-  | `activationScreenVisible` | ✅ true |
-  | `preloadBridgeVisible` | ✅ true |
-  | `dashboardNavVisible` | false（**预期**：未激活时停在激活页，不进看板） |
-- 通过判定（`scripts/packaged-smoke.cjs:124`）：
-  `!booted || !preloadBridgeVisible || (!activationScreenVisible && !dashboardNavVisible)`
+  | 断言                        | 值                            |
+  | ------------------------- | ---------------------------- |
+  | `booted`                  | ✅ true                       |
+  | `activationScreenVisible` | ✅ true                       |
+  | `preloadBridgeVisible`    | ✅ true                       |
+  | `dashboardNavVisible`     | false（**预期**：未激活时停在激活页，不进看板） |
+- 通过判定（`scripts/packaged-smoke.cjs:124`）：    
+  `!booted || !preloadBridgeVisible || (!activationScreenVisible && !dashboardNavVisible)`    
   → `false`，**冒烟通过**。
 
 **遗留噪音（非阻断，已记录）**：
-- `[BackupService] Checksum mismatch`：历史备份文件（2026-09-11/13/14）校验失败，
+
+- `[BackupService] Checksum mismatch`：历史备份文件（2026-09-11/13/14）校验失败，    
   属旧数据遗留，不影响启动。
 - `fsync EPERM ... 已降级为仅原子 rename`：文件系统不支持 fsync，代码已优雅降级。
 
-**结论**：交付阻断项中的「打包冒烟」**已闭环**。
+**结论**：交付阻断项中的「打包冒烟」**已闭环**。  
 今后验证打包请用 `npm run test:smoke:alt`，无需等待 `release/` 锁释放。
 
 ---
 
 ## [1.4.0] — 2026-10-07 · Phase 2.9 · 审批 → 云端二次门禁（阶段 1+2 落地）
 
-**动机**：`AGENTS.md` 宪法第 5 条 —— *"A high score, staged Agent task or `cloud_send` feature never authorizes delivery. Approval plus server-side second-gate success is mandatory."*
-此前该宪法级约束在代码中**无实现**，属「宪法写了、代码没做」的纸面合规。
+**动机**：`AGENTS.md` 宪法第 5 条 —— *"A high score, staged Agent task or `cloud_send` feature never authorizes delivery. Approval plus server-side second-gate success is mandatory."*  
+此前该宪法级约束在代码中**无实现**，属「宪法写了、代码没做」的纸面合规。  
 设计方案见 `KONE-V1.3-审批与云端二次门禁设计方案-2026-10-07.md`。
 
-**关键现状修正**：`queueOutreach` 原有的 `lead.status !== 'approved' && !== 'queued'` 校验中，
-`approved` 在本地**无任何设置点**（本地 status 枚举不含该值）→ 该校验分支实为**死代码**，
+**关键现状修正**：`queueOutreach` 原有的 `lead.status !== 'approved' && !== 'queued'` 校验中，  
+`approved` 在本地**无任何设置点**（本地 status 枚举不含该值）→ 该校验分支实为**死代码**，  
 真实路径靠 `queued` 宽松放行。即"门禁看起来在把关，其实是空的"。
 
 ### 阶段 1 · 云端二次门禁（已落地，提交 `4edd5b4`）
-- **补齐门禁 ⑤⑥⑦⑧⑨**（`CLOUD-COLLABORATION-DELIVERY.md §8`），顺序不可调换：
+
+- **补齐门禁 ⑤⑥⑦⑧⑨**（`CLOUD-COLLABORATION-DELIVERY.md §8`），顺序不可调换：    
   ⑦ 审批校验必须在 ⑤⑥ 之后（否则可用无效审批做撞单探测）、在 ⑨ 之前（否则为无效请求消耗配额）。
-  | 步 | 校验 | 错误码 |
-  |---|---|---|
-  | ⑤ | 撞单 / 保护期 | `COMPANY_CONFLICT` |
-  | ⑥ | 全局抑制（优先级最高） | `SUPPRESSED` |
+  | 步 | 校验                    | 错误码                                            |
+  | - | --------------------- | ---------------------------------------------- |
+  | ⑤ | 撞单 / 保护期              | `COMPANY_CONFLICT`                             |
+  | ⑥ | 全局抑制（优先级最高）           | `SUPPRESSED`                                   |
   | ⑦ | **审批记录 + 审批人 + 草稿版本** | `APPROVAL_REQUIRED` / `DRAFT_VERSION_MISMATCH` |
-  | ⑧ | 邮箱等级 + 人工例外 | `EMAIL_GRADE_INSUFFICIENT` |
-  | ⑨ | 日配额 / 熔断 | `QUOTA_EXCEEDED` / `CIRCUIT_OPEN` |
+  | ⑧ | 邮箱等级 + 人工例外           | `EMAIL_GRADE_INSUFFICIENT`                     |
+  | ⑨ | 日配额 / 熔断              | `QUOTA_EXCEEDED` / `CIRCUIT_OPEN`              |
 - 草稿版本**严格相等**才放行 —— 落实规范 §6「旧批准不得授权新草稿」。
-- **新增 `POST/GET /v1/approvals`**：表只追加不更新，「哪条有效」由门禁 ⑦ 以
-  「`decision='approved'` 且 `approved_at` 最新」+ draftVersion 相等 判定；
+- **新增 `POST/GET /v1/approvals`**：表只追加不更新，「哪条有效」由门禁 ⑦ 以    
+  「`decision='approved'` 且 `approved_at` 最新」+ draftVersion 相等 判定；    
   写入同时回写 lead 状态（approved / rejected / needs_revision→退回 pending_approval）+ 审计事件。
-- **migration `005_approval_gate.sql`**：无表结构变更（`approvals` / `leads.approval_id` /
-  `delivery_quota` / `events` 枚举均已在 001 预留），仅补 `idx_approvals_lead_decision` 索引。
+- **migration `005_approval_gate.sql`**：无表结构变更（`approvals` / `leads.approval_id` /    
+  `delivery_quota` / `events` 枚举均已在 001 预留），仅补 `idx_approvals_lead_decision` 索引。    
   **刻意不回填历史 outreach** —— 回填等于伪造审批记录。
 - `utils.ts` statusMap 新增 5 个错误码（仅新增，不改既有值）。
+
 
 ### 阶段 2 · 本地契约与载荷（已落地，提交 `a713c42`）
 - 新增 2 个 IPC 通道：`cloud:create-approval` / `cloud:list-approvals`
@@ -866,6 +1786,7 @@ typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 
   - 超时：`socketTimeout: 30_000`（30 秒）
   - 无锁：不占用 `clientLocks`（测试是独立一次性连接，不干扰后台 timer）
 
+
 ### 主进程实现（`imap-reply-service.testImapConnection`）
 - 复用 `readImapCredentials`（读 `cloud.imap*` 五个 key）
 - 独立实例化 `ImapFlow`（不复用 poll 用的连接，避免锁竞争）
@@ -1045,6 +1966,7 @@ typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 
 - **`src/lib/electron-api.ts`**：新增 `cloudflareDashboardStats()` / `cloudflarePollOutreachStatus()` / `imapPoll()` / `imapStatus()` 四个 wrapper
 - **`src/main.tsx`**：dev shell 补齐 4 个 stub（避免 Web-only 开发模式 typecheck 失败）
 
+
 ### 设计取舍
 - **funnel 不用 recharts**：recharts 无内置 FunnelChart，且为单一漏斗引入整块依赖过重；改为纯 CSS 条 + 比例计算，可读性优先
 - **30 日趋势用 SVG 手绘**：看板角落不需要复杂交互，SVG polyline 已足够；主图表 (data-center) 仍保留 recharts AreaChart
@@ -1088,6 +2010,7 @@ typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 
 - `email-agent.checkReply` 按发件人**域名**匹配（本地 Agent 序列推进，粒度 = lead）。
 - `imap-reply-service.pollReplies` 按 `In-Reply-To` 匹配具体 `provider_message_id`（云端投递闭环，粒度 = 单条 outreach）。
 - 两者读取同一 IMAP 凭证，粒度与语义不重叠，不做合并。
+
 
 ### 门禁与测试矩阵
 - `npx tsc --noEmit -p tsconfig.json` ✅ 零错误（src 侧）
