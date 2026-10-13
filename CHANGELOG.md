@@ -17,7 +17,7 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
-## [1.4.32] — 2026-10-13 · 项目文档全面瘦身（删 14 份失效文档 / 4246 行；零断链）
+## [1.4.32] — 2026-10-13 · 项目文档全面瘦身（删 14 份失效文档 / 4246 行；零断链）+ 交付物部分归档
 
 ### 触发
 用户要求「全面严谨梳理项目文档，清除无效没价值的文档内容」——**只做文档治理，不改任何业务代码**。
@@ -71,6 +71,16 @@ lastVerifiedAt: 2026-10-07
 | `verify:docs` 交叉引用 | **185 处，✅ 零断链** |
 | 项目文档悬空引用 | **0**（仅 `CHANGELOG` 中作为**历史记录**保留的 1 处，属正确行为） |
 | `npm run verify:consistency` | ✅ 三绿（文档 / IPC / 云端） |
+
+### 交付物归档（部分完成）
+- **成功归档 6 项 / 2.3 GB** → `C:\Users\Administrator\Kone-ReleaseArchive-2026-10-13`
+  （`release-v146` / `v147` / `v149` / `release-verify` / `release-verify2` / `release.rar`）。
+- **9 项无法删除** —— `app.asar` 被系统级进程持有句柄（`Directory.Delete` 报
+  `文件"app.asar"正由另一进程使用`），5 次重试均未释放。与 MEMORY 中记载的
+  `EBUSY: app.asar locked` 同一根因；**需在非开发环境（干净机器/重启后）执行**。
+  受影响：`release` / `release-build` / `release-final` / `release-v140`–`v145`。
+- **保留不动**：`release-v148`（冒烟验证基线）、`release-v150`（最新）。
+- **建议**：下次干净机器验收时执行 `rd /s /q release-v14X`（系统命令行不受 shim 拦截）。
 
 > 注：本次同步 bump `package.json` → `1.4.32` —— 由本日新增的**版本口径门禁**强制
 > （CHANGELOG 最新条目必须等于 `package.json.version`）。此为**发布元数据**，非业务代码。
