@@ -19,7 +19,7 @@ jobs:
     name: 'Layer 0 — Spec & IPC Consistency'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -36,7 +36,7 @@ jobs:
     runs-on: windows-latest
     needs: [consistency]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -53,7 +53,7 @@ jobs:
     runs-on: windows-latest
     needs: [unit]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -71,7 +71,7 @@ jobs:
     runs-on: windows-latest
     needs: [unit]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -89,7 +89,7 @@ jobs:
     runs-on: windows-latest
     needs: [unit]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -117,7 +117,7 @@ jobs:
     runs-on: windows-latest
     needs: [unit]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -134,7 +134,7 @@ jobs:
     runs-on: windows-latest
     needs: [ipc, auth]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -153,7 +153,7 @@ jobs:
     needs: [build, quality]
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -171,7 +171,7 @@ jobs:
     needs: [packaged]
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
