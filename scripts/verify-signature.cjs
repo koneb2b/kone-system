@@ -26,7 +26,26 @@ const outDir = (args.find((a) => !a.startsWith('--')) || process.env.KONE_PACKAG
 
 const exePath = path.join(rootDir, outDir, 'win-unpacked', 'KoneAI.exe')
 if (!fs.existsSync(exePath)) {
+  /* 与 `security-audit.cjs` 同口径：**刻意不静默回退**到其它产物目录 ——
+     签名校验必须针对**指定的那个包**，静默换包会让"验了 A、以为验了 B"成为可能。
+     改为**列出候选**，让人显式指定。 */
+  let candidates = []
+  try {
+    candidates = fs
+      .readdirSync(rootDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^release/i.test(entry.name))
+      .map((entry) => entry.name)
+      .filter((name) => fs.existsSync(path.join(rootDir, name, 'win-unpacked', 'KoneAI.exe')))
+  } catch {
+    /* 读目录失败不影响主错误信息 */
+  }
   console.error(`❌ 未找到可执行文件: ${exePath}`)
+  console.error('用法：node scripts/verify-signature.cjs <输出目录> [--strict]')
+  console.error(
+    candidates.length > 0
+      ? `检测到可用产物目录（请**显式指定其一**）：\n${candidates.map((name) => `  - ${name}`).join('\n')}`
+      : '未检测到任何含 win-unpacked/KoneAI.exe 的产物目录，请先执行打包。',
+  )
   process.exit(1)
 }
 

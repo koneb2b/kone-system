@@ -82,6 +82,23 @@ lastVerifiedAt: 2026-10-07
 - **保留不动**：`release-v148`（冒烟验证基线）、`release-v150`（最新）。
 - **建议**：下次干净机器验收时执行 `rd /s /q release-v14X`（系统命令行不受 shim 拦截）。
 
+### 交付物重新出包 + 冒烟验证（2026-10-15）
+- **产出** `release-v151/Kone-Intellect-Setup-1.4.32.exe`（**85.8 MB**，sha256 `abef3a86…f9198c`）。
+  **验证了版本口径门禁的端到端效果**：安装包名 `…-1.4.32.exe` 与 `package.json` 版本一致
+  （修复前长期错标为 `1.3.15`）。
+- 构建链：`vite build` → `build:electron`（**混淆 85 个文件**）→ `electron-builder --win nsis`。
+- **冒烟测试通过**（`node scripts/packaged-smoke.cjs release-v151`）：
+  `booted:true` / 激活页可见 / preload 桥可见 / 仪表盘导航可见；`executablePath` 指向**新构建**。
+  **并已按项目铁律「探针报通过 ≠ 渲染正确」做视觉复核**：侧边栏全模块 + 搜索界面 +
+  「系统已联通」+ 试用态「未激活/升级续费」**完整渲染，无白屏无报错**。
+- **⚠️ 签名状态核实（更正此前记录）**：`Get-AuthenticodeSignature` 判定安装包与主程序
+  均为 **`NotSigned`**；`verify-signature.cjs release-v151 --strict` **正确判红**（exit 1）。
+  > **更正**：此前记录 2026-10-11 的包"已签名" **有误** —— 构建日志中的
+  > `signing with signtool.exe` 是**空操作**（无证书、无 Windows SDK）。
+  > 现状：**未签名**，与「顾问/微信渠道分发、信任由人传递」一致；**公开下载前必须接入证书**。
+  > 签名配置本身**已就绪待证书**（`electron-builder.sign.cjs`，2026-10-11 已按 electron-builder 26.x schema 修正）。
+- **构建后已还原** `dist-electron` 为 dev 产物（去混淆），确保测试跑的不是混淆代码。
+
 > 注：本次同步 bump `package.json` → `1.4.32` —— 由本日新增的**版本口径门禁**强制
 > （CHANGELOG 最新条目必须等于 `package.json.version`）。此为**发布元数据**，非业务代码。
 
