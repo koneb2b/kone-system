@@ -1,5 +1,6 @@
 import type { PhoneKind } from './phone-kind'
 import type { ContactProvenance } from './contact-provenance'
+import type { EnrichmentCostSummary } from './enrichment-cost'
 
 export type IpcResponse<T = unknown> = {
   success: boolean
@@ -209,6 +210,16 @@ export type SearchExecuteRequest = {
     highRelevanceOnly?: boolean
     b2bRoleOnly?: boolean
   }
+  /* Step 2E（2026-10-16 数据链路审计）：**分级补全的用户授权开关**。
+     设计原则：不对所有搜索结果执行高成本补全，且**用户必须能主动选择**。
+     - `email` 缺省 `true`：邮箱补全是低成本前置（Prospeo 约 2 credits/条），默认放行；
+     - `mobile` 缺省 **`false`**：手机揭示昂贵（10 credits/条），**默认关闭**，
+       必须由用户在 UI 显式开启（调用前会展示预计额度）。
+     缺省值由 `resolveEnrichmentOptions()` 统一解析，调用方不得各自硬编码。 */
+  enrichment?: {
+    email?: boolean
+    mobile?: boolean
+  }
 }
 
 /* S4b（2026-10-16）：机会分的**逐维度评分依据**——回答「为什么是这个分」。
@@ -237,6 +248,9 @@ export type SearchExecuteResult = {
      用于：结果卡片徽标、默认高置信度优先、`inferred` 不自动入 Agent 队列 + 发送前二次确认。
      缺失时前端**诚实降级**（不谎报 verified）。SSOT 见 `src/shared/contact-provenance.ts`。 */
   contactProvenance?: ContactProvenance
+  /* Step 3（2026-10-16 数据链路审计）：本轮补全的**成本摘要**（调用次数 / 可确认费用 / 未知计费数）。
+     未知计费绝不伪造精确成本；缺失表示本轮未发生任何补全调用。 */
+  enrichmentCost?: EnrichmentCostSummary
   address: string
   isB2B?: boolean | null
   matchReasons?: string[]
@@ -422,6 +436,11 @@ export type DecisionMaker = {
      采集层仅做零网络静态分类，故实际只会出现 risky/invalid）与 phone E.164 校验 */
   emailGrade?: string
   phoneValid?: boolean
+  /* Step 2B（2026-10-16 数据链路审计）：**公司关联依据** —— 说明该人为什么被认为属于该公司
+     （如「Prospeo 按域名命中」「LinkedIn 公开检索」）。缺失时不臆造。 */
+  matchBasis?: string
+  /** 发现时间（epoch ms）。缺失时不臆造（历史数据无该字段）。 */
+  discoveredAt?: number
 }
 
 export type CustomsData = {

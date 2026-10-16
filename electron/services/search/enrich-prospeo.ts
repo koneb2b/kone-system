@@ -49,14 +49,32 @@ export const getUserProspeoApiKey = (): string => {
 }
 
 export interface ProspeoEnrichResult {
-  /** 已验证邮箱（`status === 'VERIFIED'` 才采信）。 */
+  /** 邮箱（`only_verified_email: true` 请求下的结果）。 */
   email?: string
+  /**
+   * 邮箱的**供应商自报验证状态**（原样回传，如 `VERIFIED` / `UNKNOWN` / `RISKY` / `CATCH_ALL`）。
+   *
+   * Step 4（2026-10-16 数据链路审计 D-4）：此前实现是「非 `INVALID` 即采信」并一律标 `verified`，
+   * 与文件头注释「仅采信 `status === 'VERIFIED'`」**不一致**。
+   * 现改为**如实回传状态**，由调用方按状态决定可信档 —— **不接受的状态不得冒认 `verified`**。
+   */
+  emailStatus?: string
   /** 揭示到的手机号（国际格式）。 */
   phone?: string
   /** 号码类型：Prospeo 揭示的手机**定义上**为 mobile。 */
   phoneKind: 'mobile' | 'landline' | 'unknown'
   /** 该号码是否可用于 WhatsApp。 */
   phoneReachable: boolean
+  /* ── Step 2B（审计缺陷 D-2）：决策人身份 ────────────────────────────
+     此前 `pickBestPerson` 已解析出 `fullName` / `title`，但**适配器出口未暴露**，
+     导致「按域名找人」的结果只剩邮箱/手机，**决策人姓名与职位被静默丢弃**。
+     现如实回传，由调用方落地到 `decisionMakers[]` / `contact` / `contactTitle`。 */
+  /** 决策人姓名 */
+  contactName?: string
+  /** 决策人职位 */
+  contactTitle?: string
+  /** 决策人 LinkedIn（供应商返回时才有；缺失不臆造） */
+  contactLinkedinUrl?: string
   /** 是否真正拿到可用数据。 */
   used: boolean
   source: 'prospeo'
@@ -64,12 +82,19 @@ export interface ProspeoEnrichResult {
 
 const EMPTY_RESULT: ProspeoEnrichResult = {
   email: undefined,
+  emailStatus: undefined,
   phone: undefined,
   phoneKind: 'unknown',
   phoneReachable: false,
+  contactName: undefined,
+  contactTitle: undefined,
+  contactLinkedinUrl: undefined,
   used: false,
   source: 'prospeo',
 }
+
+/** Prospeo 自报为「已验证」的邮箱状态（大小写不敏感比较）。 */
+export const PROSPEO_VERIFIED_EMAIL_STATUS = 'VERIFIED'
 
 /** 决策者优先的职位关键词（对齐 B2B 采购/负责人画像）。 */
 const DECISION_TITLE =
@@ -81,10 +106,11 @@ const DECISION_TITLE =
  */
 const pickBestPerson = (
   results: Array<{ person?: Record<string, any> }>,
-): { personId: string; fullName: string; title: string } | null => {
+): { personId: string; fullName: string; title: string; linkedinUrl?: string } | null => {
   if (!Array.isArray(results) || results.length === 0) return null
   const seen = new Set<string>()
-  const candidates: Array<{ personId: string; fullName: string; title: string; rank: number }> = []
+  const candidates: Array<{ personId: string; fullName: string; title: string; linkedinUrl?: string; rank: number }> =
+    []
   for (const item of results) {
     const person = item?.person || {}
     const personId = String(person.person_id || '').trim()
@@ -100,13 +126,15 @@ const pickBestPerson = (
       personId,
       fullName,
       title,
+      /* Step 2B：LinkedIn 原样回传（供应商未返回则 undefined，不臆造） */
+      linkedinUrl: person.linkedin_url ? String(person.linkedin_url).trim() : undefined,
       rank: (DECISION_TITLE.test(title) ? 2 : 0) + (hasEmailRecord ? 1 : 0),
     })
   }
   if (candidates.length === 0) return null
   candidates.sort((a, b) => b.rank - a.rank)
   const best = candidates[0]
-  return { personId: best.personId, fullName: best.fullName, title: best.title }
+  return { personId: best.personId, fullName: best.fullName, title: best.title, linkedinUrl: best.linkedinUrl }
 }
 
 /**
@@ -175,6 +203,8 @@ export const enrichFromProspeo = async (payload: {
     const emailBlock = person?.email || {}
     const emailRevealed = Boolean(emailBlock?.revealed)
     const emailStatus = String(emailBlock?.status || '').toUpperCase()
+    /* Step 4（D-4）：如实回传状态，**不再自行认定「已验证」**；
+       是否可标 `verified` 由调用方按 `PROSPEO_VERIFIED_EMAIL_STATUS` 判定。 */
     const email = emailRevealed && emailStatus !== 'INVALID' ? String(emailBlock?.email || '').trim() : ''
 
     const mobileBlock = person?.mobile || {}
@@ -193,13 +223,18 @@ export const enrichFromProspeo = async (payload: {
       phoneReachable = buildWhatsAppDigits(mobileRaw, countryCode) !== null
     }
 
-    if (!email && !mobileRaw) return EMPTY_RESULT
-
+    /* Step 2B（D-2）：**身份本身即有效产出**。
+       此前只要没拿到邮箱/手机就返回 EMPTY_RESULT，把已经付费（`search-person` 1 credit）
+       并已解析出的决策人姓名/职位一起丢弃。现如实回传身份。 */
     return {
       email: email || undefined,
+      emailStatus: email ? emailStatus : undefined,
       phone: mobileRaw || undefined,
       phoneKind,
       phoneReachable,
+      contactName: best.fullName || undefined,
+      contactTitle: best.title || undefined,
+      contactLinkedinUrl: best.linkedinUrl,
       used: true,
       source: 'prospeo',
     }

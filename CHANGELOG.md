@@ -17,6 +17,48 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.36] — 2026-10-16 · 分级 B2B 联系人补全（Step 1–5 最小完整链路）
+
+### 触发
+基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
+Apollo 邮箱未校验却标 `verified`（D-3）、Prospeo 注释与实现不一致（D-4）、成本完全不可追踪（D-5）、
+手机补全未受用户授权控制。
+
+### 变更（按 Step 1–5）
+- **Step 1 统一数据状态**：新增 `src/shared/enrichment-cost.ts`（调用记录 / 计费单位 / 成本摘要，
+  未知费用恒为 `null`）；`ContactFieldProvenance` 增 `verifiedAt` / `conflicts`；
+  `DecisionMaker` 增 `matchBasis` / `discoveredAt`；`SearchExecuteRequest` 增 `enrichment` 开关；
+  `SearchExecuteResult` / `LeadItem` / `LeadSearchResult` 增 `enrichmentCost`（5 处镜像同步，全部可选字段，向后兼容）。
+- **Step 2B 决策人发现**：`enrich-prospeo.ts` 出口暴露 `contactName` / `contactTitle` / `contactLinkedinUrl`；
+  `search-service.ts` 落地到 `decisionMakers[]` + `contact` / `contactTitle`（**不覆盖**既有更高优先来源），
+  记录 `matchBasis`（公司关联依据）与来源，`confidenceScore` 保持 0（不臆造）。
+- **Step 2D 第二供应商回退**：Apollo 仅在「首选未给出符合要求结果（无邮箱）」时才调用。
+- **Step 2E 手机补全门控**：新增 `enrichment.mobile`（**默认关闭**），未授权不发起任何请求。
+- **Step 3 成本与缓存**：新增 `enrichment-ledger.ts`（Provider/字段/状态/时间/计费单位/费用六要素流水，
+  未知计费记 `null`）+ `enrichment-cache.ts`（键 `provider|domain|field`，TTL 按数据类型区分，
+  命中即不发起请求 → 不消耗额度）。
+- **Step 4 数据可信**：`pickContactWithProvenance` 改为**档位优先**（`verified` 必须胜过 `extracted` ——
+  此前 `extracted` 排在数组前面时会压掉高可信值）；多源取值冲突记入 `provenance.conflicts` 而**不覆盖**；
+  Prospeo / Apollo 邮箱**按自报状态**决定可信档（`UNKNOWN` / `guessed` 不得标 `verified`）；
+  Apollo `match_confidence=none` 一律不作为真实联系人。
+- **Step 5 UI**：搜索页新增「补全工作邮箱 / 补全手机号（高成本）」开关；
+  结果卡片展示决策人身份 + 来源 + 公司关联依据 + 「尚未独立验证」提示，以及本轮补全调用次数与费用口径
+  （未知如实标注，**不估算**）。
+
+### 守护
+`tests/business-logic/contact-enrichment-tiered.business.test.js`（21 条）。
+变异验证（5 项，均**精准判红**）：取消档位优先排序 → 1 条；Prospeo 丢弃身份（复现 D-2）→ 1 条；
+手机默认开启 → 2 条；手机授权门禁失效 → 1 条；忽略 Apollo 未匹配 → 1 条。
+
+### 成本口径（诚实标注）
+**未声称成本已改善** —— 本轮只建立「**可记录**」能力。付费供应商一律记 `cost: null`（未知）：
+知其**计费单位**（credit）但**未与账单核对**，故不写精确费用，公布单价记在 `detail` 中供人工判断。
+
+### 受影响 SSOT
+`PROVIDER-CAPABILITY.md`（待补 Prospeo / Apollo 行）· `kone-PRD.md §0.5.1` · 审计报告 §8 建议 1–3。
+
+---
+
 ## [1.4.35] — 2026-10-16 · S5b 修复 S5a 买家证据断链（真实缺陷）+ 跟进序列端到端守护
 
 ### 触发（**上一版引入的真实缺陷**）

@@ -174,6 +174,8 @@ export const mapSearchResultToLeadItem = (result: LeadMapperInput, context: Lead
     phoneKind: result.phoneKind,
     /* 联系方式来源与可信度（三档）：透传后端产出 */
     contactProvenance: result.contactProvenance,
+    /* Step 3：补全成本摘要透传 */
+    enrichmentCost: result.enrichmentCost,
     country,
     countryCode: resolveCountryCode(context.countryCode || result.countryCode, country),
     industry,

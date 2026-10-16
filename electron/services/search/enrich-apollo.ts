@@ -44,14 +44,28 @@ export const getUserApolloApiKey = (): string => {
 export type ApolloPhoneKind = 'mobile' | 'landline' | 'unknown'
 
 export interface ApolloEnrichResult {
-  /** 已验证邮箱（Apollo personal_emails 首项）。 */
+  /** 邮箱（`email` 或 `personal_emails[0]`）。 */
   email?: string
+  /**
+   * Apollo 自报的**邮箱状态**（原样回传，如 `verified` / `guessed` / `unavailable` / `bounced` / `locked`）。
+   *
+   * Step 4（2026-10-16 数据链路审计 D-3）：此前实现**完全未读取该字段**，
+   * 却在调用方被无条件标为 `tier: 'verified'` —— 属「未校验即冒认已验证」。
+   * 现如实回传，由调用方按状态决定可信档。
+   */
+  emailStatus?: string
   /** 选中的最佳电话（优先 mobile 类型）。 */
   phone?: string
   /** 该电话经 phone-kind 分类后的类型。 */
   phoneKind: ApolloPhoneKind
   /** 该电话是否可用于 WhatsApp（= phoneKind 为 mobile 且能补全国家码）。 */
   phoneReachable: boolean
+  /* ── Step 2B：决策人身份（与 Prospeo 对齐；Apollo 是「匹配」而非定向搜索，故附 matchConfidence） ── */
+  contactName?: string
+  contactTitle?: string
+  contactLinkedinUrl?: string
+  /** Apollo 自报的匹配置信度（`high` / `medium` / `low` / `none`）；缺失时不臆造。 */
+  matchConfidence?: string
   /** 是否真正消耗了一次 Apollo 查询并得到可用数据。 */
   used: boolean
   source: 'apollo'
@@ -59,12 +73,20 @@ export interface ApolloEnrichResult {
 
 const EMPTY_RESULT: ApolloEnrichResult = {
   email: undefined,
+  emailStatus: undefined,
   phone: undefined,
   phoneKind: 'unknown',
   phoneReachable: false,
+  contactName: undefined,
+  contactTitle: undefined,
+  contactLinkedinUrl: undefined,
+  matchConfidence: undefined,
   used: false,
   source: 'apollo',
 }
+
+/** Apollo 自报为「已验证」的邮箱状态（大小写不敏感比较）。 */
+export const APOLLO_VERIFIED_EMAIL_STATUS = 'verified'
 
 /**
  * 从 Apollo `phone_numbers[]` 中挑选最佳电话：
@@ -131,12 +153,25 @@ export const enrichFromApollo = async (payload: {
     const json: any = await response.json().catch(() => ({}))
     const person = json?.person || (Array.isArray(json?.people) ? json.people[0] : undefined) || {}
 
-    const email = String(
-      person?.email || (Array.isArray(person?.personal_emails) ? person.personal_emails[0] : '') || '',
-    ).trim()
-    const bestPhone = pickBestApolloPhone(person?.phone_numbers)
+    /* Step 4：Apollo 自报的匹配置信度。`none` = 未找到匹配记录 ——
+       此时响应里可能仍带占位字段，**不得当作真实联系人**。 */
+    const matchConfidence = String(person?.match_confidence || '')
+      .trim()
+      .toLowerCase()
+    const noMatch = matchConfidence === 'none'
 
-    if (!email && !bestPhone) {
+    const email = noMatch
+      ? ''
+      : String(person?.email || (Array.isArray(person?.personal_emails) ? person.personal_emails[0] : '') || '').trim()
+    /* Step 4（D-3）：如实回传邮箱状态；调用方据此决定是否可标 `verified`。 */
+    const emailStatus = email ? String(person?.email_status || '').trim() : ''
+    const bestPhone = noMatch ? null : pickBestApolloPhone(person?.phone_numbers)
+
+    const contactName = noMatch ? '' : String(person?.name || '').trim()
+    const contactTitle = noMatch ? '' : String(person?.title || '').trim()
+    const contactLinkedinUrl = noMatch ? '' : String(person?.linkedin_url || '').trim()
+
+    if (!email && !bestPhone && !contactName) {
       return EMPTY_RESULT
     }
 
@@ -154,10 +189,15 @@ export const enrichFromApollo = async (payload: {
 
     return {
       email: email || undefined,
+      emailStatus: emailStatus || undefined,
       phone: bestPhone?.raw,
       phoneKind,
       phoneReachable,
-      used: Boolean(email || bestPhone),
+      contactName: contactName || undefined,
+      contactTitle: contactTitle || undefined,
+      contactLinkedinUrl: contactLinkedinUrl || undefined,
+      matchConfidence: matchConfidence || undefined,
+      used: Boolean(email || bestPhone || contactName),
       source: 'apollo',
     }
   } catch {

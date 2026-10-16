@@ -2,6 +2,7 @@
 
 import { formatSearchErrorMessage } from '@/lib/error-message'
 import { resolveCountryCode } from '@/lib/country-code'
+import { DEFAULT_ENRICHMENT_OPTIONS } from '@/shared/enrichment-cost'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { useLeadsStore, LeadSearchResult } from '@/store/leads-store'
@@ -100,6 +101,8 @@ const mapSearchExecuteResultToSearchResult = (
   /* 联系方式来源与可信度（三档）：透传后端产出（取值与来源同源），供卡片徽标与筛选 */
   contactProvenance:
     item.contactProvenance && typeof item.contactProvenance === 'object' ? item.contactProvenance : undefined,
+  /* Step 3：补全成本摘要透传（未知计费如实为 unknownCostCalls，不伪造精确成本） */
+  enrichmentCost: item.enrichmentCost && typeof item.enrichmentCost === 'object' ? item.enrichmentCost : undefined,
   unlocked: Boolean(item.unlocked),
   source: (item.source as string) || 'Google Maps',
   country: context.country || 'Global',
@@ -278,6 +281,11 @@ export interface UseSearchEngineReturn {
   setHighRelevanceOnlyEnabled: (enabled: boolean) => void
   b2bRoleOnlyEnabled: boolean
   setB2bRoleOnlyEnabled: (enabled: boolean) => void
+  /* Step 2E：分级补全授权（邮箱默认开启；手机默认关闭 —— 高成本，需用户显式开启） */
+  enrichEmailEnabled: boolean
+  setEnrichEmailEnabled: (enabled: boolean) => void
+  enrichMobileEnabled: boolean
+  setEnrichMobileEnabled: (enabled: boolean) => void
 
   // Derived
   searchResults: LeadSearchResult[]
@@ -322,6 +330,9 @@ export function useSearchEngine(): UseSearchEngineReturn {
   const [localDomainOnlyEnabled, setLocalDomainOnlyEnabled] = useState(false)
   const [highRelevanceOnlyEnabled, setHighRelevanceOnlyEnabled] = useState(false)
   const [b2bRoleOnlyEnabled, setB2bRoleOnlyEnabled] = useState(false)
+  /* Step 2E：默认值取共享 SSOT（邮箱开 / 手机关），避免与主进程默认值漂移 */
+  const [enrichEmailEnabled, setEnrichEmailEnabled] = useState(DEFAULT_ENRICHMENT_OPTIONS.email)
+  const [enrichMobileEnabled, setEnrichMobileEnabled] = useState(DEFAULT_ENRICHMENT_OPTIONS.mobile)
   const [hasLlmKey, setHasLlmKey] = useState(true)
   const [showLlmKeyReminder, setShowLlmKeyReminder] = useState(false)
   const [aiScoringSkipped, setAiScoringSkipped] = useState(false)
@@ -422,6 +433,8 @@ export function useSearchEngine(): UseSearchEngineReturn {
     localDomainOnlyEnabled,
     highRelevanceOnlyEnabled,
     b2bRoleOnlyEnabled,
+    enrichEmailEnabled,
+    enrichMobileEnabled,
   ])
 
   // Clamp current page
@@ -688,6 +701,11 @@ export function useSearchEngine(): UseSearchEngineReturn {
           highRelevanceOnly: highRelevanceOnlyEnabled,
           b2bRoleOnly: b2bRoleOnlyEnabled,
         },
+        /* Step 2E：把用户的分级补全授权下传主进程（手机默认关闭） */
+        enrichment: {
+          email: enrichEmailEnabled,
+          mobile: enrichMobileEnabled,
+        },
       })
 
       const targetData = Array.isArray(response?.results) ? response.results : []
@@ -825,6 +843,10 @@ export function useSearchEngine(): UseSearchEngineReturn {
     setHighRelevanceOnlyEnabled,
     b2bRoleOnlyEnabled,
     setB2bRoleOnlyEnabled,
+    enrichEmailEnabled,
+    setEnrichEmailEnabled,
+    enrichMobileEnabled,
+    setEnrichMobileEnabled,
 
     // Derived
     searchResults,

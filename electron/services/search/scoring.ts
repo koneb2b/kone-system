@@ -200,6 +200,8 @@ export const applySchemaDefaults = (item: Partial<SearchExecuteResult>): SearchE
   /* 联系方式来源与可信度（三档）：透传，缺失时不臆造（前端诚实降级）。 */
   contactProvenance:
     item.contactProvenance && typeof item.contactProvenance === 'object' ? item.contactProvenance : undefined,
+  /* Step 3：补全成本摘要透传（白名单序列化，缺失时不臆造）。 */
+  enrichmentCost: item.enrichmentCost && typeof item.enrichmentCost === 'object' ? item.enrichmentCost : undefined,
   address: String(item.address || '').trim(),
   isB2B: typeof item.isB2B === 'boolean' ? item.isB2B : (item.isB2B ?? undefined),
   source: String(item.source || '').trim() || 'Google Maps',

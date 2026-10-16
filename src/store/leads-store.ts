@@ -12,6 +12,7 @@ import type {
   AgentStatus,
   OpportunityScoreRationale,
 } from '@/shared/ipc-contracts'
+import type { EnrichmentCostSummary } from '@/shared/enrichment-cost'
 /* 号码类型（WhatsApp 可用性）：来自 wa.me 直链的号码为 mobile，前端据此放行 WhatsApp 按钮 */
 import type { PhoneKind } from '@/shared/phone-kind'
 /* 联系方式来源与可信度（三档）：结果卡片徽标 / 筛选 / 发送前确认共用 */
@@ -71,6 +72,8 @@ export type LeadItem = {
   phoneKind?: PhoneKind
   /* 联系方式来源与可信度（三档）：verified / extracted / inferred */
   contactProvenance?: ContactProvenance
+  /* Step 3：本轮补全成本摘要（调用次数 / 可确认费用 / 未知计费数） */
+  enrichmentCost?: EnrichmentCostSummary
   country: string
   countryCode: string
   industry: string
@@ -151,6 +154,8 @@ export type LeadSearchResult = {
   phoneKind?: PhoneKind
   /* 联系方式来源与可信度（三档）：verified / extracted / inferred */
   contactProvenance?: ContactProvenance
+  /* Step 3：本轮补全成本摘要（与 LeadItem 对齐） */
+  enrichmentCost?: EnrichmentCostSummary
   unlocked: boolean
   address?: string
   matchReasons?: string[]

@@ -291,13 +291,23 @@ test('归口合规：Apollo 预算属「总量护栏」，不触碰并发红线 
 })
 
 test('接线门禁：仅「高价值 + 预算剩余 + 已配置密钥」三者同时成立才触发 Apollo', () => {
+  /* 2026-10-16 数据链路审计：接线从「单条 if 串联」改为**显式 if/else-if 阶梯**，
+     以便对每种「未触发」原因分别记账（`skipped_not_high_value` / `skipped_budget` /
+     `skipped_not_opted_in`）。门禁语义不变且更强：每条跳过路径都可观测。 */
   const src = readSrc(SEARCH_SERVICE_TS)
+  assert.match(src, /if \(!payload\.highValue\)/, '必须先判定高价值（低分线索不做付费富化）')
   assert.match(
     src,
-    /if \(payload\.highValue && payload\.enrichBudget && getUserApolloApiKey\(\)/,
-    'Apollo 触发必须同时满足 highValue + enrichBudget + 密钥存在（可再叠加前置条件，如 Prospeo 已命中则跳过）',
+    /else if \(!payload\.enrichBudget \|\| !getUserApolloApiKey\(\)\)/,
+    '预算计数器与密钥必须同时具备才可触发',
   )
-  assert.match(src, /if \(payload\.enrichBudget\.used < payload\.enrichBudget\.limit\)/, '预算用尽后必须停止追加查询')
+  assert.match(
+    src,
+    /else if \(payload\.enrichBudget\.used >= payload\.enrichBudget\.limit\)/,
+    '预算用尽后必须停止追加查询',
+  )
+  assert.match(src, /payload\.enrichBudget\.used \+= 1/, '仅在真正发起查询时才消耗预算')
+  assert.match(src, /prospeoHasQualifyingEmail/, 'Step 2D：首选供应商已给出符合要求的邮箱时，不得重复调用第二供应商')
   assert.match(
     src,
     /const enrichBudget = \{ used: 0, limit: ENRICH_LOOKUP_BUDGET \}/,

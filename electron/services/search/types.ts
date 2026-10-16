@@ -20,6 +20,7 @@ import type {
 } from '../../../src/shared/ipc-contracts'
 import type { PhoneKind } from '../../../src/shared/phone-kind'
 import type { ContactProvenance } from '../../../src/shared/contact-provenance'
+import type { EnrichmentCostSummary } from '../../../src/shared/enrichment-cost'
 
 /* S4b：机会分逐维度评分依据（与 src/shared/ipc-contracts 同源），供本子模块与 scoring 共享。 */
 export type { OpportunityScoreRationale }
@@ -49,6 +50,8 @@ export type SearchExecuteResult = {
   phoneKind?: PhoneKind
   /* 联系方式来源与可信度（三档）。P1-3 对齐要求：与 src/shared/ipc-contracts.ts 同名类型保持一致。 */
   contactProvenance?: ContactProvenance
+  /* Step 3：本轮补全成本摘要（与 ipc-contracts 对齐） */
+  enrichmentCost?: EnrichmentCostSummary
   address: string
   isB2B?: boolean | null
   source?: string

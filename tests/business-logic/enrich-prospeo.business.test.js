@@ -103,7 +103,11 @@ test('search 无命中（results 为空）→ used:false', async () => {
   assert.equal(r.used, false)
 })
 
-test('enrich 未揭示邮箱（revealed:false）→ used:false', async () => {
+test('enrich 未揭示邮箱/手机 → 仍交付**决策人身份**（used:true）', async () => {
+  /* 语义变更（2026-10-16 数据链路审计 D-2）：
+     此前只要没拿到邮箱/手机就返回 `used:false`，把**已经付费（search-person）并已解析出的
+     决策人姓名/职位**一起丢弃 —— 这正是「用户只看到公司邮箱、不知道联系人是谁」的根因之一。
+     现改为：**身份本身即有效产出**，联系方式仍诚实缺省（不臆造）。 */
   const mod = await loadAdapter('KEY', async (url) => {
     if (url.includes('search-person')) return SEARCH_OK
     return jsonResponse({
@@ -112,7 +116,11 @@ test('enrich 未揭示邮箱（revealed:false）→ used:false', async () => {
     })
   })
   const r = await mod.enrichFromProspeo({ domain: 'acme.com' })
-  assert.equal(r.used, false)
+  assert.equal(r.used, true, '找到人即视为有效产出（额度已消耗）')
+  assert.equal(r.contactName, 'Jane Doe', '决策人姓名必须交付')
+  assert.equal(r.contactTitle, 'Owner', '决策人职位必须交付')
+  assert.equal(r.email, undefined, '未揭示即不得臆造邮箱')
+  assert.equal(r.phone, undefined, '未揭示即不得臆造手机')
 })
 
 test('网络异常（fetch 抛错）→ used:false（绝不抛错）', async () => {

@@ -9,11 +9,30 @@ import {
   pickContactWithProvenance,
   type ContactFieldProvenance,
   type ContactProvenance,
+  type ContactTier,
 } from '../../src/shared/contact-provenance'
 /* 用户「相关 / 不相关」反馈闭环（S4c）—— 本地、零成本，让匹配精度**越用越准** */
 import { applyFeedbackAdjustment, deriveFeedbackKey, type LeadFeedbackMap } from '../../src/shared/lead-feedback'
-import { enrichFromApollo, getUserApolloApiKey, type ApolloEnrichResult } from './search/enrich-apollo'
-import { enrichFromProspeo, getUserProspeoApiKey, type ProspeoEnrichResult } from './search/enrich-prospeo'
+import {
+  enrichFromApollo,
+  getUserApolloApiKey,
+  APOLLO_VERIFIED_EMAIL_STATUS,
+  type ApolloEnrichResult,
+} from './search/enrich-apollo'
+import {
+  enrichFromProspeo,
+  getUserProspeoApiKey,
+  PROSPEO_VERIFIED_EMAIL_STATUS,
+  type ProspeoEnrichResult,
+} from './search/enrich-prospeo'
+/* Step 3（2026-10-16 数据链路审计）：补全调用账本 + 字段级去重缓存 */
+import { recordEnrichmentCall, type RecordEnrichmentCallInput } from './search/enrichment-ledger'
+import { buildEnrichmentCacheKey, getEnrichmentCached, setEnrichmentCached } from './search/enrichment-cache'
+import {
+  resolveEnrichmentOptions,
+  summarizeEnrichmentCalls,
+  type EnrichmentCallRecord,
+} from '../../src/shared/enrichment-cost'
 import { isCircuitBreakerOpenError, resetCircuitBreaker } from '../utils/http-client'
 import {
   ConfigStore,
@@ -169,6 +188,11 @@ type SearchExecutePayload = {
     localDomainOnly?: boolean
     highRelevanceOnly?: boolean
     b2bRoleOnly?: boolean
+  }
+  /* Step 2E：分级补全的用户授权开关（与 src/shared/ipc-contracts.ts 的 SearchExecuteRequest 对齐） */
+  enrichment?: {
+    email?: boolean
+    mobile?: boolean
   }
 }
 
@@ -1036,13 +1060,13 @@ const pickBestPhoneForReach = (
     ranked.push({
       phone: prospeo.phone,
       kind: prospeo.phoneKind,
-      provenance: { tier: 'verified', source: 'Prospeo', kind: prospeo.phoneKind },
+      provenance: { tier: 'verified', source: 'Prospeo', kind: prospeo.phoneKind, verifiedAt: Date.now() },
     })
   if (apollo?.phone)
     ranked.push({
       phone: apollo.phone,
       kind: apollo.phoneKind,
-      provenance: { tier: 'verified', source: 'Apollo', kind: apollo.phoneKind },
+      provenance: { tier: 'verified', source: 'Apollo', kind: apollo.phoneKind, verifiedAt: Date.now() },
     })
   /* WhatsApp 直链号码：网站主动挂出的一键 WhatsApp → 定义上可用，按 mobile 参与排序 */
   if (whatsappPhone)
@@ -1093,6 +1117,8 @@ const enrichLeadWithDeepProbe = async (payload: {
   prospeoEmailBudget?: { used: number; limit: number }
   /** 每轮搜索的 Prospeo **手机号**富化预算计数器（10 credits/条，独立且更小）。 */
   prospeoMobileBudget?: { used: number; limit: number }
+  /* Step 2E：分级补全的用户授权开关（缺省：邮箱放行、手机关闭） */
+  enrichmentOptions?: { email?: boolean; mobile?: boolean }
 }) => {
   const website = normalizeWebsiteUrl(payload.candidate.website)
   const snippet = String(payload.candidate.snippet || '').trim()
@@ -1106,57 +1132,190 @@ const enrichLeadWithDeepProbe = async (payload: {
     [probeText, websiteContent.directEmails.join(' '), websiteContent.directPhones.join(' ')].join(' '),
   )
 
-  /* 2026-10-11：Apollo 联系人富化（Fail-Closed，宪法安全）。
-     仅在「高价值线索 + 预算剩余 + 已配置密钥」时追加一次**串行**查询；
-     不提升并行线索数（红线 SEARCH_ENRICH_CONCURRENCY=2 不变）。
-     缺密钥 / 超预算 / 失败 → apollo = null，静默降级到既有官网抓取，绝不中断搜索。
-     外层再套一层 try/catch：Apollo 只是官网抓取的增量补充，**任何**异常
-     （含密钥存储不可用、适配器加载失败）都不允许反过来中断整条富化链路。 */
-  /* 2026-10-13：Prospeo 作为 Apollo 的**低成本前置**（实测邮箱 ≈2 credits/条：找人 1 + 揭示 1）。
-     仅对「高价值 + 已配置密钥 + 邮箱预算剩余」的线索查询；**命中邮箱即跳过 Apollo**（省成本）。
-     手机揭示昂贵（10 credits/条）→ 独立小预算，且仅在**尚无手机号**时按需揭示（对齐 WhatsApp 触达）。
-     任何异常一律降级为 null，绝不中断搜索。 */
+  /* Step 3：本线索的补全调用流水（既写全局账本，也用于生成本线索的 enrichmentCost 摘要）。
+     **不伪造成本**：付费供应商一律 `cost: null`（未知）—— 我们知其**计费单位**（credit），
+     但**未与账单核对**，故不写精确费用；公布单价记录在 `detail` 中供人工判断。 */
+  const enrichmentCalls: EnrichmentCallRecord[] = []
+  const pushEnrichmentCall = (input: RecordEnrichmentCallInput) => {
+    const record = recordEnrichmentCall(input)
+    if (record) enrichmentCalls.push(record)
+  }
+
+  /* Step 2E：**分级补全的用户授权门控**。
+     - 邮箱：缺省放行（低成本前置，Prospeo 约 2 credits/条）；
+     - 手机：缺省**关闭**（10 credits/条，高成本）—— 必须由用户在 UI 显式开启。
+     门控在**调用前**判定，未授权时不发起任何请求（`skipped_not_opted_in`）。 */
+  const allowEmailEnrich = payload.enrichmentOptions?.email !== false
+  const allowMobileEnrich = payload.enrichmentOptions?.mobile === true
+
   let prospeo: ProspeoEnrichResult | null = null
   try {
     const prospeoKey = getUserProspeoApiKey()
     const emailBudget = payload.prospeoEmailBudget
-    if (payload.highValue && prospeoKey && emailBudget && emailBudget.used < emailBudget.limit) {
-      const mobileBudget = payload.prospeoMobileBudget
-      const candidatePhone = String(payload.candidate.phone || '').trim()
-      const alreadyMobile =
-        Boolean(candidatePhone) &&
-        classifyPhoneKind(candidatePhone, resolveCountryCode(payload.country) || '') === 'mobile'
-      const wantMobile = Boolean(mobileBudget) && mobileBudget!.used < mobileBudget!.limit && !alreadyMobile
-      emailBudget.used += 1
-      if (wantMobile) mobileBudget!.used += 1
-      const result = await enrichFromProspeo({
-        domain: website,
-        company: String(payload.candidate.company || '').trim(),
-        country: payload.country,
-        wantMobile,
-        timeoutMs: payload.timeoutMs,
+    const mobileBudget = payload.prospeoMobileBudget
+    const candidatePhone = String(payload.candidate.phone || '').trim()
+    const alreadyMobile =
+      Boolean(candidatePhone) &&
+      classifyPhoneKind(candidatePhone, resolveCountryCode(payload.country) || '') === 'mobile'
+    /* 手机仅在「用户已授权 + 预算剩余 + 尚无手机」时才请求 —— 三条缺一不可。 */
+    const wantMobile =
+      allowMobileEnrich && Boolean(mobileBudget) && mobileBudget!.used < mobileBudget!.limit && !alreadyMobile
+
+    if (!payload.highValue) {
+      pushEnrichmentCall({ provider: 'prospeo', field: 'identity', status: 'skipped_not_high_value' })
+    } else if (!prospeoKey) {
+      pushEnrichmentCall({
+        provider: 'prospeo',
+        field: 'identity',
+        status: 'skipped_not_opted_in',
+        detail: 'Prospeo API key 未配置',
       })
-      prospeo = result.used ? result : null
+    } else if (!allowEmailEnrich) {
+      pushEnrichmentCall({
+        provider: 'prospeo',
+        field: 'identity',
+        status: 'skipped_not_opted_in',
+        detail: '用户未开启联系人补全',
+      })
+    } else if (!emailBudget || emailBudget.used >= emailBudget.limit) {
+      pushEnrichmentCall({ provider: 'prospeo', field: 'identity', status: 'skipped_budget' })
+    } else {
+      /* Step 3：字段级去重缓存 —— 命中即**不发起请求**，天然不消耗额度。 */
+      const identityCacheKey = buildEnrichmentCacheKey(
+        'prospeo',
+        website || String(payload.candidate.company || ''),
+        'identity',
+      )
+      const cachedProspeo = getEnrichmentCached<ProspeoEnrichResult>(identityCacheKey)
+      if (cachedProspeo) {
+        prospeo = cachedProspeo
+        pushEnrichmentCall({
+          provider: 'prospeo',
+          field: 'identity',
+          status: 'hit',
+          billingUnit: 'credit',
+          fromCache: true,
+          detail: '缓存命中，未消耗额度',
+        })
+      } else {
+        emailBudget.used += 1
+        if (wantMobile) mobileBudget!.used += 1
+        const result = await enrichFromProspeo({
+          domain: website,
+          company: String(payload.candidate.company || '').trim(),
+          country: payload.country,
+          wantMobile,
+          timeoutMs: payload.timeoutMs,
+        })
+        if (result.used) {
+          prospeo = result
+          setEnrichmentCached(identityCacheKey, result)
+          pushEnrichmentCall({
+            provider: 'prospeo',
+            field: 'identity',
+            status: 'hit',
+            billingUnit: 'credit',
+            detail: 'search-person（公布价 1 credit，未与账单核对）',
+          })
+          if (result.email) {
+            pushEnrichmentCall({
+              provider: 'prospeo',
+              field: 'email',
+              status: 'hit',
+              billingUnit: 'credit',
+              detail: `enrich-person 邮箱（公布价 1 credit，status=${result.emailStatus || 'unknown'}）`,
+            })
+          }
+          if (result.phone) {
+            pushEnrichmentCall({
+              provider: 'prospeo',
+              field: 'mobile',
+              status: 'hit',
+              billingUnit: 'credit',
+              detail: 'enrich-person 手机（公布价 10 credits）',
+            })
+          }
+        } else {
+          pushEnrichmentCall({
+            provider: 'prospeo',
+            field: 'identity',
+            status: 'miss',
+            billingUnit: 'credit',
+            detail: 'search-person 无命中（公布价 1 credit，未与账单核对）',
+          })
+        }
+      }
     }
   } catch {
     prospeo = null
+    pushEnrichmentCall({ provider: 'prospeo', field: 'identity', status: 'error', billingUnit: 'unknown' })
   }
 
   let apollo: ApolloEnrichResult | null = null
   try {
-    /* Prospeo 已拿到邮箱 → 跳过 Apollo（Prospeo 邮箱成本更低，避免重复付费）。 */
-    if (payload.highValue && payload.enrichBudget && getUserApolloApiKey() && !prospeo?.email) {
-      if (payload.enrichBudget.used < payload.enrichBudget.limit) {
+    /* Step 2D：**第二供应商只在首选未给出符合要求的结果时**才执行。
+       「符合要求」= 拿到了邮箱（Prospeo 未拿到邮箱才回退 Apollo），避免重复付费。 */
+    const prospeoHasQualifyingEmail = Boolean(prospeo?.email)
+    if (!payload.highValue) {
+      pushEnrichmentCall({ provider: 'apollo', field: 'email', status: 'skipped_not_high_value' })
+    } else if (!payload.enrichBudget || !getUserApolloApiKey()) {
+      pushEnrichmentCall({
+        provider: 'apollo',
+        field: 'email',
+        status: 'skipped_not_opted_in',
+        detail: 'Apollo API key 未配置',
+      })
+    } else if (prospeoHasQualifyingEmail) {
+      pushEnrichmentCall({
+        provider: 'apollo',
+        field: 'email',
+        status: 'skipped_not_opted_in',
+        detail: '首选供应商已给出邮箱，按 Step 2D 不重复调用',
+      })
+    } else if (payload.enrichBudget.used >= payload.enrichBudget.limit) {
+      pushEnrichmentCall({ provider: 'apollo', field: 'email', status: 'skipped_budget' })
+    } else {
+      const apolloCacheKey = buildEnrichmentCacheKey(
+        'apollo',
+        website || String(payload.candidate.company || ''),
+        'identity',
+      )
+      const cachedApollo = getEnrichmentCached<ApolloEnrichResult>(apolloCacheKey)
+      if (cachedApollo) {
+        apollo = cachedApollo
+        pushEnrichmentCall({
+          provider: 'apollo',
+          field: 'identity',
+          status: 'hit',
+          billingUnit: 'credit',
+          fromCache: true,
+          detail: '缓存命中，未消耗额度',
+        })
+      } else {
         payload.enrichBudget.used += 1
-        apollo = await enrichFromApollo({
+        const result = await enrichFromApollo({
           domain: website,
           company: String(payload.candidate.company || '').trim(),
           country: payload.country,
         })
+        if (result.used) {
+          apollo = result
+          setEnrichmentCached(apolloCacheKey, result)
+          pushEnrichmentCall({
+            provider: 'apollo',
+            field: 'identity',
+            status: 'hit',
+            billingUnit: 'credit',
+            detail: `people/match（公布价 1-9 credits，match_confidence=${result.matchConfidence || 'unknown'}）`,
+          })
+        } else {
+          pushEnrichmentCall({ provider: 'apollo', field: 'identity', status: 'miss', billingUnit: 'credit' })
+        }
       }
     }
   } catch {
     apollo = null
+    pushEnrichmentCall({ provider: 'apollo', field: 'identity', status: 'error', billingUnit: 'unknown' })
   }
 
   let llmInferred: Record<string, unknown> | null = null
@@ -1215,17 +1374,31 @@ const enrichLeadWithDeepProbe = async (payload: {
     }
   }
 
-  const contact = String(payload.candidate.contact || extracted.contact || '').trim()
-  const contactTitle = String(payload.candidate.contactTitle || extracted.contactTitle || '').trim()
+  let contact = String(payload.candidate.contact || extracted.contact || '').trim()
+  let contactTitle = String(payload.candidate.contactTitle || extracted.contactTitle || '').trim()
   /* 数据源标签（用于来源标注）：候选自带 source（如 "Google Maps"）。 */
   const candidateSourceLabel = String(payload.candidate.source || 'Google Maps').trim()
-  /* 邮箱优先级：线索自带 > **Prospeo 已验证邮箱** > Apollo 已验证邮箱 > 官网正则抽取 > LLM 提取。
-     Prospeo/Apollo 回填的邮箱均经过验证；取值与**来源标注同源**（`pickContactWithProvenance`），
-     杜绝「值来自官网、来源却标成 Prospeo」这类静默错标。 */
+  /* 邮箱优先级（Step 4 修正）：**按可信档排序**，`verified` 必须优先于 `extracted`。
+     ⚠️ 2026-10-16 审计修正：此前把 `payload.candidate.email`（`extracted`）排在
+     `prospeo/apollo`（`verified`）**之前**，一旦候选自带邮箱就会用**低可信值压掉高可信值**，
+     与「低可信不得覆盖高可信」相悖。现按档位排序（同档位保持业务顺序）。
+     邮箱可信档**如实标注**：Prospeo/Apollo 仅在**自报状态为已验证**时才算 `verified`，
+     否则降为 `extracted` —— 不把「供应商返回了」等同于「已验证」（审计 D-3/D-4）。 */
+  const enrichAt = Date.now()
+  const prospeoEmailTier: ContactTier =
+    String(prospeo?.emailStatus || '').toUpperCase() === PROSPEO_VERIFIED_EMAIL_STATUS ? 'verified' : 'extracted'
+  const apolloEmailTier: ContactTier =
+    String(apollo?.emailStatus || '').toLowerCase() === APOLLO_VERIFIED_EMAIL_STATUS ? 'verified' : 'extracted'
   const emailPick = pickContactWithProvenance([
+    {
+      value: prospeo?.email,
+      tier: prospeoEmailTier,
+      source: 'Prospeo',
+      grade: prospeo?.emailStatus,
+      verifiedAt: enrichAt,
+    },
+    { value: apollo?.email, tier: apolloEmailTier, source: 'Apollo', grade: apollo?.emailStatus, verifiedAt: enrichAt },
     { value: payload.candidate.email, tier: 'extracted', source: candidateSourceLabel },
-    { value: prospeo?.email, tier: 'verified', source: 'Prospeo' },
-    { value: apollo?.email, tier: 'verified', source: 'Apollo' },
     { value: websiteContent.directEmails[0], tier: 'extracted', source: '官网' },
     { value: extracted.email, tier: 'extracted', source: '官网' },
   ])
@@ -1252,14 +1425,69 @@ const enrichLeadWithDeepProbe = async (payload: {
   const contactProvenance: ContactProvenance = {}
   if (emailPick.provenance) contactProvenance.email = emailPick.provenance
   if (phonePick.provenance) contactProvenance.phone = phonePick.provenance
-  /* 联系人姓名/职位：来自候选（搜索结果）或官网文本/LLM 提取 → 均属「官网提取」档 */
+
+  /* ── Step 2B：决策人身份交付（审计缺陷 D-2）────────────────────────────
+     此前富化源**完全不参与** `contact` / `contactTitle` / `decisionMakers`：
+     Prospeo 的 `search-person` 已按域名找到人（且做了决策者职位加权），
+     姓名与职位却**在适配器出口被丢弃** → 用户永远只看到「有邮箱但不知道是谁」。
+     现按「不覆盖既有更高优先来源」的原则补位：
+       · 候选自带（搜索结果）> 官网正则 > **Prospeo（按域名定向检索）** > **Apollo（按域名匹配）**；
+     并如实记录**公司关联依据**（`matchBasis`）与来源，`confidenceScore` 保持 0（不臆造）。
+     注意：供应商「返回了某人」≠「该人是已验证联系人」，故 tier 记为 `extracted`（非 verified）。 */
+  let resolvedContactSource = contact ? (payload.candidate.contact ? candidateSourceLabel : '官网') : ''
+  let resolvedContactMatchBasis: string | undefined
+  if (!contact && prospeo?.contactName) {
+    contact = prospeo.contactName
+    contactTitle = prospeo.contactTitle || contactTitle
+    resolvedContactSource = 'Prospeo'
+    resolvedContactMatchBasis = 'Prospeo 按公司域名检索（决策者职位加权）'
+  } else if (!contact && apollo?.contactName) {
+    contact = apollo.contactName
+    contactTitle = apollo.contactTitle || contactTitle
+    resolvedContactSource = 'Apollo'
+    resolvedContactMatchBasis = `Apollo people/match 按公司域名匹配（match_confidence=${apollo.matchConfidence || 'unknown'}）`
+  }
   if (contact) {
     contactProvenance.contact = {
       tier: 'extracted',
-      source: payload.candidate.contact ? candidateSourceLabel : '官网',
+      source: resolvedContactSource,
+      verifiedAt: enrichAt,
     }
   }
-  /* 数据源归因：Apollo 真正贡献了联系数据时才标注，避免误导。 */
+
+  /* 富化得到的决策人（身份独立于联系方式：`confidenceScore` 恒 0 = 未验证，前端据此降级展示）。 */
+  const enrichedDecisionMakers: DecisionMaker[] = []
+  if (prospeo?.contactName) {
+    enrichedDecisionMakers.push({
+      name: prospeo.contactName,
+      title: prospeo.contactTitle || '',
+      email: prospeo.email || '',
+      phone: prospeo.phone || '',
+      linkedinUrl: prospeo.contactLinkedinUrl,
+      source: 'Prospeo',
+      confidenceScore: 0,
+      matchBasis: 'Prospeo 按公司域名检索（决策者职位加权）',
+      discoveredAt: enrichAt,
+    })
+  }
+  if (apollo?.contactName) {
+    enrichedDecisionMakers.push({
+      name: apollo.contactName,
+      title: apollo.contactTitle || '',
+      email: apollo.email || '',
+      phone: apollo.phone || '',
+      linkedinUrl: apollo.contactLinkedinUrl,
+      source: 'Apollo',
+      confidenceScore: 0,
+      matchBasis: `Apollo people/match 按公司域名匹配（match_confidence=${apollo.matchConfidence || 'unknown'}）`,
+      discoveredAt: enrichAt,
+    })
+  }
+  const decisionMakers = mergeDecisionMakers(payload.candidate.decisionMakers, enrichedDecisionMakers)
+
+  /* Step 3：本线索的补全成本摘要（未知计费如实计入 `unknownCostCalls`，不伪造精确成本）。 */
+  const enrichmentCost = summarizeEnrichmentCalls(enrichmentCalls)
+
   /* 数据源归因：Prospeo / Apollo **真正贡献了联系数据**时才标注，避免误导（不虚标）。 */
   const enrichSourceSuffix = (prospeo?.used ? ' · Prospeo' : '') + (apollo?.used ? ' · Apollo' : '')
   const outreachAngle = String(llmInferred?.outreachAngle || '').trim()
@@ -1347,6 +1575,8 @@ const enrichLeadWithDeepProbe = async (payload: {
       phone: phone || socialContacts?.phone || '',
       phoneKind,
       contactProvenance,
+      decisionMakers,
+      enrichmentCost,
       fallbackStatus: usedSocialFallback ? 'social_blind_score' : payload.candidate.fallbackStatus,
       matchReasons: [
         ...(Array.isArray(blindLead?.matchReasons) && blindLead?.matchReasons.length > 0
@@ -1384,6 +1614,8 @@ const enrichLeadWithDeepProbe = async (payload: {
     phone,
     phoneKind,
     contactProvenance,
+    decisionMakers,
+    enrichmentCost,
     source: (String(payload.candidate.source || 'Google Maps') + enrichSourceSuffix).trim(),
     matchReasons: [
       ...(Array.isArray(payload.candidate.matchReasons) ? payload.candidate.matchReasons : []),
@@ -1581,6 +1813,8 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         const inputCity = typeof payload?.city === 'string' ? payload.city.trim() : ''
         const inputCountry = typeof payload?.country === 'string' ? payload.country.trim() : ''
         const filterOptions = payload?.filterOptions || {}
+        /* Step 2E：分级补全授权（缺省：邮箱放行、手机关闭） */
+        const enrichmentOptions = resolveEnrichmentOptions(payload?.enrichment)
         const dataSourceType = payload?.dataSourceType
         const configuredSearchTimeoutMs = Number(userConfig?.searchTimeoutMs) || DEFAULT_SEARCH_TIMEOUT_MS
         const timeoutMs = Math.max(DEFAULT_SEARCH_TIMEOUT_MS, configuredSearchTimeoutMs)
@@ -2532,6 +2766,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                     enrichBudget,
                     prospeoEmailBudget,
                     prospeoMobileBudget,
+                    enrichmentOptions,
                   }),
                   /* 外层守卫必须 ≥ 内部最坏耗时（官网抓取 15s + LLM 深探 20s = 35s），
                    否则高分线索的深探总是被外层守卫砍掉，表现为大量

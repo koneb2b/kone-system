@@ -29,6 +29,18 @@ export type ContactFieldProvenance = {
   grade?: string
   /** 电话类型（复用双端 SSOT `phone-kind`）。 */
   kind?: 'mobile' | 'landline' | 'unknown'
+  /**
+   * 该字段**被取得/验证的时间**（epoch ms）。
+   * Step 5 要求 UI 展示「验证时间」——低可信数据是否仍有效必须可判断，故随字段一起落库。
+   * 缺失时不臆造（历史数据无该字段，UI 诚实降级为「未记录」）。
+   */
+  verifiedAt?: number
+  /**
+   * **多源冲突证据**（Step 4）：同一字段被多个来源给出**不同取值**时，
+   * 保留落选方的来源与取值供人工复核 —— **绝不静默覆盖**。
+   * 仅记录，不参与取值决策；为空/缺失表示无冲突。
+   */
+  conflicts?: Array<{ source: string; value: string }>
 }
 
 export type ContactProvenance = {
@@ -64,11 +76,25 @@ export const canAutoDispatch = (tier?: ContactTier): boolean => tier !== 'inferr
 export const requiresSendConfirmation = (tier?: ContactTier): boolean => tier === 'inferred'
 
 /**
- * 按**优先级顺序**挑选第一个非空候选，并**同时返回其来源与可信度**。
+ * 档位优先级（数值越大越可信）——用于「**低可信不得覆盖高可信**」（Step 4）。
+ */
+export const CONTACT_TIER_RANK: Record<ContactTier, number> = { inferred: 0, extracted: 1, verified: 2 }
+
+/**
+ * 按**档位优先、同档位保持传入顺序**挑选候选，并**同时返回其来源与可信度**。
  *
  * 为什么必须「取值与来源同源」：若先按 A 链取值、再按 B 链推断来源，
  * 极易出现「值来自官网、来源却标成 Prospeo」的**静默错标**（比不标更伤信任）。
  * 故把取值与标注**合并为一次操作**。
+ *
+ * 为什么是**档位优先**而非「第一个非空」（2026-10-16 数据链路审计 Step 4）：
+ * 原先「第一个非空即胜」会让**调用方传入顺序**隐式决定可信度 ——
+ * 实测 `search-service.ts` 曾把 `extracted`（搜索结果）排在 `verified`（Prospeo）之前，
+ * 一旦候选自带邮箱，就会用**低可信值压掉高可信值**。现改为按档位排序，
+ * 同档位仍保留调用方的业务优先级（稳定排序）。
+ *
+ * **冲突不覆盖**：落选的非空且**取值不同**的候选会被记录进 `provenance.conflicts`
+ * （去重、按可信度降序），供人工复核 —— 绝不静默丢弃。
  */
 export const pickContactWithProvenance = (
   candidates: Array<{
@@ -77,15 +103,44 @@ export const pickContactWithProvenance = (
     source: string
     grade?: string
     kind?: 'mobile' | 'landline' | 'unknown'
+    verifiedAt?: number
   }>,
 ): { value: string; provenance?: ContactFieldProvenance } => {
-  for (const candidate of candidates) {
-    const value = String(candidate.value || '').trim()
-    if (!value) continue
-    return {
-      value,
-      provenance: { tier: candidate.tier, source: candidate.source, grade: candidate.grade, kind: candidate.kind },
-    }
+  const nonEmpty = (candidates || [])
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => String(candidate?.value || '').trim())
+
+  if (nonEmpty.length === 0) return { value: '' }
+
+  const ranked = nonEmpty.sort((a, b) => {
+    const byTier = (CONTACT_TIER_RANK[b.candidate.tier] ?? 0) - (CONTACT_TIER_RANK[a.candidate.tier] ?? 0)
+    return byTier !== 0 ? byTier : a.index - b.index
+  })
+
+  const best = ranked[0].candidate
+  const value = String(best.value || '').trim()
+
+  const conflicts = Array.from(
+    new Map(
+      ranked
+        .slice(1)
+        .map(({ candidate }) => ({
+          source: String(candidate.source || '').trim(),
+          value: String(candidate.value || '').trim(),
+        }))
+        .filter((entry) => entry.value && entry.value !== value)
+        .map((entry) => [entry.value, entry] as const),
+    ).values(),
+  )
+
+  const provenance: ContactFieldProvenance = {
+    tier: best.tier,
+    source: best.source,
+    grade: best.grade,
+    kind: best.kind,
   }
-  return { value: '' }
+  if (typeof best.verifiedAt === 'number') provenance.verifiedAt = best.verifiedAt
+  if (conflicts.length > 0) provenance.conflicts = conflicts
+
+  return { value, provenance }
 }

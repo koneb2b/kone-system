@@ -236,6 +236,10 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     setHighRelevanceOnlyEnabled,
     b2bRoleOnlyEnabled,
     setB2bRoleOnlyEnabled,
+    enrichEmailEnabled,
+    setEnrichEmailEnabled,
+    enrichMobileEnabled,
+    setEnrichMobileEnabled,
     searchResults,
     displayedResults,
     pagedResults,
@@ -977,6 +981,34 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
                   <span className="font-medium text-slate-900">优先 B2B 角色词</span>
                   <br />
                   更关注 distributor / importer / OEM / integrator 信号
+                </span>
+              </label>
+              {/* Step 2E：分级补全授权 —— 邮箱（低成本，默认开）/ 手机（高成本，默认关，需显式开启）
+                  如实标注成本口径与不确定性，不把高级补全伪装成免费能力。 */}
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={enrichEmailEnabled}
+                  onChange={(e) => setEnrichEmailEnabled(e.target.checked)}
+                  className="mt-0.5 size-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20"
+                />
+                <span>
+                  <span className="font-medium text-slate-900">补全工作邮箱</span>
+                  <br />
+                  对高匹配线索按公司域名查找联系人邮箱（低成本，需已配置相应数据源密钥）
+                </span>
+              </label>
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={enrichMobileEnabled}
+                  onChange={(e) => setEnrichMobileEnabled(e.target.checked)}
+                  className="mt-0.5 size-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20"
+                />
+                <span>
+                  <span className="font-medium text-slate-900">补全手机号（高成本）</span>
+                  <br />
+                  手机号揭示按条计费且单价较高，默认关闭；每轮另有条数上限。开启后仅对高匹配线索尝试
                 </span>
               </label>
             </div>

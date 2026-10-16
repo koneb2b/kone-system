@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useEffect, useState } from 'react'
-import { Check, AlertTriangle, Radar, Mail, Loader2, Copy, X } from 'lucide-react'
+import { Check, AlertTriangle, Radar, Mail, Loader2, Copy, X, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
@@ -327,6 +327,60 @@ export const SearchResultCard = memo(function SearchResultCard({
               </span>
             ) : null}
             {'address' in lead && lead.address ? <span className="truncate max-w-[240px]">{lead.address}</span> : null}
+            {/* Step 2B / Step 5：**决策人身份**（姓名·职位·来源·公司关联依据）。
+                用户必须能区分「只发现了公司」与「已识别出决策人」；未独立验证时明确标注，
+                绝不把供应商匹配结果说成「已验证」。 */}
+            {lead.decisionMakers && lead.decisionMakers.length > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex cursor-help items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
+                    <UserRound className="size-2.5" />
+                    决策人 {lead.decisionMakers.length}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[320px] text-xs">
+                  {lead.decisionMakers.slice(0, 3).map((dm, index) => (
+                    <div key={`${dm.name || 'dm'}-${index}`}>
+                      {[dm.name, dm.title].filter(Boolean).join(' · ') || '（未提供姓名）'}
+                      {dm.source ? ` — 来源：${dm.source}` : ''}
+                      {dm.matchBasis ? `（${dm.matchBasis}）` : ''}
+                    </div>
+                  ))}
+                  {lead.decisionMakers.every((dm) => !(Number(dm.confidenceScore) > 0)) ? (
+                    <div className="mt-1 text-amber-600">以上为数据源匹配结果，尚未独立验证</div>
+                  ) : null}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">未识别决策人</span>
+            )}
+            {/* Step 5：**本轮补全成本摘要** —— 未知计费如实标注，不伪造精确成本 */}
+            {lead.enrichmentCost && lead.enrichmentCost.calls > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex cursor-help items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600">
+                    补全 {lead.enrichmentCost.calls} 次
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[300px] text-xs">
+                  <div>调用次数：{lead.enrichmentCost.calls}</div>
+                  <div>参与来源：{lead.enrichmentCost.providers.join('、') || '—'}</div>
+                  {Object.keys(lead.enrichmentCost.byUnit).length > 0 ? (
+                    <div>
+                      可确认费用：
+                      {Object.entries(lead.enrichmentCost.byUnit)
+                        .map(([unit, amount]) => `${amount} ${unit}`)
+                        .join('、')}
+                    </div>
+                  ) : null}
+                  {lead.enrichmentCost.unknownCostCalls > 0 ? (
+                    <div className="text-amber-600">
+                      其中 {lead.enrichmentCost.unknownCostCalls} 次费用未知（未与账单核对，不估算）
+                    </div>
+                  ) : null}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
             {lead.dataSourceNote ? (
               <Tooltip>
                 <TooltipTrigger asChild>
