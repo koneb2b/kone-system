@@ -17,6 +17,36 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.35] — 2026-10-16 · S5b 修复 S5a 买家证据断链（真实缺陷）+ 跟进序列端到端守护
+
+### 触发（**上一版引入的真实缺陷**）
+S5a 引入 `AgentTask.buyerEvidence`，但该字段在 `stageAgentsFromPipeline` 的
+`AgentTask → StagedTarget` 映射中**被丢弃**，且 `executeEmailAgent` 也未下传 ——
+买家证据**从未到达真实邮件生成路径**，差异化首封在真实流程中退化为模板。
+根因是验证盲区：单测只覆盖「队列层」与「provider 层」，**中间接线无人验证**。
+
+### 修复
+- `StagedTarget` 增 `buyerEvidence?: string[]`；`stageAgentsFromPipeline` 映射补齐该字段。
+- `executeEmailAgent` / `startAgent` 的目标类型补齐，并把 `buyerEvidence` 下传进发送任务。
+- **证据连续性**：`FollowupPlan.buyerEvidence?` + `createPlan(..., buyerEvidence)`；
+  `runFollowupTick` 的跟进任务沿用首封证据（可选字段，**旧计划向后兼容**）。
+
+### 守护（`tests/business-logic/followup-sequence-e2e.business.test.js`，9 条）
+- **盲区守护**：行为断言 `buyerEvidence` 穿过「队列 → 暂存」逐字不丢，+ 源码结构断言（剥离注释）守最后一跳。
+- **跟进序列状态机闭环**（`runFollowupTick` 此前**零覆盖**）：回复即停且不发送 / IMAP 未配置挂起
+  **绝不盲推** / IMAP 报错延后 / 正常推进并回写**真实** stage / 收件人窗口外短周期重试不消耗轮次 /
+  未到期不发送 / 无计划零副作用。
+- 手法：打桩 `EmailAgent.prototype`（与 agent-service 共享同一类对象，Node 模块缓存）——
+  **无需为测试新增产品代码缝**。
+
+### 变异验证
+暂存丢字段 → 1 条判红；发送任务丢字段 → 1 条判红；回复不停 → 1 条判红；IMAP 缺失仍盲推 → 1 条判红。
+
+### 受影响 SSOT
+`kone-PRD.md §0.5.1` · 计划文档 §六 P1-2 与其 S5 状态。
+
+---
+
 ## [1.4.34] — 2026-10-16 · S5a 差异化首封（买家证据引用）+ 首封「引用证据率」度量
 
 ### 触发

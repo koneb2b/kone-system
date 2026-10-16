@@ -275,6 +275,10 @@ type StagedTarget = {
   linkedinUrl?: string
   aiEmail?: { subject: string; body: string }
   country?: string
+  /* S5b 修复：`AgentTask.buyerEvidence` 此前在「队列 → 暂存 → 发送」两级映射中被**丢弃**，
+     导致 S5a 的买家证据**从未到达真实邮件生成路径**（单测只覆盖队列层与 provider 层，中间接线无人验证）。
+     此处显式贯通，使差异化首封在真实流程中生效。 */
+  buyerEvidence?: string[]
 }
 const stagedTargets: Map<string, StagedTarget[]> = new Map()
 
@@ -857,6 +861,8 @@ const executeEmailAgent = async (
     website: string
     aiEmail?: { subject: string; body: string }
     country?: string
+    /* S5b：买家证据（差异化首封） */
+    buyerEvidence?: string[]
   }>,
   runId?: string,
   store?: ConfigStore,
@@ -924,6 +930,8 @@ const executeEmailAgent = async (
           website: target.website,
           email: target.email,
           aiEmail: target.aiEmail,
+          /* S5b：买家证据必须随任务下传，否则差异化首封在真实流程中退化为模板 */
+          buyerEvidence: target.buyerEvidence,
           country: target.country,
           createdAt: Date.now(),
           priority: 0,
@@ -941,7 +949,12 @@ const executeEmailAgent = async (
         emailPendingManual: false,
       })
       if (store) {
-        upsertPlan(store, createPlan(target.company, target.email, Date.now(), target.leadKey, target.country))
+        /* S5b：把买家证据持久化进跟进计划，使 stage 1–3 保持证据连续性
+           （跟进信可继续引用首封依据，而非退回泛泛模板）。 */
+        upsertPlan(
+          store,
+          createPlan(target.company, target.email, Date.now(), target.leadKey, target.country, target.buyerEvidence),
+        )
       }
     } else if (result.error === 'outside_recipient_send_window') {
       /* P1-4：收件人当地时间不在发送窗口 → 不计失败、不建计划，留给后续轮次 */
@@ -1032,6 +1045,8 @@ export const runFollowupTick = async (store: ConfigStore, now: number = Date.now
           company: plan.company,
           website: '',
           email: plan.email,
+          /* S5b：跟进轮次沿用首封的买家证据，保持证据连续性 */
+          buyerEvidence: plan.buyerEvidence,
           country: plan.country,
           createdAt: Date.now(),
           priority: 0,
@@ -1097,6 +1112,8 @@ const startAgent = async (
     linkedinUrl?: string
     aiEmail?: { subject: string; body: string }
     country?: string
+    /* S5b：买家证据（差异化首封） */
+    buyerEvidence?: string[]
   }>,
   runId?: string,
   store?: ConfigStore,
@@ -1263,6 +1280,7 @@ export const stageAgentsFromPipeline = (
       linkedinUrl: t.linkedinUrl,
       aiEmail: t.aiEmail,
       country: t.country,
+      buyerEvidence: t.buyerEvidence,
     }))
 
     // Stage for human review — do NOT send.

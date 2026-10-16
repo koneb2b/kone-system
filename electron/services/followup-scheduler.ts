@@ -18,6 +18,9 @@ export type FollowupPlan = {
   /* P1-3（缺口5）：IMAP 未配置 → 回复检测盲区，序列暂停等待人工确认；
      置 true 期间 tick 不自动发送，IMAP 配置恢复后自动续推并清零。 */
   pendingManual?: boolean
+  /* S5b（2026-10-16）：首封使用的买家证据（差异化首封），随计划持久化，
+     使 stage 1–3 跟进信保持**证据连续性**。可选 —— 旧计划缺该字段时按空处理（向后兼容）。 */
+  buyerEvidence?: string[]
   done: boolean // true when finished (replied or stage 3 sent)
 }
 
@@ -49,6 +52,7 @@ export const createPlan = (
   now: number = Date.now(),
   leadKey?: string,
   country?: string,
+  buyerEvidence?: string[],
 ): FollowupPlan => ({
   leadKey: leadKey || company,
   email,
@@ -57,6 +61,10 @@ export const createPlan = (
   stage: 0,
   lastSentAt: now,
   nextSendAt: now + jitteredInterval(STAGE_INTERVAL_MS[0]),
+  buyerEvidence:
+    Array.isArray(buyerEvidence) && buyerEvidence.filter((item) => String(item ?? '').trim()).length > 0
+      ? buyerEvidence.map((item) => String(item ?? '').trim()).filter(Boolean)
+      : undefined,
   done: false,
 })
 
