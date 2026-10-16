@@ -3,6 +3,8 @@ import type { AgentTask } from '../agent-pipeline'
 import type { SalesAgentState, AgentLogEntry } from '../../../src/shared/ipc-contracts'
 import { isWithinSendWindow } from '../../utils/send-window'
 import { classifyEmailStatic } from '../../utils/email-verification'
+/* S5a：首封「引用证据率」的确定性度量（纯函数，不抛错，可安全置于真实发送路径） */
+import { measureEvidenceCitation } from './outreach-quality'
 
 export type EmailAgentConfig = {
   smtpHost: string
@@ -361,7 +363,13 @@ export class EmailAgent {
       }
     }
 
-    this.addLog('email_content_source', `To=${task.email} Stage=${stage} Source=${source}`)
+    /* S5a 质量度量：记录首封「引用证据率」（可复核、不靠感觉）。
+       纯函数度量，放在真实发送路径上也不引入网络/超时风险。 */
+    const citation = measureEvidenceCitation(body, task.buyerEvidence || [])
+    this.addLog(
+      'email_content_source',
+      `To=${task.email} Stage=${stage} Source=${source} EvidenceCited=${citation.cited}/${citation.total} Rate=${citation.rate}`,
+    )
     return this.sendEmail(task, subject, body)
   }
 

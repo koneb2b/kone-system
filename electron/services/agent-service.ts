@@ -424,16 +424,31 @@ export const createLlmEmailContentProvider = (
       : 'No seller knowledge base is available, so do NOT claim any specific product capability, ' +
         'certification, or statistic. Keep the email focused on the buyer context and a soft, honest value angle. '
 
+    /* S5a 差异化首封：把线索上**真实存在**的买家证据喂进 prompt，并要求首封**引用至少一条**。
+       取舍：证据缺失时明确禁止编造买家事实（诚实降级），与知识库注入的诚实口径一致。 */
+    const buyerEvidence = (task.buyerEvidence || []).map((item) => String(item || '').trim()).filter(Boolean)
+    const buyerEvidenceBlock = buyerEvidence.length
+      ? '[BUYER EVIDENCE]\n' + buyerEvidence.map((item, index) => `${index + 1}. ${item}`).join('\n') + '\n'
+      : ''
+    const buyerRule = buyerEvidence.length
+      ? 'BUYER EVIDENCE lists verified facts about THIS buyer. Open with a specific, non-generic observation that ' +
+        'references at least one of them (paraphrase is fine; do not quote more than a few words verbatim). ' +
+        'Do not invent any buyer fact that is not in BUYER EVIDENCE. '
+      : 'No verified buyer evidence is available, so keep the opening generic and honest; ' +
+        'do NOT invent buyer facts, signals, or recent events. '
+
     const system =
       'You are a senior B2B outbound sales copywriter. Write a highly personalized cold email of at most 150 words. ' +
       'Ground every claim in the company signals provided; never invent facts, certifications, or statistics. ' +
       knowledgeRule +
+      buyerRule +
       'Return ONLY valid JSON: {"subject": string (max 80 chars, specific, no clickbait), "body": string (plain text, greeting + 2-3 short paragraphs + sign-off "Kone Agent")}.'
     const user =
       `Company: ${task.company}\n` +
       `Website: ${task.website || 'unknown'}\n` +
       `Stage instruction: ${STAGE_POSITIONING[stage] || STAGE_POSITIONING[0]}\n` +
       (knowledgeBlock ? `\n[SELLER KNOWLEDGE BASE]\n${knowledgeBlock}\n` : '') +
+      (buyerEvidenceBlock ? `\n${buyerEvidenceBlock}` : '') +
       'Write the email for this stage. Personalize with the company name and any inferable business context only.'
 
     const parsed = await callLlmJson(store, system, user)

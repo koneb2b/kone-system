@@ -3,6 +3,8 @@ import type { SalesAgentType } from '../../src/shared/ipc-contracts'
 import { canReachWhatsApp } from '../utils/contact-validation'
 /* 联系方式来源与可信度（三档 SSOT）：`inferred` 一律不得**自动**派发（需人工确认） */
 import { canAutoDispatch, type ContactProvenance } from '../../src/shared/contact-provenance'
+/* S5a：买家证据抽取（差异化首封用），纯函数 */
+import { buildBuyerEvidence, type BuyerEvidenceLead } from './agents/outreach-quality'
 
 /** 管道内「WhatsApp 可达」判定的最小入参（与 `SearchExecuteResult` 对齐）。 */
 type WhatsAppReachLead = {
@@ -69,6 +71,9 @@ export type AgentTask = {
   // 的 emailSubject/emailBody）。Stage0 首封优先消费；缺失时 EmailAgent 走
   // LLM 实时生成或模板兜底。
   aiEmail?: { subject: string; body: string }
+  /* S5a 差异化首封：线索上**真实存在**的买家证据（官网片段 / 匹配理由 / 机会分依据 / 深度探测结论）。
+     供开发信 prompt 引用，使首封有据可依而非模板；缺失时为空数组（不臆造）。 */
+  buyerEvidence?: string[]
   /* P1-4：收件人国家 → 冷邮件时区发送窗口判定（09:00-18:00 当地时间） */
   country?: string
   preferredAgent?: SalesAgentType
@@ -168,6 +173,11 @@ export const buildAgentTaskQueue = (
     decisionMakers?: Array<{ linkedinUrl?: string }>
     aiEmail?: { subject: string; body: string }
     country?: string
+    /* S5a：买家证据来源字段（与 SearchExecuteResult 对齐，仅取抽取所需） */
+    snippet?: string
+    matchReasons?: string[]
+    salesStrategy?: string
+    opportunityScore?: BuyerEvidenceLead['opportunityScore']
   }>,
 ): AgentTaskQueue => {
   const queue: AgentTaskQueue = { whatsapp: [], linkedin: [], email: [] }
@@ -192,6 +202,8 @@ export const buildAgentTaskQueue = (
         lead.aiEmail?.subject && lead.aiEmail?.body
           ? { subject: lead.aiEmail.subject, body: lead.aiEmail.body }
           : undefined,
+      /* S5a：买家证据（确定性抽取；无则空数组） */
+      buyerEvidence: buildBuyerEvidence(lead),
       country: lead.country,
       createdAt: Date.now(),
       priority: lead.matchScore ?? 0,

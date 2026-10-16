@@ -17,6 +17,33 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.34] — 2026-10-16 · S5a 差异化首封（买家证据引用）+ 首封「引用证据率」度量
+
+### 触发
+计划文档 §六 P1-2「策略质量」：首封此前只喂 Company / Website / Stage + 卖方知识库，
+**不含任何买家侧证据** → 开发信只能写空泛模板；且「引用证据率」指标**无从度量**（不可复核）。
+
+### 变更
+- 新增纯函数模块 `electron/services/agents/outreach-quality.ts`：
+  - `buildBuyerEvidence(lead)` —— 从线索**真实存在**的字段按优先级抽取买家证据
+    （机会分 `rationale.intent` → `rationale.icpFit` → `matchReasons` → `rationale.evidence` → `snippet` → `salesStrategy`），
+    去重 + 单条截断 200 字符 + 条数封顶 4；**刻意排除 `riskPenalty`**（风险信号不应出现在外发首封）。
+  - `measureEvidenceCitation(body, evidence)` —— **确定性**度量首封「引用证据率」：实词 token 覆盖率
+    ≥ 0.34 判为「已引用」；**不依赖 embedding / 网络**，因此可复现、可复核。
+- **管道贯通**：`AgentTask.buyerEvidence` + `buildAgentTaskQueue` 抽取 → **S4b 的机会分依据成为首封证据**（S4b → S5a）。
+- **prompt 注入**：`createLlmEmailContentProvider` 增 `[BUYER EVIDENCE]` 块 + 「必须引用至少一条」规则；
+  无证据时走「禁止编造买家事实」的诚实降级（与知识库注入的诚实口径一致）。
+- **可观测**：`email_content_source` 运行日志追加 `EvidenceCited=x/y Rate=z`，用户可在「查看运行日志」复核。
+
+### 守护
+`tests/business-logic/outreach-quality.business.test.js`（10 条）。变异验证：去掉条数封顶 → 2 条判红；
+引用判定恒 `false` → 1 条判红；user prompt 漏拼证据块 → 1 条判红。
+
+### 受影响 SSOT
+`kone-PRD.md §0.5.1`（机会分）· 计划文档 §六 P1-2 与其 S5 状态。
+
+---
+
 ## [1.4.33] — 2026-10-16 · S4b 机会分逐维度评分依据（evidence binding）
 
 ### 触发

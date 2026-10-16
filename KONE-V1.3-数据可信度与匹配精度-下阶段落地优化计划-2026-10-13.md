@@ -171,7 +171,7 @@ contactProvenance?: {
 | **S2 (P0-2a)** ✅ **已落地（2026-10-13）** | 可信度模型（字段 + 两处镜像 + `applySchemaDefaults` 透传 + 徽标 + 筛选） | S1 | ✅ 三档可见；诚实降级（缺失不渲染） |
 | **S3 (P0-2b)** ✅ **已落地（2026-10-13）** | 管道按档位入队 + 发送前二次确认 | S2 | ✅ `inferred` 不自动发送 + 唤起前确认对话框<br>⚠️ **当前不可感知**（生产代码无 `inferred` 数据，待 **S6** 激活）；**不得再扩张** |
 | **S4 (P1-1)** ✅ **已落地（S4a ✅ / S4b ✅ / S4c ✅）** | ICP 证据化 + 负向 ICP + 反馈回路 | S2 | ✅ 负向 ICP 护栏 + ✅ 反馈闭环 + ✅ 机会分逐维度证据绑定 |
-| **S5 (P1-2)** | 差异化首封 + 跟进序列 + 度量 | S4 | 首封引用证据率可测 |
+| **S5 (P1-2)** ◐ **部分落地（S5a ✅）** | 差异化首封 + 跟进序列 + 度量 | S4 | ✅ 首封引用买家证据 + ✅ 引用证据率可测；◻ 跟进序列端到端联动（基建已有） |
 | **S6 (P2)** | 辅助推测 + 免费弱验证 | S3 | 强制标注 + 不入队 |
 
 ### S1 落地记录（2026-10-13）
@@ -237,6 +237,23 @@ contactProvenance?: {
 - **可见性**：线索表评分 tooltip 追加「评分依据」；PDF 白皮书在对应维度下渲染依据 + 单列「风险扣分依据」。
 - 门禁：`test:unit` · `typecheck` 0 · `verify:consistency` ✅（守护 7 条；变异：无条件落键 → 2 条判红 / 去截断 → 1 条判红）。
 - **S4 收官**：S4a / S4b / S4c 全部落地。**下一阶段 = S5（策略质量：差异化首封 + 跟进序列 + 度量）**。
+
+### S5a 落地记录（2026-10-16）：差异化首封（买家证据引用）+ 引用证据率度量
+- **问题**：首封只喂 Company / Website / Stage + 卖方知识库，**不含买家侧证据** → 只能写空泛模板；
+  「引用证据率」无从度量。
+- **新增纯函数模块** `electron/services/agents/outreach-quality.ts`：
+  - `buildBuyerEvidence(lead)`：按优先级抽取**真实存在**的买家证据
+    （`rationale.intent` → `rationale.icpFit` → `matchReasons` → `rationale.evidence` → `snippet` → `salesStrategy`），
+    去重 + 单条截断 200 + 条数封顶 4；**刻意排除 `riskPenalty`**。
+  - `measureEvidenceCitation(body, evidence)`：**确定性**引用率（实词 token 覆盖率 ≥ 0.34 判已引用），
+    **不依赖 embedding / 网络** → 可复现、可复核。
+- **贯通**：`AgentTask.buyerEvidence` + `buildAgentTaskQueue`；**S4b 机会分依据成为首封证据**（S4b → S5a）。
+- **prompt**：`createLlmEmailContentProvider` 增 `[BUYER EVIDENCE]` 块 + 「必须引用至少一条」；
+  无证据时「禁止编造买家事实」诚实降级。
+- **可观测**：`email_content_source` 日志追加 `EvidenceCited=x/y Rate=z`（可在「查看运行日志」复核）。
+- 门禁：`test:unit` · `typecheck` 0 · `verify:consistency` ✅（守护 10 条；变异：去封顶 → 2 判红 /
+  引用恒 false → 1 判红 / 漏拼证据块 → 1 判红）。
+- **S5 余下**：跟进序列的**端到端联动**（`followup-scheduler.ts` 阶段 0–3 与节律基建已存在，待与首封/回复联动验证）。
 
 ---
 
