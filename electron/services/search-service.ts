@@ -118,13 +118,23 @@ import {
   buildUniversalIcpPrompt,
   computeIcpMatchScore,
   mapHttpError,
+  normalizeOpportunityRationale,
   normalizeOpportunityScore,
+  OPPORTUNITY_RATIONALE_MAX_LEN,
   rankByMatchScore,
 } from './search/scoring'
 /* O1 拆分（P5）：本地 SearchExecuteResult / OpportunityScore 类型已抽出至 ./search/types */
 import type { OpportunityScore, SearchExecuteResult } from './search/types'
-/* 保留公开导出面：computeIcpMatchScore / normalizeOpportunityScore / buildSearchScoringPrompt / OpportunityScore 原为导出符号 */
-export { buildSearchScoringPrompt, computeIcpMatchScore, normalizeOpportunityScore, type OpportunityScore }
+/* 保留公开导出面：computeIcpMatchScore / normalizeOpportunityScore / buildSearchScoringPrompt / OpportunityScore 原为导出符号
+   S4b（2026-10-16）：新增 normalizeOpportunityRationale / OPPORTUNITY_RATIONALE_MAX_LEN 供守护测试直接断言。 */
+export {
+  buildSearchScoringPrompt,
+  computeIcpMatchScore,
+  normalizeOpportunityRationale,
+  normalizeOpportunityScore,
+  OPPORTUNITY_RATIONALE_MAX_LEN,
+  type OpportunityScore,
+}
 /* O1 拆分（P6）：日志探针与 LLM 结果抽取/合并已抽出至 ./search/*，行为不变 */
 import { probeError, probeLlmCrash, probeLlmRequest, probeLog } from './search/probe'
 export { verifyLlmProbeFailure } from './search/probe'

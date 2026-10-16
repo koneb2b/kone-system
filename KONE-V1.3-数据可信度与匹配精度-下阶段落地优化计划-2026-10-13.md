@@ -170,7 +170,7 @@ contactProvenance?: {
 | **S1 (P0-1)** ✅ **已落地（2026-10-13）** | WhatsApp 管道门禁修复 | — | ✅ 座机不入队；源码守卫 + 行为契约测试（4 条，含变异验证） |
 | **S2 (P0-2a)** ✅ **已落地（2026-10-13）** | 可信度模型（字段 + 两处镜像 + `applySchemaDefaults` 透传 + 徽标 + 筛选） | S1 | ✅ 三档可见；诚实降级（缺失不渲染） |
 | **S3 (P0-2b)** ✅ **已落地（2026-10-13）** | 管道按档位入队 + 发送前二次确认 | S2 | ✅ `inferred` 不自动发送 + 唤起前确认对话框<br>⚠️ **当前不可感知**（生产代码无 `inferred` 数据，待 **S6** 激活）；**不得再扩张** |
-| **S4 (P1-1)** ◐ **大部落地（S4a ✅ / S4c ✅）** | ICP 证据化 + 负向 ICP + 反馈回路 | S2 | ✅ 负向 ICP 护栏 + ✅ 反馈闭环；◻ 证据绑定(S4b) |
+| **S4 (P1-1)** ✅ **已落地（S4a ✅ / S4b ✅ / S4c ✅）** | ICP 证据化 + 负向 ICP + 反馈回路 | S2 | ✅ 负向 ICP 护栏 + ✅ 反馈闭环 + ✅ 机会分逐维度证据绑定 |
 | **S5 (P1-2)** | 差异化首封 + 跟进序列 + 度量 | S4 | 首封引用证据率可测 |
 | **S6 (P2)** | 辅助推测 + 免费弱验证 | S3 | 强制标注 + 不入队 |
 
@@ -225,6 +225,18 @@ contactProvenance?: {
 - UI：结果卡片新增 **「相关 / 不相关」** 标记（**可撤销**），失败明确提示。
 - 门禁：`test:unit` **520/520** · `typecheck` 0 · `verify:consistency` ✅（含变异验证）。
 - **S4 余下**：仅 **S4b 评分证据绑定**。
+
+### S4b 落地记录（2026-10-16）：机会分逐维度评分依据（evidence binding）
+- **问题**：`opportunityScore` 只输出四个数字，用户看得到「62 分」看不到「**凭什么** 62 分」—— 拆解**缺证据**、不可复核。
+- **类型 SSOT**：`src/shared/ipc-contracts.ts` 新增 `OpportunityScoreRationale`；`opportunityScore` 增可选
+  `rationale`。镜像同步 4 处（`leads-store` ×2 / `leads-table` / `search/types`）。
+- **归一化**：`normalizeOpportunityRationale` + `OPPORTUNITY_RATIONALE_MAX_LEN = 160`（单条截断）。
+  `normalizeOpportunityScore` **仅在存在有效依据时才落 `rationale` 键** → 旧数据逐字段 `deepEqual` **完全不变**
+  （向后兼容硬保证，已有测试锁死）。
+- **提示词**：要求逐维度引用官网原文片段 / 搜索命中；无证据维度留空串，**显式禁止臆造**。
+- **可见性**：线索表评分 tooltip 追加「评分依据」；PDF 白皮书在对应维度下渲染依据 + 单列「风险扣分依据」。
+- 门禁：`test:unit` · `typecheck` 0 · `verify:consistency` ✅（守护 7 条；变异：无条件落键 → 2 条判红 / 去截断 → 1 条判红）。
+- **S4 收官**：S4a / S4b / S4c 全部落地。**下一阶段 = S5（策略质量：差异化首封 + 跟进序列 + 度量）**。
 
 ---
 

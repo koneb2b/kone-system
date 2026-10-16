@@ -5,7 +5,13 @@ import {
   configGet,
   configSet,
 } from '@/lib/electron-api'
-import type { DataSourceType, DecisionMaker, CustomsData, AgentStatus } from '@/shared/ipc-contracts'
+import type {
+  DataSourceType,
+  DecisionMaker,
+  CustomsData,
+  AgentStatus,
+  OpportunityScoreRationale,
+} from '@/shared/ipc-contracts'
 /* 号码类型（WhatsApp 可用性）：来自 wa.me 直链的号码为 mobile，前端据此放行 WhatsApp 按钮 */
 import type { PhoneKind } from '@/shared/phone-kind'
 /* 联系方式来源与可信度（三档）：结果卡片徽标 / 筛选 / 发送前确认共用 */
@@ -80,6 +86,8 @@ export type LeadItem = {
     evidence: number
     riskPenalty: number
     finalScore: number
+    /* S4b：逐维度评分依据（可选；缺失时不展示） */
+    rationale?: OpportunityScoreRationale
   }
   status: LeadStatus
   followUp: FollowUpStatus
@@ -132,6 +140,8 @@ export type LeadSearchResult = {
     evidence: number
     riskPenalty: number
     finalScore: number
+    /* S4b：逐维度评分依据（可选；缺失时不展示） */
+    rationale?: OpportunityScoreRationale
   }
   contact: string
   contactTitle: string

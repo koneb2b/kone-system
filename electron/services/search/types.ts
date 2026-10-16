@@ -11,9 +11,18 @@
  * 独立重构项，本轮仅做**无损外提**，不改变任何类型语义。
  */
 
-import type { AgentStatus, CustomsData, DataSourceType, DecisionMaker } from '../../../src/shared/ipc-contracts'
+import type {
+  AgentStatus,
+  CustomsData,
+  DataSourceType,
+  DecisionMaker,
+  OpportunityScoreRationale,
+} from '../../../src/shared/ipc-contracts'
 import type { PhoneKind } from '../../../src/shared/phone-kind'
 import type { ContactProvenance } from '../../../src/shared/contact-provenance'
+
+/* S4b：机会分逐维度评分依据（与 src/shared/ipc-contracts 同源），供本子模块与 scoring 共享。 */
+export type { OpportunityScoreRationale }
 
 /* P2-3 Stage-2 结构化机会分（55/35/10 − Risk Penalty） */
 export type OpportunityScore = {
@@ -22,6 +31,9 @@ export type OpportunityScore = {
   evidence: number
   riskPenalty: number
   finalScore: number
+  /* S4b（2026-10-16）：逐维度评分依据（引用官网原文片段 / 搜索命中），可解释可复核。
+     缺失时不臆造 —— `normalizeOpportunityScore` 仅在存在有效依据时才落该键。 */
+  rationale?: OpportunityScoreRationale
 }
 
 export type SearchExecuteResult = {

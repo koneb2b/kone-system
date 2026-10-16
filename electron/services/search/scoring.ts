@@ -11,7 +11,7 @@
 import * as crypto from 'crypto'
 import { matchesProductTerm } from './scout'
 import { clampInt, extractDomainFromUrl, mergePromptParts } from './text-utils'
-import type { OpportunityScore, SearchExecuteResult } from './types'
+import type { OpportunityScore, OpportunityScoreRationale, SearchExecuteResult } from './types'
 
 /* ── S4a（2026-10-13）：用户自定义「负向 ICP」的**确定性护栏** ──────────────
  *
@@ -95,6 +95,46 @@ export const computeIcpMatchScore = (candidate: Partial<SearchExecuteResult>, co
   return Math.min(100, Math.max(0, score))
 }
 
+/* ── S4b（2026-10-16）：机会分的**逐维度评分依据** ──────────────────────────
+ *
+ * ## 为什么需要
+ * `opportunityScore` 此前只输出四个数字（`icpFit`/`intent`/`evidence`/`riskPenalty`），
+ * 用户看得到「62 分」却看不到「**凭什么**是 62 分」—— 数字拆解**缺证据**，无法复核，
+ * 与项目「数据可信度」主线（让「严谨」可见、可控）相悖。
+ *
+ * ## 设计取舍
+ * - 依据是**可选**字段：无可靠证据的维度**留空**，`normalizeOpportunityRationale` 全空时
+ *   返回 `undefined` 且**不落键** —— 保证旧数据 / 旧调用方的 `deepEqual` 语义逐字段不变（向后兼容硬保证）。
+ * - 单条依据**截断**到 `OPPORTUNITY_RATIONALE_MAX_LEN`：防 LLM 回吐整段官网文本撑爆 UI / 存储。
+ * - 只做**归一化**，不臆造内容（与 `normalizeOpportunityScore` 的诚实缺省一脉相承）。
+ */
+
+/** 单条评分依据最长字符数（超出截断并加省略号）。 */
+export const OPPORTUNITY_RATIONALE_MAX_LEN = 160
+
+const normalizeRationaleText = (raw: unknown): string | undefined => {
+  if (typeof raw !== 'string') return undefined
+  const text = raw.trim().replace(/\s+/g, ' ')
+  if (!text) return undefined
+  return text.length > OPPORTUNITY_RATIONALE_MAX_LEN ? `${text.slice(0, OPPORTUNITY_RATIONALE_MAX_LEN - 1)}…` : text
+}
+
+/** 归一化逐维度评分依据；四项**全空**时返回 `undefined`（不落空对象，保持向后兼容）。 */
+export const normalizeOpportunityRationale = (raw: unknown): OpportunityScoreRationale | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const obj = raw as Record<string, unknown>
+  const rationale: OpportunityScoreRationale = {}
+  const icpFit = normalizeRationaleText(obj.icpFit)
+  const intent = normalizeRationaleText(obj.intent)
+  const evidence = normalizeRationaleText(obj.evidence)
+  const riskPenalty = normalizeRationaleText(obj.riskPenalty)
+  if (icpFit) rationale.icpFit = icpFit
+  if (intent) rationale.intent = intent
+  if (evidence) rationale.evidence = evidence
+  if (riskPenalty) rationale.riskPenalty = riskPenalty
+  return Object.keys(rationale).length > 0 ? rationale : undefined
+}
+
 /* P2-3 Stage-2 机会分模型（kone-PRD §0.5.1）：ICP Fit 55 + Intent(Why-Now) 35 +
    Evidence 10 − Risk Penalty(0-20)。钳制各维度并按公式重算 finalScore；
    输入缺失/非法 → undefined（诚实缺省，不臆造）。纯函数，导出供测试。
@@ -109,7 +149,11 @@ export const normalizeOpportunityScore = (raw: unknown): OpportunityScore | unde
   const evidence = clampInt(obj.evidence, 0, 10)
   const riskPenalty = clampInt(obj.riskPenalty, 0, 20)
   const finalScore = Math.max(0, Math.min(100, icpFit + intent + evidence - riskPenalty))
-  return { icpFit, intent, evidence, riskPenalty, finalScore }
+  const score: OpportunityScore = { icpFit, intent, evidence, riskPenalty, finalScore }
+  /* S4b：仅在存在有效依据时落 `rationale` 键 —— 保证旧数据逐字段 deepEqual 不变。 */
+  const rationale = normalizeOpportunityRationale(obj.rationale)
+  if (rationale) score.rationale = rationale
+  return score
 }
 
 /**
@@ -250,6 +294,10 @@ export const buildUniversalIcpPrompt = (userConfig?: {
     'Evaluate with 4 dimensions: business synergy, role match, advantage resonance, and company strength. ',
     'Then derive a structured opportunityScore: icpFit (0-55: product application fit, distributor/importer/OEM positioning, regional coverage, purchasing capacity), intent (0-35: Why-Now buying signals such as RFQ/tender/new line/certification/expansion — 0 when no verifiable signal), evidence (0-10: strength of the cited evidence), riskPenalty (0-20: generic-email-only or info@ contact +5~10, no identified decision maker +5, minimal website +5). ',
     'finalScore = icpFit + intent + evidence − riskPenalty, clamped to 0-100. ',
+    /* S4b（2026-10-16）：要求逐维度**引用证据**，使分数可解释、可复核；无证据的维度留空串。 */
+    'For EVERY opportunityScore you MUST also output a "rationale" object with exactly the keys icpFit, intent, evidence, riskPenalty. ',
+    'Each value is a SHORT string (<=120 chars) that CITES the concrete basis: quote a snippet of the company website, or the specific search hit / buying signal you relied on. ',
+    'If you have NO verifiable basis for a dimension, output an EMPTY STRING for it — never fabricate, never repeat the ICP text, never restate the score. ',
     'If a candidate clearly matches the Negative ICP, set icpFit to 0 immediately and keep finalScore very low. ',
     `Target product: ${targetProduct}. `,
     `Preferred buyer role: ${buyerPersona}. `,
@@ -257,7 +305,7 @@ export const buildUniversalIcpPrompt = (userConfig?: {
     `Negative ICP: ${negativeIcp}. `,
     'Do not remove any item. Return a top-level JSON object with key "results". ',
     'Each item must contain: company, website, address, totalScore, opportunityScore, inferredRole, matchReason, salesStrategy, riskFlags, isB2B. ',
-    'totalScore must equal opportunityScore.finalScore (number 0-100). opportunityScore must be an object {icpFit, intent, evidence, riskPenalty, finalScore} of integers. ',
+    'totalScore must equal opportunityScore.finalScore (number 0-100). opportunityScore must be an object {icpFit, intent, evidence, riskPenalty, finalScore, rationale} of integers plus the rationale object described above. ',
     'inferredRole must be a short inferred buying/company role. ',
     'matchReason must be one short conclusion. salesStrategy must be one short follow-up suggestion tied to the core advantage. ',
     'riskFlags must contain exactly 1 short risk flag. isB2B must be boolean. ',

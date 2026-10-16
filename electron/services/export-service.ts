@@ -155,6 +155,13 @@ export const buildPdfHtml = (payload: {
 
   const opp = (payload.opportunityScore ?? {}) as Record<string, unknown>
   const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+  /* S4b（2026-10-16）：逐维度评分依据（引用官网原文片段 / 搜索命中），让白皮书回答「凭什么这个分」。
+     缺失的维度不渲染（诚实降级）。 */
+  const rationale = (opp.rationale ?? {}) as Record<string, unknown>
+  const rat = (key: string): string | undefined => {
+    const v = rationale[key]
+    return typeof v === 'string' && v.trim() ? v.trim() : undefined
+  }
 
   const scoreSection =
     typeof payload.matchScore === 'number' || num(opp.icpFit) !== undefined || num(opp.finalScore) !== undefined
@@ -163,11 +170,12 @@ export const buildPdfHtml = (payload: {
     <h2>综合评分</h2>
     <div class="scores">
       ${scoreBar('匹配度', payload.matchScore, '确定性规则评分，与线索列表一致')}
-      ${scoreBar('ICP 契合', num(opp.icpFit))}
-      ${scoreBar('采购意向', num(opp.intent))}
-      ${scoreBar('证据充分度', num(opp.evidence))}
+      ${scoreBar('ICP 契合', num(opp.icpFit), rat('icpFit'))}
+      ${scoreBar('采购意向', num(opp.intent), rat('intent'))}
+      ${scoreBar('证据充分度', num(opp.evidence), rat('evidence'))}
       ${scoreBar('机会分（终值）', num(opp.finalScore), '综合 ICP / 意向 / 证据，扣除风险项后得出')}
     </div>
+    ${rat('riskPenalty') ? `<div class="score-hint">风险扣分依据：${esc(rat('riskPenalty') as string)}</div>` : ''}
   </div>`
       : ''
 

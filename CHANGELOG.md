@@ -17,6 +17,35 @@ lastVerifiedAt: 2026-10-07
 
 ---
 
+## [1.4.33] — 2026-10-16 · S4b 机会分逐维度评分依据（evidence binding）
+
+### 触发
+S4 收尾项（计划文档 `KONE-V1.3-数据可信度与匹配精度-下阶段落地优化计划-2026-10-13.md` §九）：机会分只输出
+四个数字（`icpFit` / `intent` / `evidence` / `riskPenalty`），用户看得到「62 分」却看不到「**凭什么** 62 分」
+—— 数字拆解**缺证据**、不可复核，与「数据可信度」主线（让严谨可见、可控）相悖。
+
+### 变更
+- **类型 SSOT**（`src/shared/ipc-contracts.ts`）：新增 `OpportunityScoreRationale`；`opportunityScore` 增可选
+  `rationale?: { icpFit?; intent?; evidence?; riskPenalty? }`。镜像同步：`src/store/leads-store.ts`（2 处）、
+  `src/components/leads-table.tsx`、`electron/services/search/types.ts`。
+- **归一化**（`electron/services/search/scoring.ts`）：新增 `normalizeOpportunityRationale` +
+  `OPPORTUNITY_RATIONALE_MAX_LEN = 160`（单条截断，防 LLM 回吐整段官网文本撑爆 UI / 存储）。
+  `normalizeOpportunityScore` **仅在存在有效依据时才落 `rationale` 键** —— 保证旧数据逐字段 `deepEqual`
+  语义**完全不变**（向后兼容硬保证）。
+- **提示词**：要求 LLM 逐维度输出 `rationale`，**引用官网原文片段 / 搜索命中**；无可靠证据的维度留空串，
+  显式禁止臆造、禁止复述 ICP 文本或分数。
+- **可见性（「只采集不展示 = 未交付」）**：线索表评分徽标 tooltip 追加「评分依据」逐维度说明；
+  PDF 白皮书「综合评分」区块在对应维度下渲染依据，并单列「风险扣分依据」。
+
+### 守护
+`tests/business-logic/opportunity-score-evidence.business.test.js`（7 条）。变异验证：无条件落键 → 2 条判红；
+去掉截断 → 1 条判红（精准定位，非泛红）。
+
+### 受影响 SSOT
+`kone-PRD.md §0.5.1`（机会分模型）· `ARCH-STANDARDS.md`（跨进程类型镜像）· 上述计划文档 S4b 状态。
+
+---
+
 ## [1.4.32] — 2026-10-13 · 项目文档全面瘦身（删 14 份失效文档 / 4246 行；零断链）+ 交付物部分归档
 
 ### 触发

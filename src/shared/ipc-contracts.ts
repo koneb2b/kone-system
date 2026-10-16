@@ -211,6 +211,16 @@ export type SearchExecuteRequest = {
   }
 }
 
+/* S4b（2026-10-16）：机会分的**逐维度评分依据**——回答「为什么是这个分」。
+   每个维度引用**可复核**的原文片段 / 搜索命中；无可靠证据的维度**留空**（诚实降级，不臆造）。
+   与 `OpportunityScore` 的分维度一一对应（`evidence` 键承载 `evidence(0-10)` 维度所引用的原文）。 */
+export type OpportunityScoreRationale = {
+  icpFit?: string
+  intent?: string
+  evidence?: string
+  riskPenalty?: string
+}
+
 export type SearchExecuteResult = {
   id?: string
   company: string
@@ -248,6 +258,8 @@ export type SearchExecuteResult = {
     evidence: number
     riskPenalty: number
     finalScore: number
+    /* S4b：逐维度评分依据（可选；缺失时前端诚实降级为不展示） */
+    rationale?: OpportunityScoreRationale
   }
   status?: 'new' | 'contacting' | 'replied' | 'archived'
   analysisCache?: Record<string, unknown>

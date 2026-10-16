@@ -1,6 +1,6 @@
 {
   "name": "kone-system",
-  "version": "1.4.32",
+  "version": "1.4.33",
   "description": "Kone AI - B2B 智能获客与线索管理系统",
   "author": "Kone Team",
   "main": "dist-electron/electron/main.js",

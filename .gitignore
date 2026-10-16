@@ -35,6 +35,8 @@ gen_article2.js
 .omo/
 # 探针证据（截图与 JSON；tests/ 下的冒烟证据为已入库例外）
 .sisyphus/
+# 打包版全链路探针产物（截图 / dev-userdata / 报告，非产品代码）
+.probe-packaged/
 # WorkBuddy AI 工作记忆（项目约定与日志，属本地上下文）
 .workbuddy-ai/
 

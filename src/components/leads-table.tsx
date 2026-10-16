@@ -21,7 +21,7 @@ import {
   createApproval,
   getLicenseInfo,
 } from '@/lib/electron-api'
-import type { AgentStatus } from '@/shared/ipc-contracts'
+import type { AgentStatus, OpportunityScoreRationale } from '@/shared/ipc-contracts'
 
 type Lead = LeadItem
 type UserRole = 'trial' | 'pro' | 'enterprise'
@@ -44,7 +44,14 @@ function MatchBar({
 }: {
   score?: number | null
   scoreSource?: 'ai' | 'deterministic'
-  opportunityScore?: { icpFit: number; intent: number; evidence: number; riskPenalty: number; finalScore: number }
+  opportunityScore?: {
+    icpFit: number
+    intent: number
+    evidence: number
+    riskPenalty: number
+    finalScore: number
+    rationale?: OpportunityScoreRationale
+  }
 }) {
   if (typeof score !== 'number') {
     return (
@@ -57,8 +64,24 @@ function MatchBar({
   const color = score >= 80 ? 'bg-blue-600' : 'bg-slate-400'
   const textColor = score >= 80 ? 'text-blue-600' : 'text-slate-500'
   /* P2-3：结构化机会分拆解（ICP Fit 55 + Intent 35 + Evidence 10 − Risk Penalty） */
+  /* S4b：逐维度**评分依据**（引用官网原文片段 / 搜索命中）—— 让「为什么是这个分」可解释、可复核。
+     无依据的维度不渲染（诚实降级），不臆造。 */
+  const rationaleLines = opportunityScore?.rationale
+    ? (
+        [
+          ['ICP 匹配', opportunityScore.rationale.icpFit],
+          ['采购意图', opportunityScore.rationale.intent],
+          ['证据强度', opportunityScore.rationale.evidence],
+          ['风险扣分', opportunityScore.rationale.riskPenalty],
+        ] as const
+      )
+        .map(([label, text]) => [label, String(text ?? '').trim()] as const)
+        .filter(([, text]) => text.length > 0)
+        .map(([label, text]) => `${label}：${text}`)
+    : []
   const breakdownTitle = opportunityScore
-    ? `机会分拆解：ICP 匹配 ${opportunityScore.icpFit}/55 + 采购意图 ${opportunityScore.intent}/35 + 证据强度 ${opportunityScore.evidence}/10 − 风险扣分 ${opportunityScore.riskPenalty} = ${opportunityScore.finalScore}`
+    ? `机会分拆解：ICP 匹配 ${opportunityScore.icpFit}/55 + 采购意图 ${opportunityScore.intent}/35 + 证据强度 ${opportunityScore.evidence}/10 − 风险扣分 ${opportunityScore.riskPenalty} = ${opportunityScore.finalScore}` +
+      (rationaleLines.length > 0 ? `\n\n评分依据：\n${rationaleLines.join('\n')}` : '')
     : scoreSource === 'ai'
       ? 'AI 智能评分（基于官网与语义分析）'
       : '确定性预筛分（关键词/信号规则，未经 AI 评估）'
