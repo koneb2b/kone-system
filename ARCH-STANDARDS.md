@@ -369,7 +369,8 @@ An architecture-affecting change is complete only when all are true:
    - state machine **mapping**: `STATE-MACHINES.md`（各状态机的语义仍归 `kone-PRD.md` 与 `CLOUD-COLLABORATION-DELIVERY.md`）;
    - terminology: `GLOSSARY.md`;
    - change timeline / implementation-to-spec write-back: `CHANGELOG.md`;
-   - deployment/operations/release evidence: operations manual.
+   - deployment/operations/release evidence: operations manual;
+   - release gate（发版门禁检查项）: `docs/release-gate.md`（机械化入口 `npm run verify:release-gate`，已接入 `npm test`）.
 2. Other documents may reference an SSOT but must not independently redefine the same rule. 数值型常量**只允许**在 `kone-PRD.md §零.3` 定义一次；`.clinerules` 等工具入口文件只允许写流程与指针，不得复述数值。
 3. Changes to state, data, permission, delivery, events, public API or compliance require motivation, affected SSOTs, compatibility, migration, rollback, tests, acceptance, owner and effective version.
 4. Missing any required change artifact blocks Release Candidate admission.
@@ -387,4 +388,5 @@ Any unmet item is `NO-GO`:
 5. clean-machine Agent/delivery behavior cannot be reproduced;
 6. the artifact lacks commit, dependency lock, hash, test result, signature, gray-release threshold, rollback trigger or owner;
 7. CI treats `timed_out`, `action_required`, empty or any non-success result as pass;
-8. Provider truth, sales claims, UI and implementation remain in unresolved conflict.
+8. Provider truth, sales claims, UI and implementation remain in unresolved conflict;
+9. `npm run verify:release-gate`（`docs/release-gate.md` 的机械化子集，已接入 `npm test`）为红 —— 该脚本同时断言既有门禁（`verify:ipc` / `test:cloud` / `test:ipc` / `test:e2e-smoke` / `test:security-audit` / `verify:signature`）**仍被接线**，防静默移除。

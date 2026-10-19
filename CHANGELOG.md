@@ -86,6 +86,22 @@ lastVerifiedAt: 2026-10-19
   故本次分层的真实口径为 **20 免门禁 / 18 需门禁 / 3 条件**（原文档误记 16 / 22 / 3），已同步订正 `ARCH-STANDARDS.md §3` 与映射报告 §3.2 / §5.1。
   **方法论沉淀**：新增授权用例自身全绿**不构成**收口成立的证据 —— 防过度约束的反向守护测试只存在于全量集合中，必须跑全量 `test:unit`。
   受影响 SSOT：`ARCH-STANDARDS.md §3`、`docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`。
+- **发布门禁成文法化（2026-10-20，工程/文档，不改变应用运行时行为）**：发布门禁 21 项（G0–G5）原先只存在于
+  `.omo/notepads/project-alignment-optimization/release-gate.md`，而 `.omo/` 被 `.gitignore:35` 忽略 —— 门禁定义
+  **长期不受版本控制**、不进 PR 评审、可能随工作区清理丢失。现已 ① 迁移为受控 SSOT `docs/release-gate.md`
+  （新增**执行分层** HARD / E2E / DELIVERY / WARN 与覆盖矩阵）；② 新增 `scripts/verify-release-gate.cjs`
+  （`npm run verify:release-gate`）实现其**可机械化子集**并接入 `npm test`；③ 该脚本同时断言既有门禁**仍被接线**，
+  防静默移除。**设计纪律（吸取 2026-10-19 `AGENT.GET_STATUS` 过度约束事故）**：语义/自然语言判据一律**仅 WARN、不作门禁**。
+  据此订正三项**过期或必然误报**的旧判据：P1 原注「AnySearchProvider 与 SerpApiMapsProvider 都使用 `google_maps`」
+  **已过期**（现 9 个 provider id 全唯一：`anysearch`/`google_maps`/`google_organic`/`serper`/`linkedin_search`/
+  `customs_shipment`/`trade_show`/`facebook_search`/`yellow_pages`）；C1 的「0 个高风险文案命中」对 `破冰` 等词
+  **必然误报**（`src/components/agents-panel.tsx:268/579` 为合规与风控披露文案）→ 降级 WARN；A1 的裸
+  `connect/friend/invite/message/DM` 同理（`message` 为通用词）→ 降级 WARN 并改用具体 API 模式。P3 补注
+  **已弃用 provider 豁免**时间隔离（`yellow-pages-provider.ts` 恒 `isAvailable()=false`，不发起异步采集）。
+  `DELIVERY` 层（`test:security-audit` / `test:smoke` / `test:packaged-premium` / `verify:signature --strict` /
+  干净机器 20 项）**刻意不接入 `npm test`** —— 它们依赖打包产物或外部环境，接入会让干净检出误炸。
+  受影响 SSOT：`ARCH-STANDARDS.md §16/§17`、`docs/release-gate.md`（新增）、`package.json`、
+  `KONE-V1.3-干净机器验收手册-2026-09-25.md`（版本适用性升版至 1.4.x）。
 
 ---
 
