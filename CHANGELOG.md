@@ -17,9 +17,12 @@ lastVerifiedAt: 2026-10-19
 
 ---
 
-## [1.4.36] — 2026-10-16 · 分级 B2B 联系人补全（Step 1–5 最小完整链路）
+## [1.4.37] — 2026-10-19 · 文档治理归零 + IPC 授权分层收口（D1–D6）+ 云端投递门禁加固
 
-### 文档治理（2026-10-19）
+> 本版为 2026-10-19 的治理与安全收口版：IPC 授权缺陷 D1–D6 全部落地并附负向回归，
+> 云端 `/cron/send` 增加投递时复核（Fail-Closed），代际与版本口径全量归零。
+
+### 变更（2026-10-19）
 - 规范真相对齐：`kone-PRD.md`（版本 `1.4.36` / 9 个搜索变体 / `serper` 枚举）、`PROJECT-PRD.md`、`FIELD-DICTIONARY.md`、
   `ARCH-STANDARDS.md`（IPC 72/61/41、独立 Serper Provider）、`STATE-MACHINES.md`（真实 11 态 / 7 态 + `replied`）、
   `README.md` 安装包命名、`GLOSSARY.md` 章节指针。
@@ -67,12 +70,17 @@ lastVerifiedAt: 2026-10-19
   —— 活跃 Trial 与 Basic 不再能读写云端审批记录（`approvals` 是服务端二次门禁的前置，脱离 Premium 无业务意义）。
   ② `CONFIG.SET` 保持**通道级免门禁**（否则锁死 Trial 的 ICP/密钥配置 = 激活死锁），改为 `cloud` / `cloud.*` **key 级**校验，
   需 `cloud_send`；前缀边界为精确 `cloud` 或以 `cloud.` 开头（`cloudx.*` 不误伤），读端与其它 key 行为完全不变。
-  ③ `AUTOMATION.IMAP_STATUS` / `IMAP_RESTART` / `IMAP_TEST_CONNECTION` 与 `AUTOPILOT.CLEAR_LEGACY` 补 `local_autopilot`
-  （Paid Basic 起，对齐 `AGENTS.md`「Basic 可用低量本地 Email 与 WhatsApp Web」），门禁置于一切副作用之前。
+  ③ `AUTOMATION.IMAP_POLL` / `IMAP_STATUS` / `IMAP_RESTART` / `IMAP_TEST_CONNECTION` 与 `AUTOPILOT.CLEAR_LEGACY` 补 `local_autopilot`
+  （Paid Basic 起，对齐 `AGENTS.md`「Basic 可用低量本地 Email 与 WhatsApp Web」），门禁置于一切副作用之前；
+  其中 `IMAP_POLL` 为 2026-10-19 复核补记的**动作端不对称缺口**（读端已拦、动作端放行）。
   四个 `register*Handlers` 改为注入 `main.ts` 创建的**同一个** `licenseGuard` 实例（不新建守卫，避免多份 SSOT）。
-  新增回归 `tests/ipc-license-gate-d2-d5.test.ts`（19 项：每通道 denied/allowed 双向 + D3 key 矩阵与前缀边界 + 漏传 guard 的 Fail-Closed）。
-  证据：撤销修复后 19 项中 11 项失败（`exit 1`），修复后 19/19 通过；`npm run test:unit` 624/624、`tsc --noEmit` 0 error、`lint` 0 error。
+  新增回归 `tests/ipc-license-gate-d2-d5.test.ts`（21 项：每通道 denied/allowed 双向 + D3 key 矩阵与前缀边界 + 漏传 guard 的 Fail-Closed）。
+  证据：撤销修复后 19 项中 11 项失败（`exit 1`），修复后 21/21 通过；`npm run test:unit` 626/626、`tsc --noEmit` 0 error、`lint` 0 error。
   **D7**（Basic 的 WhatsApp Web 能力扩张）仍待产品排期确认，本次未改动 `isEmailType` 分支。受影响 SSOT：`ARCH-STANDARDS.md §3`。
+
+---
+
+## [1.4.36] — 2026-10-16 · 分级 B2B 联系人补全（Step 1–5 最小完整链路）
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
