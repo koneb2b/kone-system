@@ -1,4 +1,4 @@
-# 📑 Kone AI (V1.3) 二次开发与 OMO/CodeNomad 高顺畅迭代规范法典
+# 📑 Kone AI (V1.4) 二次开发与 OMO/CodeNomad 高顺畅迭代规范法典
 
 ## 📌 零、 版本真相与文档权威 (Version Truth & Document Authority)
 
@@ -7,20 +7,21 @@
 ### 0.1 版本真相 (Single Version State)
 - **当前发布版本 = `1.4.36`**（以 `package.json` `version` 字段为唯一事实源；本行已于 2026-10-19 与 `package.json` 复核对齐）。
 - 本仓库文档存在 V1.2 / V1.3 / V1.4 三代历史标签，统一含义如下，不得再产生歧义：
-  - **V1.2**：已交付的商业闭环基线（授权防线、防白嫖、断网容错、本地重计算）。`ARCH-STANDARDS.md`、`PROJECT-PRD.md`、`V1.2-商业版交付与运维手册.md` 的 "V1.2" 表述均指此基线，**其规则在 V1.3 仍然生效**。
-  - **V1.3**：当前主线（AnySearch 四级弹性搜索、决策人穿透、多源融合、本地智能体矩阵、DNS 防火墙、Search-to-Agent 管道）。
-  - **V1.4**：已随 V1.3 主线一并落地的**增量生产强化**（Provider 注册表、HTTP 熔断器、Crash Reporter、自动备份、Auto-Update 骨架）。凡标注 "V1.4 已落地" 者，均为**当前代码中已存在**的能力，不是未来计划。
-- 结论：**不存在"尚未发布的 V1.4"**；"V1.4" 仅是 V1.3 内部的增量强化批次标签。
+  - **V1.2**：历史商业闭环基线（授权防线、防白嫖、断网容错、本地重计算）。`ARCH-STANDARDS.md`、`PROJECT-PRD.md`、`V1.2-商业版交付与运维手册.md` 的 "V1.2" 表述均指此基线，**其规则在 V1.3 / V1.4 仍然生效**。
+  - **V1.3**：**上一代主线（`1.3.x`）**：AnySearch 四级弹性搜索、决策人穿透、多源融合、本地智能体矩阵、DNS 防火墙、Search-to-Agent 管道；其架构基线由 V1.4 继承。
+  - **V1.4**：**当前代际（`1.4.x`，当前发布 `1.4.36`）**：在 V1.3 基线之上完成生产强化与业务优化（Provider 注册表、HTTP 熔断器、Crash Reporter、自动备份、Auto-Update 骨架、线索分层富化、单源 Serper、云端协同与审批门禁）。凡标注 "V1.4 已落地" 者，均为**当前代码中已存在**的能力，不是未来计划。
+- 结论：**V1.4 是当前代际，V1.3 是上一代**。文档中形如 `[V1.3.x]` 的标记是**当时特性版本戳**（历史有效），不代表当前代际；不得据此把 V1.4 描述为"未来版本"或"V1.3 内部批次"。
 
 ### 0.2 文档权威链与单一事实源 (Authority & SSOT)
-- **需求权威**：本文件 `kone-PRD.md` 是 V1.3 全局唯一权威需求主源头。
+- **需求权威**：本文件 `kone-PRD.md` 是 V1.4 全局唯一权威需求主源头。
 - **能力真相**：各 Provider 的真实可用状态以 `PROVIDER-CAPABILITY.md` 为唯一事实源。
 - **契约真相**：IPC 通道/类型以 `src/shared/ipc-contracts.ts` + `electron/ipc/channels.ts` 为运行时事实源。
 - **方法论参考**：`METHODOLOGY-NORTHSTAR.md` 是通用获客方法论北极星（愿景/SOP），**非实装规格**；凡其内容（评分模型、技术栈、算力选型）与本文件冲突，一律以本文件为准。
 - **云端协同与投递真相**：`CLOUD-COLLABORATION-DELIVERY.md` 是审批后上云、云端二次门禁、团队防撞、投递、抑制、Webhook、回复、配额、熔断与租户隔离的领域唯一事实源。本文只定义产品定位、用户旅程和业务验收，不复制其字段级契约。
 - **治理件真相（2026-09-22 新增）**：术语以 `GLOSSARY.md` 为准；状态机**层级映射**以 `STATE-MACHINES.md` 为准（各状态机语义仍归本文件与云端协同文档）；字段形状以代码 `src/shared/ipc-contracts.ts` 为准，人类可读索引见 `FIELD-DICTIONARY.md`；"实现变更 → 规范回写"时间线以 `CHANGELOG.md` 为准。四者均不得反向改写本文件 §零.3 的宪法常量。
-- **时点快照（非活规范）**：`docs/archive/snapshots/` 下 21 份 2026-09-24 ~ 2026-10-13 的治理/审计快照（含 `KONE-V1.3-优化计划.md`、`KONE-V1.3-深度审计报告与优化执行计划.md`、`KONE-V1.3-对齐审计分析报告.md`、`KONE-V1.3-商用上线就绪度审计报告.md`、`KONE-V1.3-商用就绪度终审报告-2026-09-24.md` 等）为特定 commit 的时点记录，仅供追溯，**不得作为当前规范裁决依据**。（历史上曾存在的两份文档——KONE-商用成熟度深度审计报告.md 与 V1.2-to-V1.3-alignment.md——已于文档治理轮清除：内容分别并入对齐审计报告 §6/§8/§10 与本文件 §三，两份墓碑桩文件已物理删除，不再作为可引用文档。）
+- **时点快照（非活规范）**：`docs/archive/snapshots/` 下 21 份历史快照（日期跨 2026-09-03 ~ 2026-10-13，其中 3 份未标注日期；索引与取代关系见 `docs/archive/snapshots/README.md`）为特定 commit 的时点记录，仅供追溯，**不得作为当前规范裁决依据**。（历史上曾存在的两份文档——KONE-商用成熟度深度审计报告.md 与 V1.2-to-V1.3-alignment.md——已于文档治理轮清除：内容分别并入对齐审计报告 §6/§8/§10 与本文件 §三，两份墓碑桩文件已物理删除，不再作为可引用文档。）
 - **现行梳理报告（可作决策依据）**：`docs/archive/snapshots/KONE-V1.3-规范文档与架构数据交互深度梳理报告.md` 为 2026-09-22 的治理级审计结论，用于消解本文档体系内的冲突与歧义，**不改变本文件的权威地位**。
+- **现行计划（非快照）**：`KONE-V1.3-数据可信度与匹配精度-下阶段落地优化计划-2026-10-13.md` 为 S4 收尾及后续批次的执行计划，仍留在仓库根目录；其完成状态以 `CHANGELOG.md` 为准。
 
 ### 0.3 宪法常量单一源 (Constitutional Constants — 只此一份)
 以下硬性常量**只在本节定义一次**；其余所有文档（ARCH-STANDARDS、.clinerules、agent 蓝图、PROJECT-PRD 等）如需引用，**只能指针引用本节，不得改写数值**。任何与本节数值不一致的表述均视为文档缺陷：
@@ -54,7 +55,7 @@
   - 属性定义：属于 `plan: 'trial'` 且 `tier: 'basic'`，即基础版本地重计算能力集合的 7 天限时体验，绝非永久免费层。
   - 加密双锚点防线：通过 `AnchorPayload` 记录 `firstTrialAt`、`expiresAt` 与 `lastCheckDate`。同步物理写入系统注册表与底层隐藏系统目录。即使本地主配置文件 `kone-config.json` 被手动清空或删除，初始化时仍能跨渠道强制恢复真实历史试用记录，彻底防范白嫖重置期。
   - 反篡改惩罚机制：优先调取网络标准时间接口；断网离线时自动回退至本地最近一次可信时间锚点。一旦 `lastCheckDate` 校验检测到用户人为手动回拨系统时间，主进程防卫机制立即切断所有核心功能，将 `lockedReason` 强行标记为 `'time_rollback'`，直接将应用阻断并重定向至 `locked` 黑牢页。
-  - V1.3 融合性限制：解锁基础级 AnySearch 自然语言多源检索能力，但在单线索 AI 深度分析抽屉中，**限制生成与下载高价值 PDF 客户全景白皮书的次数（全局上限硬编码为 3 次）**，作为 PLG 漏斗的核心逼单卡点。
+  - 融合性限制（V1.3 起延续）：解锁基础级 AnySearch 自然语言多源检索能力，但在单线索 AI 深度分析抽屉中，**限制生成与下载高价值 PDF 客户全景白皮书的次数（全局上限硬编码为 3 次）**，作为 PLG 漏斗的核心逼单卡点。
 - **付费基础版 (Paid Basic)**
   - 属性定义：面向单兵作战、外贸独立业务员开发的本地重计算生产力全量套件。
   - 燃料自理与 0 算力垫资：采用 **“客户自带密钥 (LLM / SerpApi / AnySearch)”** 模式。用户运行软件产生的大模型 Token 消耗与搜索额度由其自行与第三方供应商直接结算。这种设计确保了 Kone 软件方的服务器运营成本、算力垫资风险与代理 IP 维护成本永远保持在 **0 状态**，具备无限的规模化边际效益。
@@ -116,7 +117,7 @@
 
 ## ⚙️ 三、 核心数据字典与内存态资产扩展 (Data Architecture)
 ### 1. 权威通信契约层同步扩充 (`src/shared/ipc-contracts.ts`)
-- 强制要求：所有 V1.3 实体及扩展属性必须在本文件建立唯一事实源，供主进程与渲染端 import。
+- 强制要求：所有核心实体及扩展属性必须在本文件建立唯一事实源，供主进程与渲染端 import。
 - `DataSourceType` 契约定义（内部溯源标记，前端不再暴露为手动选择渠道）：
   - `export type DataSourceType = 'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search' | 'anysearch' | 'serper'`（`anysearch` 为 AnySearch 独立溯源标记；`serper` 为用户显式「单源：Serper」时的 BYOK 独立溯源标记；`yellow_pages` 保留向后兼容但对应 Provider 已弃用——详见 `PROVIDER-CAPABILITY.md`）
 - `DecisionMaker` 结构体契约定义：
@@ -135,7 +136,7 @@
 - `AgentStatus` 结构体契约定义：
   - `whatsappSent: boolean` (是否触发过本地 Web WA 自动触达)
   - `whatsappStatus?: 'pending' | 'delivered' | 'replied' | 'failed'` (本地WA投递状态)
-  - `linkedinContacted: boolean` (是否已完成经批准的 LinkedIn 触达动作；V1.3 只读 Profile 辅助阶段必须保持 `false`，不得因浏览 Profile 写成 `true`)
+  - `linkedinContacted: boolean` (是否已完成经批准的 LinkedIn 触达动作；在只读 Profile 辅助阶段必须保持 `false`，不得因浏览 Profile 写成 `true`)
   - `emailSequenceStage: number` (本地发信长周期跟进所处轮次 0-3轮)
 - 通讯接口增量绑定：
   - `SearchExecuteRequest` 追加 `dataSourceType?: DataSourceType` 与 `filterOptions?: Record<string, unknown>`。
@@ -368,7 +369,7 @@ Kone 的完整业务闭环统一为：
 ---
 
 ## 🤖 六、 原生内置本地智能体多开矩阵 (Local Autopilot Agents)
-### 0. 商业级权限与风险分层（V1.3 强约束）
+### 0. 商业级权限与风险分层（V1.3 起强约束）
 - 侧边栏 `💎 Kone AI 自航拓客特权港` 分区必须按能力分层展示：Trial 仅展示升级引导；Paid Basic 可使用低量本地 Email 与 WhatsApp Web 能力；Paid Premium/Enterprise 解锁 WhatsApp Cloud API、LinkedIn Profile 只读辅助、账号多开与团队协作。
 - 基础版/试用版不得看到任何虚假运行指标。若账号未配置或授权不足，Agent 卡片中央的"执行进度"必须硬编码清零为 `0/0`，状态标签显示 `未连接 / 待配置` 或 `升级解锁`。
 - 高级版放行后，AI 销售团队卡片"执行进度"通过 `accountGetList()` 拉取真实绑定状态动态渲染。未配置渠道硬编码 `0/0`，状态标签显示 `未连接 / 待配置`。
@@ -383,7 +384,7 @@ Kone 的完整业务闭环统一为：
 ### 1.1 社媒反封号与反爬现实边界（不得营销夸大）
 - LinkedIn 属于高风控平台，Kone 仅交付 Profile 只读辅助与 AI 文案生成，不交付自动加好友/自动私信。任何后续实现若加入自动 Connect 或 Message，必须先更新本 PRD 并经人工批准。
 - WhatsApp Web 自动化属于低量本地辅助能力，默认 3-5/day，必须加入随机间隔、失败停机、session 断线提示和人工扫码恢复。高频或稳定商业发送必须走 WhatsApp Cloud API。
-- Email 是 V1.3 最稳定的本地真实执行通道，必须优先保证 SMTP 发信、IMAP 回复检测、DNS 健康检查和 `agentStatus.emailSequenceStage` 写回闭环。
+- Email 是当前最稳定的本地真实执行通道，必须优先保证 SMTP 发信、IMAP 回复检测、DNS 健康检查和 `agentStatus.emailSequenceStage` 写回闭环。
 - 所有 Agent 实现必须保留真实失败状态：登录失效、频率限制、验证码、账号异常、网络超时均须写入日志和前端状态，不得用 `setTimeout` 或假成功污染指标。
 ### 2. 发信人域名信誉检测防火墙 (mailX 级能力功能融合)
 - 前置安全检阅：在本地 SMTP 发信序列启动前，系统在本地静默调用 DNS 解析引擎，对发信人企业邮箱的域名做一次深度的基础设施信誉检阅。

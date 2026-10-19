@@ -28,6 +28,13 @@ lastVerifiedAt: 2026-10-07
 - 目录治理：17 份根目录时点快照 + 4 份 `archive/` 被引用文档迁入 `docs/archive/snapshots/`（共 21 份，非活规范）；
   UI 审计证据迁入 `docs/evidence/ui-audit/`；`docs/deprecated/` 代码迁入 `docs/archive/deprecated-code/`；
   两份可再生预览 HTML 改为忽略；`kone项目使用说明.markdown` 迁入 `docs/`；`docs/plans/README.md` 补全 31 份计划索引。
+- 归档索引与口径校正（2026-10-19 复核）：新增 `docs/archive/snapshots/README.md`（21 份逐条索引 + 取代关系）；
+  修正 `kone-PRD §0.2` 快照日期区间（09-03 ~ 10-13，3 份未标注）并登记现行计划；
+  两份保留的验收文档补「版本适用性」标注（原文 1.3.x 版本号非当前口径）。
+- 代际口径订正（2026-10-19）：**V1.4 为当前代际（`1.4.x`，当前 `1.4.36`），V1.3 为上一代（`1.3.x`）**。
+  此前 `kone-PRD §0.1` 将 V1.4 描述为「V1.3 内部增量批次」且称「不存在尚未发布的 V1.4」，与 `package.json`、
+  CHANGELOG 与发布产物（`release-v14*`）不符，现已订正；同步更新 `kone-PRD` / `PROJECT-PRD` / `AGENTS.md` /
+  `README.md` / `docs/kone项目使用说明.markdown` 的代际声明。历史 `[V1.3.x]` 特性版本戳保留原义。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、

@@ -1,4 +1,4 @@
-# Kone V1.3 Multi-Agent Anti-Regression Protocol
+# Kone V1.4 Multi-Agent Anti-Regression Protocol
 
 This repository uses Oh My OpenCode Flow Engineering as a mandatory working model for non-trivial changes.
 
@@ -11,7 +11,7 @@ This repository uses Oh My OpenCode Flow Engineering as a mandatory working mode
 
 Before analyzing, planning, or modifying existing logic, every agent must read these 10 documents in order. `kone-PRD.md` is the global authoritative requirements source (全局唯一权威需求主源头):
 
-1. `kone-PRD.md` — V1.3 全局唯一权威需求主源头 (Global Authoritative Requirements Source)
+1. `kone-PRD.md` — V1.4 全局唯一权威需求主源头 (Global Authoritative Requirements Source)
 2. `PROJECT-PRD.md`
 3. `ARCH-STANDARDS.md`
 4. `.opencode/agents/ui-agent.md`
