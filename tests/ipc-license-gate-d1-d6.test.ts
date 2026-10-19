@@ -48,7 +48,7 @@ const electronMock = {
     requestSingleInstanceLock: () => true,
     commandLine: { appendSwitch() {}, hasSwitch: () => false },
     getName: () => 'Kone AI',
-    getVersion: () => '1.4.36',
+    getVersion: () => '1.4.37',
     getAppPath: () => process.cwd(),
     disableHardwareAcceleration() {},
   },
