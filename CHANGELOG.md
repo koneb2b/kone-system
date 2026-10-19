@@ -17,6 +17,22 @@ lastVerifiedAt: 2026-10-19
 
 ---
 
+## [1.4.38] — 2026-10-20 · 可交付构建：CLOUD.CLOUDFLARE_* 收口（cloud_send）+ 渲染层前置降级
+
+> 本版为**构建版本**：`1.4.37` 安装包产出之后，`[1.4.37]` 节内记录的 2026-10-20 收口工作
+> （发布门禁成文法化、AUTOPILOT/CLOUD 授权分级判定、`CLOUDFLARE_*` 实际收口）才全部落地。
+> 为使安装包与 HEAD 一致，bump 至 `1.4.38` 并重新打包；**相对 1.4.37 安装包无新增功能，只有授权边界收紧**。
+
+- 构建：`release/Kone-Intellect-Setup-1.4.38.exe`（与 HEAD 一致，含全部 2026-10-20 授权收口）；
+  打包态冒烟证据见 `tests/packaged-smoke-report.json` / `tests/packaged-smoke.png`。
+- 授权行为（**相对 1.4.37 安装包的真实差异**）：`CLOUD.CLOUDFLARE_CONFIGURED` / `_TEST_CONNECTION` /
+  `_DASHBOARD_STATS` / `_POLL_OUTREACH_STATUS` 四条 IPC 已按 `cloud_send` 收口（`FEATURE_DENIED` 403）；
+  非高级版不再挂载云端设置面板，改渲染升级引导。变更细节与证据见 `[1.4.37]` 节 2026-10-20 相关条目。
+- 受影响 SSOT：`package.json` / `package-lock.json`（版本）、`CHANGELOG.md`、
+  `KONE-V1.3-干净机器验收手册-2026-09-25.md`（包名 / 体积 / 冒烟口径回填）。
+
+---
+
 ## [1.4.37] — 2026-10-19 · 文档治理归零 + IPC 授权分层收口（D1–D6）+ 云端投递门禁加固
 
 > 本版为 2026-10-19 的治理与安全收口版：IPC 授权缺陷 D1–D6 全部落地并附负向回归，

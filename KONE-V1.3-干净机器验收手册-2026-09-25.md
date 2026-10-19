@@ -6,8 +6,8 @@
 > **判定**：全部步骤通过 → **PASS（可交付）**；任一步失败 → **记录现象并反馈**。
 >
 > **版本适用性（2026-10-20 复核，取代 2026-10-19 注记）**：本文成文时为 1.3.0（HEAD `1ac113c`），文中示例包名
-> `Kone-Intellect-Setup-1.3.0.exe` 已过期。本次复核时 `package.json` 为 **1.4.37**，安装包已由 `npm run dist`
-> 产出为 `release/Kone-Intellect-Setup-1.4.37.exe`（85.8 MB；**未签名**）。签名缺口属**预期**：代码签名证书与
+> `Kone-Intellect-Setup-1.3.0.exe` 已过期。本次复核时 `package.json` 为 **1.4.38**，安装包已由 `npm run dist`
+> 产出为 `release/Kone-Intellect-Setup-1.4.38.exe`（85.8 MB；**未签名**）。签名缺口属**预期**：代码签名证书与
 > Windows SDK 尚未接入，`verify:signature` 默认放行，**交付时须加 `--strict`**（见 `docs/release-gate.md` §4）。
 > **§2 的 20 项验收步骤适用于 1.4.x，结构未变；但步骤本身仍未逐项重验**；重跑前请按 `package.json` 当前版本替换包名
 > （成文时版本仅作历史参照）。
@@ -18,11 +18,11 @@
 
 | 项 | 结果 |
 |---|---|
-| 单元测试 | 成文时 **314 / 314**（2026-09-25）；**现基线 626 / 626**（2026-10-20 复核，`npm test` 链式全绿） |
+| 单元测试 | 成文时 **314 / 314**（2026-09-25）；**现基线 632 / 632**（2026-10-20 复核，`npm test` 链式全绿） |
 | 类型检查 / lint / format | 0 error / 0 error / 通过 |
 | 文档与契约一致性 | 双绿（宪法常量 8+7、架构红线 3+3、交叉引用 118） |
-| 打包 | 安装包 `Kone-Intellect-Setup-<版本号>.exe`（体积以实际产物为准；成文时为 1.3.0 / 89.8 MB，2026-10-20 复核时为 1.4.37 / 85.8 MB，未签名） |
-| 打包冒烟（本机） | `booted` / `activationScreenVisible` / `preloadBridgeVisible` 全 true（2026-10-20 对 1.4.37 复核同上；`dashboardNavVisible` 为 false 属**未激活态合法分支**，判定规则见 `scripts/packaged-smoke.cjs`） |
+| 打包 | 安装包 `Kone-Intellect-Setup-<版本号>.exe`（体积以实际产物为准；成文时为 1.3.0 / 89.8 MB，2026-10-20 复核时为 1.4.38 / 85.8 MB，未签名） |
+| 打包冒烟（本机） | `booted` / `activationScreenVisible` / `preloadBridgeVisible` 全 true（2026-10-20 对 1.4.38 复核同上；`dashboardNavVisible` 为 false 属**未激活态合法分支**，判定规则见 `scripts/packaged-smoke.cjs`） |
 | 安全基线 | contextIsolation + nodeIntegration:false + sandbox:true |
 
 ---
@@ -31,7 +31,7 @@
 
 | # | 物品 | 说明 |
 |---|---|---|
-| 1 | **安装包** | `Kone-Intellect-Setup-<版本号>.exe`（以 `package.json` 版本为准；成文时为 1.3.0，2026-10-20 复核时为 1.4.37） |
+| 1 | **安装包** | `Kone-Intellect-Setup-<版本号>.exe`（以 `package.json` 版本为准；成文时为 1.3.0，2026-10-20 复核时为 1.4.38） |
 | 2 | **干净 Windows 机器** | 从未装过本产品；建议 4G–8G 内存办公机（性能红线场景） |
 | 3 | **授权码** 或 **7 天试用** | 试用可在激活页一键开启（每台设备仅一次） |
 | 4 | **LLM 密钥 + Base URL** | 如 `https://api.openai.com/v1` 或中转/私有地址（**通常以 `/v1` 结尾**） |
