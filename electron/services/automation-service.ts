@@ -251,6 +251,22 @@ export const registerAutomationHandlers = (
       const trialDenied = ensureTrialAccess(store, licenseGuard, '云端投递')
       if (trialDenied) return trialDenied
 
+      /* D1（2026-10-19 修复）：此处此前只挂 ensureTrialAccess，缺 requireFeature。
+         `ensureTrialAccess` 只拦「过期 / 未授权」，**不构成付费墙**——活跃 Trial 与
+         Basic 均能通过，可直接把线索推入云端投递队列（cloud_send 属 Premium）。
+         现补齐付费墙，与 START_CAMPAIGN 的 gate 形状保持一致。 */
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端投递')
+      } catch (error: any) {
+        return {
+          success: false,
+          error: 'FEATURE_DENIED',
+          message: String(error?.message || '当前授权无权执行云端投递'),
+          operationName: '云端投递',
+          code: Number(error?.code) || 403,
+        }
+      }
+
       // [V1.4.0] Phase 2.9：draftVersion 供云端门禁 ⑦ 与审批记录比对
       const { leadId, subject, body, scheduledAt, sequenceStage, draftVersion } = p || {}
 

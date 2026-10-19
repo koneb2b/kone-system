@@ -268,11 +268,14 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
       const accountType = String(p?.accountType || '').trim() as AccountEntry['accountType']
 
       const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
-      const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
+      /* D6（2026-10-19 修复）：非高级套餐的代理键必须是 local_autopilot（Paid Basic）。
+         此处原用 search_basic —— 而 search_basic 亦属 TRIAL_FEATURES，
+         导致活跃 Trial 可通过该判断越权绑定真实邮箱账号（违反 PRD §六.0 熔断要求）。 */
+      const hasLocalAutopilot = hasFeature(licenseGuard, 'local_autopilot')
 
       if (!hasTeamCollaboration) {
         const isEmailType = accountType === 'email_smtp' || accountType === 'email_imap'
-        if (!isEmailType || !hasSearchBasic) {
+        if (!isEmailType || !hasLocalAutopilot) {
           return (
             buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
           )
@@ -345,10 +348,11 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
       }
 
       const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
-      const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
+      // D6：与 CONNECT 同步换键（search_basic → local_autopilot），避免"可连不可断"的授权裂缝。
+      const hasLocalAutopilot = hasFeature(licenseGuard, 'local_autopilot')
       const isEmailType = entry.accountType === 'email_smtp' || entry.accountType === 'email_imap'
 
-      if (!hasTeamCollaboration && (!isEmailType || !hasSearchBasic)) {
+      if (!hasTeamCollaboration && (!isEmailType || !hasLocalAutopilot)) {
         return (
           buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
         )
@@ -379,9 +383,10 @@ export const registerSandboxHandlers = (ipcMain: Electron.IpcMain, store: Config
   registerIpc(IPC_CHANNELS.ACCOUNT.GET_LIST, accountGetListContract, async (_event: unknown) => {
     try {
       const hasTeamCollaboration = hasFeature(licenseGuard, 'team_collaboration')
-      const hasSearchBasic = hasFeature(licenseGuard, 'search_basic')
+      // D6：读端同样换键，否则 Trial 仍可读到账号绑定元数据（PRD §六.0 禁暴露运行指标）。
+      const hasLocalAutopilot = hasFeature(licenseGuard, 'local_autopilot')
 
-      if (!hasTeamCollaboration && !hasSearchBasic) {
+      if (!hasTeamCollaboration && !hasLocalAutopilot) {
         return (
           buildFeatureResult(false, 'FEATURE_DENIED', 403) ?? { success: false, error: 'FEATURE_DENIED', code: 403 }
         )

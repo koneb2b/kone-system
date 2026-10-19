@@ -55,6 +55,14 @@ lastVerifiedAt: 2026-10-19
   **缺 `requireFeature('cloud_send')`** → 活跃 Trial 与 Basic 均可直连云端入队；② `ACCOUNT.CONNECT/DISCONNECT/GET_LIST` 虽有 in-body 门禁，
   但代理键误用 `search_basic`（**Trial 亦持有该能力**）→ **Trial 可绑定/查看邮箱账号**，违反 PRD §六.0 熔断要求。
   迁移前置为 D1–D5 裁决；受影响 SSOT：`ARCH-STANDARDS.md §3`（迁移计数待迁移落地后回写）。
+- IPC 授权缺陷修复（2026-10-19，**D1 + D6 已裁决并落地**）：① `AUTOMATION.QUEUE_OUTREACH` 补 `requireFeature('cloud_send')`
+  付费墙，返回与 `AUTOMATION.START_CAMPAIGN` 同款 `FEATURE_DENIED` / 403 信封 —— 活跃 Trial 与 Basic 不再能直连云端入队
+  （对齐 `CLOUD-COLLABORATION-DELIVERY.md §13.1`「高分配额与 `cloud_send` 能力均不构成投递授权」）。②
+  `ACCOUNT.CONNECT / DISCONNECT / GET_LIST` 的代理键由 `search_basic`（`TRIAL_FEATURES` 亦持有）改为 `local_autopilot`
+  —— 活跃 Trial 不再能绑定/读取/断开真实邮箱账号（对齐 `kone-PRD.md §6.0` 熔断要求）。仅替换代理键，未新增或移除任何 feature 定义。
+  新增回归 `tests/ipc-license-gate-d1-d6.test.ts`（10 项：D1 trial/basic/授权过期拒绝 + Premium 放行；D6 trial 三通道拒绝 + Basic/Premium 放行）。
+  证据：撤销修复后该套件 `exit 1`（Trial 泄漏用例失败），修复后 10/10 通过；`npm run test:unit` 605/605、`tsc --noEmit` 0 error、`lint` 0 error。
+  受影响 SSOT：`ARCH-STANDARDS.md §3`。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、

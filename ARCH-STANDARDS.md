@@ -77,6 +77,12 @@ Responsibilities:
 > - 断言通过后 `registry.lock()`：运行期禁止新增注册，构成真正的启动后护栏（`register()` 的重复注册幂等只服务于测试复用场景）。
 >
 > 门禁的**非空守卫**由 `tests/ipc-startup-gate.test.ts` 证明：①忠实复刻 `main.ts` 注册序列后，`assertAllRegistered` 通过、`lock()` 生效且此后新增注册被拒；②故意漏注册（跳过 `registerAuthHandlers`）时 `assertAllRegistered` 抛错并指明缺失通道——证明门禁不是空断言。`tests/ipc-registry-secure-wrapper.test.ts` 已证明包装器治理登记后 Fail-Closed 仍返回 403、授权通过仍放行。
+>
+> **授权分层复核与缺陷收口（2026-10-19）**：复核依据 `docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`，41 个 plain `registerIpc` 通道按 public/trial/paid 重新分层（**16 免门禁**——启动/激活/配置/密钥类，加门禁会造成激活死锁；**22 需 feature 门禁**；**3 条件/参数化门禁**）。关键判据：`ensureTrialAccess`（`license-service.ts`）是**授权/过期门禁，不是付费墙**——活跃 claims 一律放行；真正的套餐墙只有 `registerSecureFeatureIpc` → `licenseGuard.requireFeature`。已落地 2 处 Fail-Closed 修正：
+> - `AUTOMATION.QUEUE_OUTREACH`：原仅 `ensureTrialAccess` → 活跃 Trial 与 Basic 均可直连云端入队；现补 `requireFeature('cloud_send')`，返回 `FEATURE_DENIED` / 403（与 `AUTOMATION.START_CAMPAIGN` 同信封）。
+> - `ACCOUNT.CONNECT / DISCONNECT / GET_LIST`：代理键原为 `search_basic`（`TRIAL_FEATURES` 亦持有）→ 活跃 Trial 可绑定/读取/断开真实邮箱账号；现统一改为 `local_autopilot`（仅替换代理键，不新增/移除 feature 定义；参数级 `isEmailType` 限制保持原样）。
+>
+> 回归证据：`tests/ipc-license-gate-d1-d6.test.ts`（10 项；撤销修复即 `exit 1`，修复后全绿）。**D2–D5、D7 未裁决前，不得对其余 plain 通道批量追加门禁。**
 
 ### `preload/` - Minimal secure bridge
 Allowed:
