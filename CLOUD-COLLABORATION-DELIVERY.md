@@ -9,7 +9,7 @@
 - 规范版本：v1.0
 - 规范状态：目标态基线
 - 实现状态：除项目现有明确标注为已落地的能力外，本文件新增的审批、云端队列、事件与回写能力均为**待实现目标态**，不得对外宣称已经交付。**2026-10-19 复核**：审批记录与服务端二次门禁（⑤–⑨）的代码与负向测试已落地，但 `APPROVAL_GATE_ENABLED` 默认关闭，部署环境尚未开启留证。
-- 当前发布判定：`NO-GO`（状态更新于 2026-10-07）。**已闭环**：Phase 2 投递闭环 / 2.5–2.6 IMAP 回复检测 / 2.7–2.8e 云端看板全链路（见 §13.1），以及 2026-10-07 全项目审计发现的 5 项 P0 缺陷修复（`CHANGELOG.md` [1.3.14]）。**仍待闭环**：① 干净机器端到端人工冒烟（20 项，见 `KONE-V1.3-干净机器验收手册-2026-09-25.md`）；② 打包冒烟 B2（`app.asar` 被系统进程持有，属环境问题）；③ 审批 → 服务端二次门禁：代码与 59 项云端测试已落地（`kone-cloud/src/worker.ts` ⑤–⑨、`kone-cloud/tests/approval-gate.test.ts`，2026-10-19 复核），但 `APPROVAL_GATE_ENABLED` 仍为 `false`，**尚未在部署环境开启并留证**；④ 小流量实发验证（需真实 Resend + IMAP 环境）。以上全部完成并留证后方可转 `GO`。
+- 当前发布判定：`NO-GO`（状态更新于 2026-10-07）。**已闭环**：Phase 2 投递闭环 / 2.5–2.6 IMAP 回复检测 / 2.7–2.8e 云端看板全链路（见 §13.1），以及 2026-10-07 全项目审计发现的 5 项 P0 缺陷修复（`CHANGELOG.md` [1.3.14]）。**仍待闭环**：① 干净机器端到端人工冒烟（20 项，见 `KONE-V1.3-干净机器验收手册-2026-09-25.md`）；② 打包冒烟 B2（`app.asar` 被系统进程持有，属环境问题）；③ 审批 → 服务端二次门禁：代码与 63 项云端测试已落地（`kone-cloud/src/worker.ts` 入队门禁 ⑤–⑨ + 投递时复核，`kone-cloud/tests/approval-gate.test.ts`，2026-10-19 复核），但 `APPROVAL_GATE_ENABLED` 仍为 `false`，**尚未在部署环境开启并留证**；④ 小流量实发验证（需真实 Resend + IMAP 环境）。以上全部完成并留证后方可转 `GO`。
 
 ## 1. 一体化职责边界
 
@@ -246,6 +246,7 @@ Phase 2 引入云端 Resend 投递闭环后，`NO-GO` 判定额外叠加以下�
 - `/outreach/queue` 状态机守卫：`lead.status` 必须为 `approved` 或 `queued`，否则返回 `LEAD_NOT_APPROVED (400)`；
 - `/cron/send` 双重门禁：`X-Cron-Secret` 与 `env.CRON_SECRET` 常量时间比较；密钥不匹配返回 `UNAUTHORIZED (401)`；
 - `/cron/send` 批量扫描：`LIMIT 50` 上限；JOIN `leads`+`contacts` 解析收件人 `normalized_email`，缺失即标记 `failed`；
+- `/cron/send` **投递时复核（Fail-Closed，2026-10-19 加固）**：入队门禁只覆盖新请求，cron 投递前须再次确认审批仍有效——批量扫描额外取 `leads` 的 `approval_id` / `draft_version`，逐条校验「线索状态 ∈ {`approved`,`queued`}」且「`approvals.decision='approved'`」且「`approvals.draft_version` 与线索 `draft_version` 严格相等」且「收件人未被 `suppressions` 命中（`expires_at IS NULL OR > now`）」；`suppressed` 落终态 `status='failed'`（不再重试），其余原因保留 `pending` 并置 `next_retry_at = now + 1h`（可经人工修复后重试）；与入队门禁共用 `APPROVAL_GATE_ENABLED`，默认关闭时行为与加固前完全一致；
 - `/cron/send` 指数退避：失败时 `send_attempts++` 且 `next_retry_at` 按 `60s / 300s / 900s / 3600s` 阶梯推进；
 - `/webhooks/resend` **真实 HMAC-SHA256 签名验证（Svix 规范，P2-13 完成）**：读取 raw body → 用 `env.RESEND_WEBHOOK_SECRET`（`whsec_<base64>` 格式，剥离前缀后 base64 解码为 key 字节）计算 `base64(HMAC-SHA256(key, "${svix-id}.${svix-timestamp}.${rawBody}"))`，与 `svix-signature: v1=<base64>` 头逐个做**常时比较**（防时序攻击）；±300s 时间窗拒绝过期重放；`webhook_events.UNIQUE(provider, event_id)` 做事件级幂等去重；
 - `/webhooks/resend` 缺失/伪造/过期签名均返回 `UNAUTHORIZED (401)`，无降级路径（`x-resend-signature` 存在性检查已移除，避免 Fail-Closed 旁路）；

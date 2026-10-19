@@ -79,7 +79,7 @@ function parseSvixSecret(secret: string): Uint8Array {
 async function hmacSha256(keyBytes: Uint8Array, message: string): Promise<string> {
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey(
-    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+    'raw', new Uint8Array(keyBytes), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   )
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message))
   return bytesToBase64(new Uint8Array(sig))
@@ -1123,6 +1123,65 @@ export async function maybeTripCircuit(env: Env, workspaceId: string): Promise<v
     .run()
 }
 
+type SendGateCandidate = {
+  workspace_id: string
+  lead_id: string
+  recipient_email: string
+  lead_status: string
+  lead_approval_id: string | null
+  lead_draft_version: number | null
+}
+
+/**
+ * 投递时二次复核（Fail-Closed）。返回 null = 放行；否则返回失败原因。
+ * 与入队门禁 ⑤–⑨ 互补：入队只校验一次，投递前必须再次确认审批仍有效。
+ */
+async function evaluateSendGate(env: Env, outreach: SendGateCandidate, now: string): Promise<string | null> {
+  if (outreach.lead_status !== 'approved' && outreach.lead_status !== 'queued') {
+    return 'lead_not_approved'
+  }
+  if (!outreach.lead_approval_id) return 'approval_required'
+
+  const approval = await env.DB.prepare(
+    `SELECT decision, draft_version FROM approvals WHERE id = ? AND workspace_id = ? AND lead_id = ?`,
+  ).bind(outreach.lead_approval_id, outreach.workspace_id, outreach.lead_id).first<{
+    decision: string
+    draft_version: number
+  }>()
+
+  if (!approval || approval.decision !== 'approved') return 'approval_invalid'
+  // 严格相等：旧批准不得授权新草稿（与入队门禁 ⑦ 同一规则）。
+  if (approval.draft_version !== outreach.lead_draft_version) return 'draft_version_mismatch'
+
+  if (outreach.recipient_email) {
+    const suppressed = await env.DB.prepare(
+      `SELECT id FROM suppressions WHERE normalized_email = ? AND (expires_at IS NULL OR expires_at > ?)`,
+    ).bind(outreach.recipient_email, now).first()
+    if (suppressed) return 'suppressed'
+  }
+  return null
+}
+
+async function applySendGateFailure(
+  env: Env,
+  outreach: { id: string; workspace_id: string },
+  reason: string,
+  now: string,
+): Promise<void> {
+  if (reason === 'suppressed') {
+    // 抑制是权威终态：不得再重试投递。
+    await env.DB.prepare(
+      `UPDATE outreach SET status = 'failed', error = ?, next_retry_at = NULL, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+    ).bind(reason, now, outreach.id, outreach.workspace_id).run()
+    return
+  }
+  // 审批/草稿问题可经人工修复：保留 pending，1 小时后重试，避免误判为永久失败。
+  const retryAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+  await env.DB.prepare(
+    `UPDATE outreach SET error = ?, next_retry_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ?`,
+  ).bind(reason, retryAt, now, outreach.id, outreach.workspace_id).run()
+}
+
 // ── POST /cron/send — Cron 定时投递 ──
 async function handleCronSend(request: Request, env: Env, requestId: string): Promise<Response> {
   // Verify cron secret
@@ -1138,12 +1197,16 @@ async function handleCronSend(request: Request, env: Env, requestId: string): Pr
 
   const now = nowUTC()
   const BATCH_SIZE = 50
+  // 与入队门禁共用同一开关：关闭时行为完全不变（向后兼容）。
+  const gateEnabled = (env.APPROVAL_GATE_ENABLED ?? 'false') === 'true'
 
   // Find pending outreach that are ready to send
   // JOIN with leads + contacts to resolve the actual recipient email.
+  // 同时取 lead 的审批锚点（approval_id / draft_version），供投递时复核。
   const pending = await env.DB.prepare(
     `SELECT o.id, o.workspace_id, o.lead_id, o.subject, o.body, o.send_attempts, o.next_retry_at,
-            c.normalized_email AS recipient_email
+            c.normalized_email AS recipient_email,
+            l.status AS lead_status, l.approval_id AS lead_approval_id, l.draft_version AS lead_draft_version
      FROM outreach o
      JOIN leads l ON l.id = o.lead_id
      JOIN contacts c ON c.id = l.contact_id
@@ -1155,12 +1218,26 @@ async function handleCronSend(request: Request, env: Env, requestId: string): Pr
     id: string; workspace_id: string; lead_id: string
     subject: string; body: string; send_attempts: number; next_retry_at: string
     recipient_email: string
+    lead_status: string; lead_approval_id: string | null; lead_draft_version: number | null
   }>()
 
   const resent: string[] = []
   const failed: string[] = []
 
   for (const outreach of pending.results) {
+    // ── 投递时复核（2026-10-19 加固）──
+    // 入队门禁只覆盖“新请求”；历史 queued 行、或入队后审批被撤销/草稿变更/
+    // 收件人被加入抑制名单，仍可能在 cron 投递时绕过审批。此处以 Fail-Closed
+    // 重新校验，开关与入队门禁一致（默认关闭，零行为变化）。
+    if (gateEnabled) {
+      const gateFailure = await evaluateSendGate(env, outreach, now)
+      if (gateFailure) {
+        await applySendGateFailure(env, outreach, gateFailure, now)
+        failed.push(outreach.id)
+        continue
+      }
+    }
+
     if (!outreach.recipient_email) {
       // Safety net: missing contact email is unrecoverable — mark as failed with terminal error.
       await env.DB.prepare(

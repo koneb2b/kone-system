@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest'
 import { env } from 'cloudflare:workers'
 import worker, { bumpDeliveryQuota, maybeTripCircuit } from '../src/worker.js'
+import { setTestSendResult } from '../src/resend.js'
 
 /** 门禁开启的 env：spread 保留 D1 等真实 binding，仅覆盖开关 */
 const gatedEnv = { ...env, APPROVAL_GATE_ENABLED: 'true' } as unknown as Parameters<typeof worker.fetch>[1]
@@ -471,5 +472,128 @@ describe('Phase 2.9 阶段4 · 日配额与熔断写入侧', () => {
     const r = await queue(gatedEnv, token, { leadId, subject: 's', body: 'b', draftVersion: 1 })
     expect(r.status).toBe(429)
     expect(r.body.code).toBe('QUOTA_EXCEEDED')
+  })
+})
+
+// ───────────────────────────────────────────────────────────────
+// 2026-10-19 加固：投递时复核（cron send）
+//
+// 入队门禁只覆盖新请求；历史 queued 行 / 入队后审批撤销 / 草稿变更 /
+// 收件人被加入抑制名单，都可能绕过审批。以下用例验证 cron 投递前的
+// Fail-Closed 复核，且**门禁关闭时行为不变**。
+// ───────────────────────────────────────────────────────────────
+describe('Phase 2.9 · 投递时复核（cron send）', () => {
+  async function cron(targetEnv: Parameters<typeof worker.fetch>[1]) {
+    const res = await worker.fetch(
+      new Request('https://api.example.com/v1/cron/send', {
+        method: 'POST',
+        headers: new Headers({ 'Content-Type': 'application/json', 'X-Cron-Secret': 'test-cron-secret' }),
+        body: '{}',
+      }),
+      targetEnv,
+      CTX,
+    )
+    return {
+      status: res.status,
+      body: (await res.json()) as {
+        success?: boolean
+        data?: { sentCount?: number; failedCount?: number; resent?: string[]; failed?: string[] }
+      },
+    }
+  }
+
+  async function outreachRow(id: string) {
+    return env.DB.prepare(`SELECT status, error, next_retry_at FROM outreach WHERE id = ?`)
+      .bind(id)
+      .first<{ status: string; error: string | null; next_retry_at: string | null }>()
+  }
+
+  it('门禁开启：lead 无审批锚点（模拟历史 queued 行）→ 不投递，保持 pending 并记错', async () => {
+    const { token, workspaceId } = await setupWorkspace('send-gate-noanchor')
+    const { leadId } = await seedLead(workspaceId)
+    // 审批记录存在，但 lead.approval_id 未回写 —— 等价于迁移前入队的历史行。
+    await approveLead(workspaceId, leadId, 1)
+    const q = await queue(gatedEnv, token, { leadId, subject: 's', body: 'b', draftVersion: 1 })
+    expect(q.status).toBe(200)
+    const outreachId = q.body.data?.id as string
+
+    let sends = 0
+    setTestSendResult(async () => {
+      sends += 1
+      return { id: 'msg_should_not_send' }
+    })
+    const c = await cron(gatedEnv)
+    setTestSendResult(null)
+
+    expect(sends).toBe(0)
+    expect(c.body.data?.resent ?? []).not.toContain(outreachId)
+    const row = await outreachRow(outreachId)
+    expect(row?.status).toBe('pending')
+    expect(row?.error).toBe('approval_required')
+    expect(row?.next_retry_at).toBeTruthy()
+  })
+
+  it('门禁开启：审批锚点与草稿版本一致 → 正常投递', async () => {
+    const { token, workspaceId } = await setupWorkspace('send-gate-pass')
+    const { leadId } = await seedLead(workspaceId)
+    const approvalId = await approveLead(workspaceId, leadId, 2)
+    const q = await queue(gatedEnv, token, { leadId, subject: 's', body: 'b', draftVersion: 2 })
+    expect(q.status).toBe(200)
+    const outreachId = q.body.data?.id as string
+    // 真实流程由 /approvals 回写；此处显式补上以模拟已批准线索。
+    await env.DB.prepare(`UPDATE leads SET approval_id = ?, draft_version = 2 WHERE id = ?`)
+      .bind(approvalId, leadId)
+      .run()
+
+    setTestSendResult(async () => ({ id: 'msg_gate_pass' }))
+    const c = await cron(gatedEnv)
+    setTestSendResult(null)
+
+    expect(c.body.data?.resent ?? []).toContain(outreachId)
+    const row = await outreachRow(outreachId)
+    expect(row?.status).toBe('sent')
+  })
+
+  it('门禁开启：入队后被加入全局抑制 → 终态 failed/suppressed，不再重试', async () => {
+    const { token, workspaceId } = await setupWorkspace('send-gate-suppress')
+    const { leadId, email } = await seedLead(workspaceId)
+    const approvalId = await approveLead(workspaceId, leadId, 1)
+    const q = await queue(gatedEnv, token, { leadId, subject: 's', body: 'b', draftVersion: 1 })
+    expect(q.status).toBe(200)
+    const outreachId = q.body.data?.id as string
+    await env.DB.prepare(`UPDATE leads SET approval_id = ?, draft_version = 1 WHERE id = ?`)
+      .bind(approvalId, leadId)
+      .run()
+    await env.DB.prepare(
+      `INSERT INTO suppressions (id, workspace_id, normalized_email, reason, source, added_at) VALUES (?, NULL, ?, 'one_click_unsubscribe', 'system', ?)`,
+    )
+      .bind(`sp-send-${Date.now()}`, email, new Date().toISOString())
+      .run()
+
+    setTestSendResult(async () => ({ id: 'msg_should_not_send' }))
+    const c = await cron(gatedEnv)
+    setTestSendResult(null)
+
+    expect(c.body.data?.resent ?? []).not.toContain(outreachId)
+    const row = await outreachRow(outreachId)
+    expect(row?.status).toBe('failed')
+    expect(row?.error).toBe('suppressed')
+    expect(row?.next_retry_at).toBeNull()
+  })
+
+  it('门禁关闭：无审批锚点仍投递（向后兼容，零行为变化）', async () => {
+    const { token, workspaceId } = await setupWorkspace('send-gate-off')
+    const { leadId } = await seedLead(workspaceId)
+    const q = await queue(openEnv, token, { leadId, subject: 's', body: 'b' })
+    expect(q.status).toBe(200)
+    const outreachId = q.body.data?.id as string
+
+    setTestSendResult(async () => ({ id: 'msg_gate_off' }))
+    const c = await cron(openEnv)
+    setTestSendResult(null)
+
+    expect(c.body.data?.resent ?? []).toContain(outreachId)
+    const row = await outreachRow(outreachId)
+    expect(row?.status).toBe('sent')
   })
 })

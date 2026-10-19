@@ -42,6 +42,13 @@ lastVerifiedAt: 2026-10-19
 - 云端门禁真相校正（2026-10-19）：`CLOUD-COLLABORATION-DELIVERY.md` 原写「服务端二次门禁云端尚无实现」，
   与代码不符；已核实 `kone-cloud/src/worker.ts` ⑤–⑨ 与 `tests/approval-gate.test.ts`（59 项云端测试全通过），
   改为「已实现、`APPROVAL_GATE_ENABLED=false`、待部署环境开启并留证」。
+- 云端投递门禁加固（2026-10-19）：`kone-cloud/src/worker.ts` `/cron/send` 新增**投递时复核**（Fail-Closed，与入队门禁 ⑤–⑨
+  共用 `APPROVAL_GATE_ENABLED`，默认关闭时零行为变化）——入队仅校验一次，历史 `queued` 行/入队后审批撤销/草稿变更/收件人被加入
+  抑制名单均可能在 cron 投递时绕过；现于投递前逐条重新校验「线索状态 ∈ {`approved`,`queued`}」＋「`approvals.decision='approved'`」
+  ＋「`draft_version` 严格相等」＋「收件人未被 `suppressions` 命中」。`suppressed` 落终态 `status='failed'`（不再重试），
+  其余原因保留 `pending` 并置 `next_retry_at = now + 1h`。补 4 项负向测试；并修复 `kone-cloud` 既有 5 项 typecheck 错误
+  （`crypto.subtle.importKey` 的 `BufferSource` 兼容、测试 `unknown` 断言、Promise 泛型不匹配），`kone-cloud` typecheck 恢复 **0 error**。
+  受影响 SSOT：`CLOUD-COLLABORATION-DELIVERY.md`（§13.1 Worker 路由）。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、

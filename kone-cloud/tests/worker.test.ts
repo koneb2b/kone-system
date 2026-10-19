@@ -600,7 +600,7 @@ describe('Kone Cloud Worker', () => {
         method: 'POST', headers: queueHeaders, body: JSON.stringify({ leadId, subject: 'Dup Reply', body: '<p>x</p>' }),
       })
       expect(queueRes.status).toBe(200)
-      const outreachId = (await queueRes.json()).data.id as string
+      const outreachId = ((await queueRes.json()) as { data: { id: string } }).data.id
 
       const reportHeaders = bearerHeader(token)
       reportHeaders.set('Content-Type', 'application/json')
@@ -662,7 +662,7 @@ describe('Kone Cloud Worker', () => {
       const queueRes = await fetchWorker('/v1/outreach/queue', {
         method: 'POST', headers: queueHeaders, body: JSON.stringify({ leadId, subject: 'Open Click', body: '<p>x</p>' }),
       })
-      const outreachId = (await queueRes.json()).data.id as string
+      const outreachId = ((await queueRes.json()) as { data: { id: string } }).data.id
       const mockId = `msg_opened_${Date.now()}`
       setTestSendResult(async () => ({ id: mockId }))
       const cronHeaders = new Headers({ 'Content-Type': 'application/json', 'X-Cron-Secret': 'test-cron-secret' })
@@ -698,7 +698,7 @@ describe('Kone Cloud Worker', () => {
       const queueRes = await fetchWorker('/v1/outreach/queue', {
         method: 'POST', headers: queueHeaders, body: JSON.stringify({ leadId, subject: 'Click', body: '<p>x</p>' }),
       })
-      const outreachId = (await queueRes.json()).data.id as string
+      const outreachId = ((await queueRes.json()) as { data: { id: string } }).data.id
       const mockId = `msg_clicked_${Date.now()}`
       setTestSendResult(async () => ({ id: mockId }))
       const cronHeaders = new Headers({ 'Content-Type': 'application/json', 'X-Cron-Secret': 'test-cron-secret' })
@@ -1043,7 +1043,7 @@ describe('Kone Cloud Worker', () => {
       // The mock returns a pre-created rejected promise — we attach a no-op
       // `.catch()` to the same promise so any unhandled rejection is silenced
       // before the worker's own try/catch consumes it.
-      const resendFailure: Promise<{ id: string }> = new Promise<string>((_, reject) => {
+      const resendFailure: Promise<{ id: string }> = new Promise<{ id: string }>((_, reject) => {
         reject(new Error('Resend API returned 429: rate limited'))
       })
       resendFailure.catch(() => {}) // suppress unhandled rejection on creation
