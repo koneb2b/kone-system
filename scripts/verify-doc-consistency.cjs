@@ -442,6 +442,48 @@ function checkDataSourceTypeParity() {
   notes.push(`DataSourceType 枚举一致（代码 ${codeValues.length} 值 ↔ 3 份文档）`)
 }
 
+// ── 11. 现行文档不得把旧安装包 / 旧代际写成当前 ────────────────
+/**
+ * 为什么必须门禁：2026-10-19 全量审计发现，活跃文档仍可能残留旧安装包名
+ * （如验收手册正文写 `Kone-Intellect-Setup-1.3.0.exe`）或把 V1.3 写成当前代际。
+ * 历史原文允许保留，但同一行必须带「已过期 / 成文时 / 历史 / 旧版」等显式标注。
+ */
+function checkStaleCurrentClaims() {
+  const pkg = JSON.parse(read('package.json'))
+  const currentFacing = [
+    ...ACTIVE_DOCS.filter((f) => f !== 'CHANGELOG.md'),
+    'README.md',
+    'KONE-V1.3-干净机器验收手册-2026-09-25.md',
+    'KONE-V1.3-审批门禁端到端验证清单-2026-10-07.md',
+  ]
+  const allowMarkers = ['已过期', '成文时', '历史', '旧版', 'superseded', '历史证据', '不逐项重验']
+  const installerRe = /Kone-Intellect-Setup-(\d+\.\d+\.\d+)\.exe/g
+  const oldGenerationRe = /V1\.3[^\n]{0,12}(当前主线|当前版本|当前代际)|不存在[^\n]{0,10}V1\.4/
+  let scanned = 0
+  for (const file of [...new Set(currentFacing)]) {
+    if (!exists(file)) continue
+    scanned += 1
+    const lines = read(file).split(/\r?\n/)
+    lines.forEach((line, index) => {
+      if (allowMarkers.some((marker) => line.includes(marker))) return
+      for (const match of line.matchAll(installerRe)) {
+        if (match[1] !== pkg.version) {
+          failures.push(
+            `[现行版本] ${file}:${index + 1} 引用旧安装包 ${match[0]} ≠ ${pkg.version}` +
+              `（历史原文请同行标注「已过期/成文时」）`,
+          )
+        }
+      }
+      if (oldGenerationRe.test(line)) {
+        failures.push(
+          `[现行版本] ${file}:${index + 1} 仍把 V1.3 写作当前代际：${line.trim().slice(0, 80)}`,
+        )
+      }
+    })
+  }
+  notes.push(`现行文档旧版本残留校验（${scanned} 份）`)
+}
+
 // ── 执行 ────────────────────────────────────────────────────
 checkDocumentChain()
 checkStaleSymbols()
@@ -453,6 +495,7 @@ checkToolEntryFiles()
 checkVersionConsistency()
 checkVersionTruthInPRDs()
 checkDataSourceTypeParity()
+checkStaleCurrentClaims()
 
 console.log('── 规范文档一致性校验 ──────────────────────────')
 for (const note of notes) console.log(`  · ${note}`)

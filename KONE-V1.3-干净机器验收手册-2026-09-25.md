@@ -18,7 +18,7 @@
 | 单元测试 | **314 / 314** |
 | 类型检查 / lint / format | 0 error / 0 error / 通过 |
 | 文档与契约一致性 | 双绿（宪法常量 8+7、架构红线 3+3、交叉引用 118） |
-| 打包 | 安装包 `Kone-Intellect-Setup-1.3.0.exe`（89.8 MB） |
+| 打包 | 安装包 `Kone-Intellect-Setup-<版本号>.exe`（体积以实际产物为准；成文时为 1.3.0 / 89.8 MB） |
 | 打包冒烟（本机） | `booted` / `activationScreenVisible` / `preloadBridgeVisible` 全 true |
 | 安全基线 | contextIsolation + nodeIntegration:false + sandbox:true |
 
@@ -28,7 +28,7 @@
 
 | # | 物品 | 说明 |
 |---|---|---|
-| 1 | **安装包** | `Kone-Intellect-Setup-1.3.0.exe` |
+| 1 | **安装包** | `Kone-Intellect-Setup-<版本号>.exe`（以 `package.json` 版本为准；成文时为 1.3.0） |
 | 2 | **干净 Windows 机器** | 从未装过本产品；建议 4G–8G 内存办公机（性能红线场景） |
 | 3 | **授权码** 或 **7 天试用** | 试用可在激活页一键开启（每台设备仅一次） |
 | 4 | **LLM 密钥 + Base URL** | 如 `https://api.openai.com/v1` 或中转/私有地址（**通常以 `/v1` 结尾**） |

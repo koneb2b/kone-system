@@ -55,5 +55,5 @@
 
 1. **ID 冲突（已修复）**：SerpApiMapsProvider 与 AnySearchProvider 曾共用 id `google_maps` 导致静默覆盖。AnySearch 现使用独立 `anysearch` id。
 2. **JobID 时空隔离（已落地）**：所有真实可用 Provider 的 `execute()` 入口均已包含 `myJobId !== currentActiveJobId` 隔离检查。
-3. **测试覆盖（部分落地）**：`tests/business-logic/provider-isolation.business.test.js`（P3-1，2026-09）已覆盖 `trade_show` 与 `customs_shipment` 两个 Provider 的采集归一化与失败隔离（零网络 mock）。其余 6 个 Provider（maps / organic / linkedin_search / facebook_search / anysearch / 弃用的 yellow_pages）的专项单测仍待补（P2 待办）。
+3. **测试覆盖（部分落地）**：`tests/business-logic/provider-isolation.business.test.js`（P3-1，2026-09）已覆盖 `trade_show` 与 `customs_shipment` 两个 Provider 的采集归一化与失败隔离（零网络 mock）。其余 7 个 Provider（maps / organic / linkedin_search / facebook_search / anysearch / serper / 弃用的 yellow_pages）的专项单测仍待补（P2 待办）。
 4. **文档修正记录**：本文件先前版本将 linkedin/customs/facebook/trade_show 标注为「placeholder 不可宣传」，与代码现状不符。现已对齐真实实现——它们发起真实 SerpApi 请求，可用但受上述宣传口径约束。

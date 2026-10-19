@@ -3,7 +3,7 @@ title: KONE 变更日志
 status: active  
 authoritative: true  
 ssotFor: [changelog]  
-lastVerifiedAt: 2026-10-07  
+lastVerifiedAt: 2026-10-19  
 \---
 
 # KONE 变更日志 (CHANGELOG)
@@ -35,6 +35,10 @@ lastVerifiedAt: 2026-10-07
   此前 `kone-PRD §0.1` 将 V1.4 描述为「V1.3 内部增量批次」且称「不存在尚未发布的 V1.4」，与 `package.json`、
   CHANGELOG 与发布产物（`release-v14*`）不符，现已订正；同步更新 `kone-PRD` / `PROJECT-PRD` / `AGENTS.md` /
   `README.md` / `docs/kone项目使用说明.markdown` 的代际声明。历史 `[V1.3.x]` 特性版本戳保留原义。
+- 全项目系统梳理（2026-10-19）：新增 `docs/reports/system-consolidation-2026-10-19.md`
+  （V1.4 代际取证 + 262 个不可达快照核验 + 全量文档清点）；修正 `PROVIDER-CAPABILITY.md`
+  未覆盖专项单测计数（6 → 7，补 `serper`）与干净机器验收手册旧安装包名；
+  `verify-doc-consistency` 新增第 11 项「现行文档旧版本残留」校验（17 份现行文档）。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
