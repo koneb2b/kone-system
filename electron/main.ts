@@ -95,7 +95,7 @@ const registerIpcHandlers = () => {
   registerSupabaseHandlers(ipcMain, store, licenseGuard, () => mainWindowRef)
   registerAutomationHandlers(ipcMain, store, licenseGuard)
   registerCloudflareHandlers(ipcMain, store, licenseGuard)
-  registerOutreachSyncHandlers(ipcMain, store, () => mainWindowRef)
+  registerOutreachSyncHandlers(ipcMain, store, licenseGuard, () => mainWindowRef)
   registerImapReplyHandlers(ipcMain, store, licenseGuard, () => mainWindowRef)
   registerSandboxHandlers(ipcMain, store)
   registerAgentHandlers(ipcMain, store)

@@ -811,7 +811,14 @@ export const registerCloudflareHandlers = (
       requestRule: { type: 'any' },
       responseRule: { type: 'any' },
     },
-    async () => ({ success: true, data: { configured: isCloudflareConfigured(store) } }),
+    async () => {
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端配置探测')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端配置探测', error)
+      }
+      return { success: true, data: { configured: isCloudflareConfigured(store) } }
+    },
   )
 
   // cloud:cloudflare-test-connection — 前端"测试连接"按钮
@@ -823,6 +830,14 @@ export const registerCloudflareHandlers = (
       responseRule: { type: 'any' },
     },
     async () => {
+      /* 2026-10-20：`cloud_send` 收口。注意本处注册会被 outreach-sync-service 的同名
+         后注册覆盖（有效 handler 在彼处），故彼处**同样**必须带门禁 —— 两处都加是
+         防御纵深，避免未来注册顺序调整后静默失守。 */
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端连接测试')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端连接测试', error)
+      }
       // 与其他 handler 保持一致：捕获异常并返回结构化错误。
       // 此前无 try/catch，而 testConnection 内部的 getCloudflareConfig 位于其 try 之外，
       // 配置缺失时会抛出异常穿透到 IPC 层（前端只能看到 "[object Object]"）。
@@ -851,6 +866,11 @@ export const registerCloudflareHandlers = (
     },
     async () => {
       try {
+        licenseGuard.requireFeature('cloud_send', '云端触达统计')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端触达统计', error)
+      }
+      try {
         return { success: true, data: await getDashboardStats(store) }
       } catch (err) {
         return {
@@ -874,6 +894,11 @@ export const registerCloudflareHandlers = (
       responseRule: { type: 'any' },
     },
     async (_event: unknown, ...args: unknown[]) => {
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端投递明细')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端投递明细', error)
+      }
       try {
         const opts = (args[0] ?? {}) as { status?: string; limit?: number; offset?: number }
         return { success: true, data: await pollOutreachStatus(store, opts) }

@@ -115,12 +115,20 @@
 | `AUTOPILOT.GET_STATE` | 免门禁 | 状态读取；Trial 搜索页 `hydrateFromStorage` 合法调用（同 `AGENT.GET_STATUS` 先例） |
 | `AUTOPILOT.SET_STATE` | 免门禁 | 节流持久化底座（随草稿输入触发）——加门禁 = Trial 可见降级 |
 | `AUTOPILOT.SYNC_STATE` | 免门禁 | 托盘生命周期遥测；注册顺序已被 `autopilot-sync-attach-guard` 锁定 |
-| `CLOUD.CLOUDFLARE_CONFIGURED` / `_TEST_CONNECTION` / `_DASHBOARD_STATS` / `_POLL_OUTREACH_STATUS` | **暂不门禁**（PENDING） | 前置条件 = 渲染层条件化（`system-settings.tsx:514` 无条件挂载 + `cloud-settings-tab.tsx:43` `Promise.all`），否则重演 P0-2 整页降级 |
+| `CLOUD.CLOUDFLARE_CONFIGURED` | **门禁**（`cloud_send`） | 云端配置探测；渲染层已条件化 |
+| `CLOUD.CLOUDFLARE_TEST_CONNECTION` | **门禁**（`cloud_send`，**两处**） | 有效 handler 在 `outreach-sync-service.ts`（后注册覆盖），故两处均加 |
+| `CLOUD.CLOUDFLARE_DASHBOARD_STATS` | **门禁**（`cloud_send`） | 云端触达看板聚合；消费方已被 `canUseCloudSend` 条件挂载 |
+| `CLOUD.CLOUDFLARE_POLL_OUTREACH_STATUS` | **门禁**（`cloud_send`） | 云端投递明细；同上 |
 
 **关键结论**：AUTOPILOT 的**真实能力边界在搜索层**（`src/lib/autopilot-runner.ts:319` → `searchExecute()`，
 Trial 已受 10 条/次、间隔 15 秒限额）。对状态管道加门禁**不关闭任何能力泄漏**，只会降级 UX。
 
 **已锁定陷阱**：`CLOUD.CLOUDFLARE_TEST_CONNECTION` 由 `cloudflare-service.ts` 与 `outreach-sync-service.ts`
-**双重注册**，后者**后注册覆盖**（其注释自述此前因此出现"测试连接永远失败"真实缺陷）；且
-`registerOutreachSyncHandlers` **未接收 `licenseGuard`**。故该通道的门禁**必须**做在 outreach-sync
-（先为其补授权参数），写在 `cloudflare-service.ts` 内是**死代码**。
+**双重注册**，后者**后注册覆盖**（其注释自述此前因此出现"测试连接永远失败"真实缺陷）。该通道的**有效**
+handler 在 outreach-sync，故 `registerOutreachSyncHandlers` 已补 `licenseGuard` 参数并在彼处加门禁，
+`main.ts` 同步传入；`cloudflare-service.ts` 内亦保留门禁作为**防御纵深**（注册顺序若变动不至静默失守）。
+
+**前置条件已落地**：`system-settings.tsx` 的 cloud 面板改为 `canAccess('cloud_send')` 条件挂载，
+非高级版渲染升级引导而非挂载 `CloudSettingsTab`。原因是 `unwrapIpc`（`src/lib/electron-api.ts:117`）
+对非 success **直接 throw**，而 `cloud-settings-tab.tsx:38` 用 `Promise.all` 并发取配置 —— 门禁先行
+会让非高级版停在"未配置"空态（误导性降级，P0-2 同类）。该前置条件已被测试反向锁定。

@@ -11,6 +11,7 @@ import { IPC_CHANNELS } from '../ipc/channels'
 import { registerIpc, registry } from '../ipc/registry'
 import { pollOutreachStatus, isCloudflareConfigured, testConnection } from './cloudflare-service'
 import type { ConfigStore } from './config-service'
+import { buildFeatureDeniedResponse } from './license-service'
 import type { AgentStatus } from '../../src/shared/ipc-contracts'
 
 /* ──────────────────────────────────────────────
@@ -180,6 +181,10 @@ export const stopOutreachSync = (): void => {
 export const registerOutreachSyncHandlers = (
   ipcMain: Electron.IpcMain,
   store: ConfigStore,
+  /* 2026-10-20：本函数注册的 `CLOUD.CLOUDFLARE_TEST_CONNECTION` **覆盖** cloudflare-service
+     的同名通道（后注册者胜出，见下方注释）——因此该通道的**有效** handler 在此处，
+     授权门禁必须装在这里，写在 cloudflare-service 内对有效路径无效。 */
+  licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
   getWindow: () => Electron.BrowserWindow | null,
 ): void => {
   // 手动触发同步（复用 CLOUDFLARE_TEST_CONNECTION 通道，payload 区分）
@@ -191,6 +196,12 @@ export const registerOutreachSyncHandlers = (
       responseRule: { type: 'any' },
     },
     async (_event: unknown, payload: any) => {
+      // 云端同步（sync-outreach）与连接测试同属高级版能力，统一按 `cloud_send` 收口。
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端同步与连接测试')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端同步与连接测试', error)
+      }
       if (payload?.action === 'sync-outreach') {
         const result = await syncOutreachStatus(store, getWindow())
         return { success: true, data: result }

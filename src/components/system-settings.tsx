@@ -12,6 +12,7 @@ import { BaseSettingsTab, type ApiKeyConfig } from '@/components/settings/base-s
 import { IcpSettingsTab } from '@/components/settings/icp-settings-tab'
 import { CloudSettingsTab } from '@/components/settings/cloud-settings-tab'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { useFeatureGate } from '@/lib/feature-gate'
 import { getUserConfig, updateUserSettingsConfig, type UserSettingsConfig } from '@/lib/user-config'
 
 type PersistedApiKeyConfig = { id: string; baseUrl: string }
@@ -62,6 +63,7 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   const persistVersionRef = useRef(0)
   const { toast } = useToast()
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
+  const featureGate = useFeatureGate()
   const defaultConfigs: ApiKeyConfig[] = [
     { id: 'llm', name: '智能决策大脑 (LLM)', icon: Cpu, key: '', baseUrl: '', status: 'pending' },
     { id: 'google-leads', name: 'SerpApi（Google 搜索 / 地图）', icon: Globe, key: '', baseUrl: '', status: 'pending' },
@@ -511,7 +513,28 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
               </TabsContent>
 
               <TabsContent value="cloud">
-                <CloudSettingsTab />
+                {/* 渲染层前置降级（2026-10-20）：云端引擎为高级版能力（后端 4 个 CLOUDFLARE_* 通道
+                    已按 `cloud_send` 收口）。非高级版**不得挂载** CloudSettingsTab —— 否则其
+                    `loadState()` 的 Promise.all 会因 FEATURE_DENIED 抛错并停在"未配置"空态
+                    （`electron-api.ts:117` unwrapIpc 对非 success 直接 throw），属误导性降级。 */}
+                {featureGate.loading ? (
+                  <div className="flex h-48 items-center justify-center text-sm text-slate-500">正在校验套餐权限…</div>
+                ) : featureGate.canAccess('cloud_send') ? (
+                  <CloudSettingsTab />
+                ) : (
+                  <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 text-center">
+                    <Badge className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      高级版能力
+                    </Badge>
+                    <p className="text-sm font-semibold text-slate-800">云端引擎与云端投递需要高级版授权</p>
+                    <p className="max-w-md text-xs leading-relaxed text-slate-500">
+                      云端邮箱清洗、云端投递队列与跨端状态回写均在此配置 Cloudflare Worker 凭证后启用。
+                    </p>
+                    <Button type="button" size="sm" onClick={() => setUpgradeModalOpen(true)}>
+                      查看高级版权益
+                    </Button>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </div>

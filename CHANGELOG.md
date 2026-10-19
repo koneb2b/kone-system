@@ -117,6 +117,20 @@ lastVerifiedAt: 2026-10-19
   **前置条件是渲染层条件化**（`CloudSettingsTab` 无条件挂载 `system-settings.tsx:514` + 内部 `Promise.all`
   `cloud-settings-tab.tsx:43`），否则重演 P0-2「整页降级」；故当前列为 `PENDING_GUARD_AFTER_RENDERER_DEGRADE`
   （**非永久豁免**，渲染层降级落地后方可收口）。受影响 SSOT：`docs/release-gate.md`（新增 §6）。
+- **CLOUD.CLOUDFLARE_\* 收口 + 渲染层前置降级（2026-10-20，改变运行时授权行为）**：完成上一条判定的前置条件并收口。
+  ① 渲染层：`system-settings.tsx` 的 cloud 面板改为 `canAccess('cloud_send')` 条件挂载 —— 非高级版**不再挂载**
+  `CloudSettingsTab`，改渲染升级引导（复用既有 `UpgradeModal intent="premium"`）。**为什么必须先做**：
+  `unwrapIpc`（`src/lib/electron-api.ts:117`）对非 success 直接 `throw`（`ElectronApiError`），而
+  `cloud-settings-tab.tsx:38` 用 `Promise.all` 并发取配置 —— 门禁先行会让非高级版停在"未配置"空态（误导性降级）。
+  ② 后端：`CLOUD.CLOUDFLARE_CONFIGURED` / `_TEST_CONNECTION` / `_DASHBOARD_STATS` / `_POLL_OUTREACH_STATUS`
+  全部按 `cloud_send` 收口（`requireFeature` + `buildFeatureDeniedResponse`）。
+  ③ **有效 handler 修正**：`CLOUDFLARE_TEST_CONNECTION` 的有效 handler 在 `outreach-sync-service.ts`
+  （后注册覆盖 `cloudflare-service.ts`），故 `registerOutreachSyncHandlers` 新增 `licenseGuard` 参数并在彼处加门禁，
+  `main.ts` 同步传入；两处均加作防御纵深，避免注册顺序变动后静默失守。
+  ④ 回归：`autopilot-cloud-gate-classification.business.test.js` 语义反转 —— CLOUDFLARE_* 由 PENDING 迁入 GUARDED，
+  新增「有效源覆盖」与「渲染层条件化」守护，并断言 `main.ts` 必须向 outreach-sync 传 guard。
+  受影响 SSOT：`docs/release-gate.md §6`、`src/components/system-settings.tsx`、
+  `electron/services/cloudflare-service.ts`、`electron/services/outreach-sync-service.ts`、`electron/main.ts`。
 
 ---
 
