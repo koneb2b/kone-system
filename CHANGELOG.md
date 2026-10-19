@@ -39,6 +39,9 @@ lastVerifiedAt: 2026-10-19
   （V1.4 代际取证 + 262 个不可达快照核验 + 全量文档清点）；修正 `PROVIDER-CAPABILITY.md`
   未覆盖专项单测计数（6 → 7，补 `serper`）与干净机器验收手册旧安装包名；
   `verify-doc-consistency` 新增第 11 项「现行文档旧版本残留」校验（17 份现行文档）。
+- 云端门禁真相校正（2026-10-19）：`CLOUD-COLLABORATION-DELIVERY.md` 原写「服务端二次门禁云端尚无实现」，
+  与代码不符；已核实 `kone-cloud/src/worker.ts` ⑤–⑨ 与 `tests/approval-gate.test.ts`（59 项云端测试全通过），
+  改为「已实现、`APPROVAL_GATE_ENABLED=false`、待部署环境开启并留证」。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、

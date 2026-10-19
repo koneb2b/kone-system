@@ -93,6 +93,7 @@
 |---|---|---|
 | **P1** | `PROVIDER-CAPABILITY.md` 写“其余 **6** 个 Provider”，漏掉新增的 `serper`（实际未覆盖专项单测的是 7 个） | 已改为 **7** 并在清单补 `serper` |
 | **P2** | `KONE-V1.3-干净机器验收手册-2026-09-25.md` 正文两处仍把 `Kone-Intellect-Setup-1.3.0.exe` 写成当前安装包 | 已改为 `Kone-Intellect-Setup-<版本号>.exe`，并标注“成文时为 1.3.0” |
+| **P0（文档真相）** | `CLOUD-COLLABORATION-DELIVERY.md` 把已实现的服务端二次门禁（⑤–⑨）写成“云端尚无实现” | 已核实 `kone-cloud/src/worker.ts` 代码与 59 项云端测试全部通过；改为“已实现、`APPROVAL_GATE_ENABLED=false`、待部署开启留证” |
 | P3 | 审计正则把 `§0.8 Provider`、`3.7.6 Provider`、`0.1 数据源层` 误判为计数 | 人工复核，无文档缺陷 |
 | **门禁缺口** | 旧安装包名 / 旧代际只能靠人工发现 | 新增 `checkStaleCurrentClaims()`（第 11 项门禁，扫描 17 份现行文档） |
 
@@ -171,7 +172,7 @@
 
 | 级别 | 项 | 状态 |
 |---|---|---|
-| **P0** | 云端投递完整闭环 | `NO-GO`。仍待闭环：① 干净机器 20 项人工冒烟；② 打包冒烟 B2（`app.asar` 被系统进程持有）；③ 审批 → 服务端二次门禁；④ 真实 Resend + IMAP 小流量实发 |
+| **P0** | 云端投递完整闭环 | `NO-GO`。仍待闭环：① 干净机器 20 项人工冒烟；② 打包冒烟 B2（`app.asar` 被系统进程持有）；③ 服务端二次门禁**已实现**（⑤–⑨，59 项云端测试通过），但 `APPROVAL_GATE_ENABLED=false`，待部署开启留证；④ 真实 Resend + IMAP 小流量实发 |
 | P1 | 41 个 plain `registerIpc` | 未迁移 Fail-Closed 包装器 |
 | P2 | 267 条 lint warning | 非阻断（0 error） |
 | P3 | `stash@{0}` boulder 运行时状态 | 可清理，也可保留 |
@@ -191,6 +192,7 @@
 | `npm run verify:ipc` | **通过**：72 / 61 / 11 / 70 |
 | `npm run verify:cloud-safety` | **通过**：6 条写操作、0 裸 `as` |
 | `npm test`（基线 `5dcf509`） | **EXIT 0**：595 unit + 59 cloud + 1 IPC + 7 e2e |
+| `npm test`（`kone-cloud`） | **EXIT 0**：59 tests / 2 files（含 `approval-gate.test.ts`） |
 | `npm run typecheck`（基线） | **0 error** |
 | `npm run lint`（基线） | **0 error** / 267 warnings |
 
