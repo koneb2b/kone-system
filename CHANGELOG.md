@@ -49,6 +49,11 @@ lastVerifiedAt: 2026-10-19
   其余原因保留 `pending` 并置 `next_retry_at = now + 1h`。补 4 项负向测试；并修复 `kone-cloud` 既有 5 项 typecheck 错误
   （`crypto.subtle.importKey` 的 `BufferSource` 兼容、测试 `unknown` 断言、Promise 泛型不匹配），`kone-cloud` typecheck 恢复 **0 error**。
   受影响 SSOT：`CLOUD-COLLABORATION-DELIVERY.md`（§13.1 Worker 路由）。
+- IPC 授权分层映射（2026-10-19，**仅分析、未改代码**）：新增 `docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`，
+  对 41 个 plain `registerIpc` 通道给出 public/trial/paid 分层（**16 免门禁**（启动/激活/配置/密钥·加门禁会造成激活死锁）、
+  **22 需 feature 门禁**、**3 条件/参数化门禁**），并锁定 1 处真实缺陷（`AUTOMATION.QUEUE_OUTREACH` 仅 `ensureTrialAccess`、
+  **缺 `requireFeature('cloud_send')`** → Basic 可直连云端入队）与 2 处待核（`ACCOUNT.DISCONNECT` / `ACCOUNT.GET_LIST`）。
+  迁移前置为 D1–D5 裁决；受影响 SSOT：`ARCH-STANDARDS.md §3`（迁移计数待迁移落地后回写）。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
