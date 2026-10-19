@@ -10,9 +10,10 @@
 ## 0. 结论摘要
 
 1. **"41 个 plain `registerIpc`"不等于"41 个越权入口"**。其中 **16 个必须保持免门禁**（启动/激活/配置/密钥，加门禁会造成鸡生蛋死锁）；**22 个需要商业门禁**（其中 4 个已有 in-body 门禁、1 个门禁不完整）；**3 个需条件/参数化门禁**。
-2. 真实缺陷 **1 处已确认、2 处待核**：
-   - **确认**：`AUTOMATION.QUEUE_OUTREACH` 仅有 `ensureTrialAccess`，**缺 `requireFeature('cloud_send')`**，与 `CLOUD-COLLABORATION-DELIVERY.md` §13.1「premium feature」口径不符 → Basic 用户可直连云端投递入队。
-   - **待核**：`ACCOUNT.DISCONNECT` / `ACCOUNT.GET_LIST`（同文件已有 `hasFeature` 辅助，`CONNECT` 已门禁，两侧需对齐）。
+2. 真实缺陷 **2 处已确认**（初稿的"2 处待核"已当场核实闭环）：
+   - **确认 ①**：`AUTOMATION.QUEUE_OUTREACH` 仅有 `ensureTrialAccess`，**缺 `requireFeature('cloud_send')`**，与 `CLOUD-COLLABORATION-DELIVERY.md` §13.1「premium feature」口径不符 → Basic 用户可直连云端投递入队。
+   - **确认 ②**：`ACCOUNT.CONNECT` / `ACCOUNT.DISCONNECT` / `ACCOUNT.GET_LIST` **三通道均有 in-body 门禁**（`sandbox-service.ts:270 / 347 / 381`），但**代理键选错**——非高级套餐分支要求 `search_basic`，而 `search_basic` **同时也是 Trial 的能力**（`TRIAL_FEATURES`），故 **Trial 可绑定并查看邮箱账号**，违反 PRD §六.0「Trial 必须熔断、严禁渲染智能体卡片或暴露运行指标」与 `AGENTS.md` 同款约束。正确键应为 `local_autopilot`（Basic+）。
+   - **勘误**：初稿标记的"待核"项已消除——已完整读取 `sandbox-service.ts:257-404` 三个 handler，全部含门禁；问题从"缺失门禁"降级/升级为"**门禁键选取错误**"（见 D6）。
 3. 迁移**不得机械替换**：`AUTH.*` / `CONFIG.*` / `SECRET.*` / `LICENSE.*` / `SYSTEM.*` 一旦套上 `registerSecureIpc` 会**锁死激活与配置**，属 P0 级回归风险。
 
 ---
@@ -128,9 +129,9 @@ LICENSE.GET_INFO / REQUEST_TRIAL / SUBMIT / VERIFY / CHECK_STATUS  (license-serv
 
 | # | 通道 | 现状 | 目标 | 理由 |
 |---|---|---|---|---|
-| 39 | `ACCOUNT.CONNECT` | body 自定义：`team_collaboration`，否则仅 `email_smtp/imap` 且需 `search_basic`（`sandbox-service.ts:270-284`） | **F**: `featureName` 函数式（按 `payload.accountType` 返回 `team_collaboration` 或 `search_basic`） | 多开=P高级；Basic 单邮箱通道属例外，必须保留 |
-| 40 | `ACCOUNT.DISCONNECT` | **待核**（同文件有 `hasFeature` 辅助） | 与 #39 同构 | 两侧不一致会造成"可连不可断"或反之 |
-| 41 | `ACCOUNT.GET_LIST` | **待核** | `local_autopilot`（见 D4） | Agent 卡片需读真实绑定态；PRD §六.0 要求 Trial 熔断 |
+| 39 | `ACCOUNT.CONNECT` | ✅ body 自定义：`team_collaboration`，否则须 `email_smtp/imap` **且** `search_basic`（`sandbox-service.ts:270-284`） | **F**: `local_autopilot`（Basic+），非邮箱类型再叠加 `team_collaboration` | 多开=Premium；Basic 单邮箱通道保留例外；**但 `search_basic` 对 Trial 亦为真 → 现可越权（D6）** |
+| 40 | `ACCOUNT.DISCONNECT` | ✅ 与 #39 同构（`:347-355`） | 与 #39 同构 | 已确认两侧一致；须与 #39 同步换键 |
+| 41 | `ACCOUNT.GET_LIST` | ✅ `team_collaboration \|\| search_basic`，非高级仅返回邮箱类（`:381-395`） | `local_autopilot`（见 D4 / D6） | Agent 卡片需读真实绑定态；PRD §六.0 要求 Trial 熔断 |
 
 > 计数核对：3.1 = 16，3.2 = 22，3.3 = 3，合计 **41**。
 
@@ -145,6 +146,8 @@ LICENSE.GET_INFO / REQUEST_TRIAL / SUBMIT / VERIFY / CHECK_STATUS  (license-serv
 | **D3** | `CONFIG.SET` 是否需 key 级策略 | (a) 整通道 public + key 白名单校验；(b) 门禁 | **(a)**。整通道门禁会锁死 Trial 的 ICP/密钥配置；Premium 专属 key（如 `cloud.*`）应由 key 级校验拦截，而非通道级 |
 | **D4** | `AUTOMATION.IMAP_TEST_CONNECTION` / `ACCOUNT.GET_LIST` 的 Trial 行为 | (a) `local_autopilot`；(b) public | **(a)**。两者都暴露 Agent 域状态（PRD §六.0 禁 Trial 见指标/卡片） |
 | **D5** | `AUTOPILOT.CLEAR_LEGACY` 是否 public | (a) `local_autopilot`；(b) public（维护操作） | **(a)**，与同族其它 AUTOPILOT 通道保持一致，避免"部分通道可被 Trial 触碰"的认知裂缝 |
+| **D6** | `ACCOUNT.*` 代理键误用 `search_basic`（Trial 亦持有） | (a) 换成 `local_autopilot`（Basic+）；(b) 把 `search_basic` 从 `TRIAL_FEATURES` 移除 | **(a)**。`search_basic` 是 Trial 唯一搜索能力，选项 (b) 会直接废掉试点用户的核心体验；且正确语义是"账号绑定属 Agent 域（`local_autopilot`）"，与 `CONNECT/DISCONNECT/GET_LIST` 的真实用途一致 |
+| **D7** | Basic 的 WhatsApp Web 被 `team_collaboration` 挡住 | (a) 改代码：Basic 放行**单会话** WhatsApp Web（非邮箱类型仅在多开时要求 `team_collaboration`）；(b) 改 PRD：WhatsApp Web 归 Premium | **(a)**，因 `kone-PRD §六.0` 与 `AGENTS.md` 均明示「Paid Basic 可使用低量本地 Email 与 WhatsApp Web 能力」；但属**能力扩张**，需产品排期确认后再动代码，不得随 D6 顺带修改 |
 
 ---
 
