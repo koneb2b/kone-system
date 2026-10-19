@@ -77,6 +77,15 @@ lastVerifiedAt: 2026-10-19
   新增回归 `tests/ipc-license-gate-d2-d5.test.ts`（21 项：每通道 denied/allowed 双向 + D3 key 矩阵与前缀边界 + 漏传 guard 的 Fail-Closed）。
   证据：撤销修复后 19 项中 11 项失败（`exit 1`），修复后 21/21 通过；`npm run test:unit` 626/626、`tsc --noEmit` 0 error、`lint` 0 error。
   **D7**（Basic 的 WhatsApp Web 能力扩张）仍待产品排期确认，本次未改动 `isEmailType` 分支。受影响 SSOT：`ARCH-STANDARDS.md §3`。
+- IPC 授权分级**订正（2026-10-19 复核，最终无代码改动）**：`docs/reports/ipc-plain-register-license-mapping-2026-10-19.md` §3.2 原将
+  `AGENT.GET_STATUS` / `AGENT.SUPPRESS_LIST` / `AGENT.SUPPRESS_ADD` / `AGENT.SUPPRESS_REMOVE` 的目标键判为 `local_autopilot`，
+  与仓库既有的**权威分级守护测试** `tests/business-logic/agent-gate-classification.business.test.js`（`UNGUARDED` 显式清单 + 双向断言）冲突：
+  `GET_STATUS` 是线索级触达徽标（**线索是 Trial 合法数据**），`SUPPRESS_*` 是邮件合规（PROJECT-PRD §3.7.7，**退订登记/撤销任何套餐都必须可用**）。
+  复核一度按该错误判断实施收口（4 通道补 `requireFeature`，新增用例单测自证 8/8），**全量 `npm run test:unit` 立即暴露 1 项失败** —— 该守护测试的
+  「免门禁通道必须真的没有门禁（**防过度约束**）」断言拒绝 `GET_STATUS` 带门禁；已**全部回滚**（工作区无代码变更）。
+  故本次分层的真实口径为 **20 免门禁 / 18 需门禁 / 3 条件**（原文档误记 16 / 22 / 3），已同步订正 `ARCH-STANDARDS.md §3` 与映射报告 §3.2 / §5.1。
+  **方法论沉淀**：新增授权用例自身全绿**不构成**收口成立的证据 —— 防过度约束的反向守护测试只存在于全量集合中，必须跑全量 `test:unit`。
+  受影响 SSOT：`ARCH-STANDARDS.md §3`、`docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`。
 
 ---
 

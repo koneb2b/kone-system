@@ -116,20 +116,20 @@ LICENSE.GET_INFO / REQUEST_TRIAL / SUBMIT / VERIFY / CHECK_STATUS  (license-serv
 | 15 | `PROVIDER.LIST` | 无 | **P** | 信息类枚举，无侧效应 |
 | 16 | `PROVIDER.STATUS` | 无 | **P** | 同上 |
 
-### 3.2 F — 需商业门禁（22 个）
+### 3.2 F — 需商业门禁（22 个；**#19–#22 经 2026-10-19 复核改判为「强制免门禁」** —— 实为 18 个需门禁 + 4 个豁免，理由见 §5.1）
 
 | # | 通道 | 现状门禁 | 现状 | 目标键 | 理由 |
 |---|---|---|---|---|---|
 | 17 | `AGENT.LIST` | `requireFeature('local_autopilot')`（body，`agent-service.ts:1356`） | ✅ | `local_autopilot` | PRD §六.0 禁暴露运行指标；迁 wrapper 并**移除 body 重复门禁** |
 | 18 | `AGENT.GET_LOG` | `requireFeature('local_autopilot')`（`:1380`） | ✅ | `local_autopilot` | 日志=运行指标，与 LIST/CONTROL 同键 |
-| 19 | `AGENT.GET_STATUS` | 无 | ⚠ | `local_autopilot` | 线索徽标同属运行指标，Trial 必须熔断 |
-| 20 | `AGENT.SUPPRESS_LIST` | 无 | ⚠ | `local_autopilot` | 抑制名单属 Agent 运行域（Basic 可用） |
-| 21 | `AGENT.SUPPRESS_ADD` | 无 | ⚠ | `local_autopilot` | 同上（写端） |
-| 22 | `AGENT.SUPPRESS_REMOVE` | 无 | ⚠ | `local_autopilot` | 同上（写端） |
+| 19 | `AGENT.GET_STATUS` | 无（**强制免门禁**，见 §5.1 订正） | ✅ 免门禁 | **不适用** | 线索级触达徽标（P0-1 双管道读端）——**线索是 Trial 合法数据**；权威分级见 `tests/business-logic/agent-gate-classification.business.test.js` |
+| 20 | `AGENT.SUPPRESS_LIST` | 无（**强制免门禁**，见 §5.1 订正） | ✅ 免门禁 | **不适用** | 邮件合规：退订名单查询（PROJECT-PRD §3.7.7） |
+| 21 | `AGENT.SUPPRESS_ADD` | 无（**强制免门禁**，见 §5.1 订正） | ✅ 免门禁 | **不适用** | 邮件合规：登记退订请求，**任何套餐都必须可用** |
+| 22 | `AGENT.SUPPRESS_REMOVE` | 无（**强制免门禁**，见 §5.1 订正） | ✅ 免门禁 | **不适用** | 邮件合规：撤销退订登记，**任何套餐都必须可用** |
 | 23 | `AUTOPILOT.GET_STATE` | 无 | ⚠ | `local_autopilot` | Autopilot 属 Basic 能力 |
 | 24 | `AUTOPILOT.SET_STATE` | 无 | ⚠ | `local_autopilot` | 同上 |
 | 25 | `AUTOPILOT.CLEAR_LEGACY` | 无 | ⚠ | `local_autopilot` | 清理遗留巡航态同域（见 D5） |
-| 26 | `AUTOPILOT.SYNC_STATE` | 无（`main.ts:241`） | ⚠ | `local_autopilot` | 同上；注意 `main.ts` 需构造 `licenseGuard` |
+| 26 | `AUTOPILOT.SYNC_STATE` | 无（`main.ts:241`） | ⚠ | `local_autopilot` | 同上；**必须与 GET_STATE / SET_STATE 同批收口** —— 单独给状态端加门禁会造成「控制端放行、状态端拦截」的**新不对称**（详见 §5.1） |
 | 27 | `AUTOMATION.START_CAMPAIGN` | `ensureTrialAccess` + `requireFeature('cloud_send')`（`:169-184`） | ✅ | `cloud_send` | 推送云端台账=Premium；迁 wrapper 保证信封一致 |
 | 28 | `AUTOMATION.QUEUE_OUTREACH` | `ensureTrialAccess` only（`:251`） | ⚠**缺 feature** | `cloud_send` | **确认缺陷**：缺 `requireFeature` → Basic 可直连入队；详见 D1 |
 | 29 | `AUTOMATION.IMAP_POLL` | 无 | ⚠ | `local_autopilot` | IMAP 属 Email Agent（Basic，20/day） |
@@ -216,17 +216,29 @@ registerSecureFeatureIpc(
 
 ## 5.1 剩余未收口通道（2026-10-19 复核结论，**下阶段执行清单**）
 
-D1–D6 收口后，§3.2 中仍有 12 个通道为 ⚠（已裁决但未实现，或未裁决）。复核同时完成了**渲染层调用方与回归风险实测**，据此分为「可直接收口」与「需先改渲染层」两类：
+D1–D6 收口后，§3.2 中仍有通道为 ⚠。复核完成了**渲染层调用方与回归风险实测**，得出两组结论 —— **第一组是本报告自身的订正**：
 
-| # | 通道 | 目标键 | 渲染层调用方（实测） | 收口前置 | 判定 |
+**（一）#19–#22 属「强制免门禁」，不得收口 —— §3.2 原「目标键」列判断有误。**
+
+§3.2 原把 `AGENT.GET_STATUS` / `AGENT.SUPPRESS_LIST` / `SUPPRESS_ADD` / `SUPPRESS_REMOVE` 的目标键写成 `local_autopilot`，但仓库既有的**权威分级守护测试**（`tests/business-logic/agent-gate-classification.business.test.js` 的 `UNGUARDED` 显式清单）明确要求这四个通道**不得带任何 feature 门禁**：`GET_STATUS` 是线索级触达徽标（**线索是 Trial 的合法数据**）；`SUPPRESS_*` 是邮件合规（PROJECT-PRD §3.7.7，**退订登记/撤销任何套餐都必须可用**）。
+
+> **实证（2026-10-19）**：曾按 §3.2 原判断实施「A1 批次」收口（4 通道补 `requireFeature`，并新增 `tests/ipc-license-gate-agent-a1.test.ts` 8 项，该套件单测自证 **8/8**；撤销修复后 4/8）。随后**全量 `npm run test:unit` 立即暴露 1 项失败** —— `agent-gate-classification` 的「免门禁通道必须真的没有门禁（**防过度约束**）」断言 `AGENT.GET_STATUS 不应有任何 feature 门禁`。已**全部回滚代码与用例**（工作区仅保留本报告订正），回滚后 `test:unit` 恢复全绿。
+>
+> **教训**：该守护测试的设计意图正是「照字面给所有读/写通道统一加门禁会制造**新的过度约束**」—— 它会阻断 Trial 的合法线索徽标与任意套餐的退订登记。IPC 授权分级的**唯一权威**是 `agent-gate-classification` 的 `GUARDED` / `UNGUARDED` 清单（双向断言 + 源码中新通道未定级即失败）；**文档表格不得与之冲突**，实施任何 AGENT 域门禁前必须先查该清单。
+>
+> 方法论补充：本次「单元自证通过但全量失败」说明 —— **新增授权用例 8/8 通过不构成收口成立的证据**，必须跑全量 `test:unit`，因为既有的反向守护测试（防过度约束）只存在于全量集合中。
+
+**（二）真正待收口的通道（下阶段执行清单）**
+
+| # | 通道 | 目标键 | 渲染层调用方（实测） | 收口前置 | 状态 / 判定 |
 |---|---|---|---|---|---|
-| 19 | `AGENT.GET_STATUS` | `local_autopilot` | `leads-table.tsx:216` | **已 `try/catch` 静默回退**（`:220` 注释「徽标回退为搜索时携带的 agentStatus」） | 可直接加门禁 |
-| 20–22 | `AGENT.SUPPRESS_LIST / ADD / REMOVE` | `local_autopilot` | `src/` 内**无调用方** | 无 | 可直接加门禁 |
-| 26 | `AUTOPILOT.SYNC_STATE` | `local_autopilot` | `search-engine.tsx:353` | **已 `.catch()`**（仅打日志） | 可直接加门禁 |
-| 23 | `AUTOPILOT.GET_STATE` | `local_autopilot` | `autopilot-store.ts` ← `search-engine.tsx:329` `void hydrateAutopilot()`（**Trial 首屏即调用**） | 需先加套餐前置判断或 `.catch`，否则 Trial 每次进搜索页产生未处理拒绝 | 需先改渲染层 |
-| 24 | `AUTOPILOT.SET_STATE` | `local_autopilot` | `search-engine.tsx:336-344` 托盘动作 `void pause()/start()/stopAndClear()`（**无 catch**） | 同上 | 需先改渲染层 |
-| 33–36 | `CLOUD.CLOUDFLARE_CONFIGURED / TEST_CONNECTION / DASHBOARD_STATS / POLL_OUTREACH_STATUS` | `cloud_send` | `system-settings.tsx:514` **无条件渲染** `CloudSettingsTab`，其 `:43` 用 `Promise.all` 聚合读取 | 设置页需先做「未解锁 → 渲染升级引导而非发起 IPC」，否则复现 **P0-2 同类缺陷**（任一 403 即整页降级） | 需先改渲染层 |
+| 23–24、26 | `AUTOPILOT.GET_STATE / SET_STATE / SYNC_STATE` | `local_autopilot` | `GET_STATE` ← `search-engine.tsx:329` `void hydrateAutopilot()`（**Trial 首屏即调用**）；`SET_STATE` ← `:336-344` 托盘动作 `void pause()/start()/stopAndClear()`（**无 catch**）；`SYNC_STATE` ← `:353`（已 `.catch`） | 渲染层需先加套餐前置判断 / `.catch`；**且三者必须同批收口** | ⏳ 需先改渲染层 |
+| 33–36 | `CLOUD.CLOUDFLARE_CONFIGURED / TEST_CONNECTION / DASHBOARD_STATS / POLL_OUTREACH_STATUS` | `cloud_send` | `system-settings.tsx:514` **无条件渲染** `CloudSettingsTab`，其 `:43` 用 `Promise.all` 聚合读取 | 设置页需先做「未解锁 → 渲染升级引导而非发起 IPC」，否则复现 **P0-2 同类缺陷**（任一 403 即整页降级） | ⏳ 需先改渲染层 |
 
+> **为什么 AUTOPILOT 三通道必须同批收口**：`SYNC_STATE` 只是家族的**状态端**（渲染层→主进程上报托盘生命周期，载荷仅 5 值枚举），真正**控制**巡航的是 `SET_STATE`。若只拦状态端，Trial 仍可经托盘/搜索页调用 `SET_STATE` 驱动巡航，只是状态不再回显 —— 这正是 D4 复核中已修复的**「读端拦、动作端放行」同型不对称**。
+>
+> ⚠ **下阶段首批处理（潜在能力泄漏，非仅可见性）**：`AUTOPILOT.SET_STATE` 未收口可能不止是「Trial 看得到」的问题 —— 若渲染层未按套餐隐藏巡航控制，Trial 可能**实际驱动** Basic+ 的巡航能力。这使其严重度**高于**（一）中经复核判定的 4 个通道（那 4 个恰恰**必须保持免门禁**），需在下一批次**优先确认并连同 `GET_STATE` / `SYNC_STATE` 一并收口**。
+>
 > **为什么 33–36 不能只加门禁**：`CONFIG_GET_ALLOWED_NAMESPACES` 含 `cloud`（P0-2 修复），设置页依赖读取回显；`CloudSettingsTab` 对**所有套餐**无条件挂载，通道级 403 会让 Trial/Basic 用户的云端页整体降级。正确顺序是**先渲染层降级、后 IPC 门禁**。
 >
 > **缓解现状**：`cloud.*` 写端已被 D3 按 `cloud_send` 收口，Trial/Basic 无法写入云端配置，因此 #33–#36 的可读数据在其套餐下恒为空 —— 泄漏面被 D3 实质性削弱，故可按「先改渲染层」节奏排期，不构成 P0。
