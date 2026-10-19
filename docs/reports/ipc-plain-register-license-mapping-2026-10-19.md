@@ -157,7 +157,8 @@ LICENSE.GET_INFO / REQUEST_TRIAL / SUBMIT / VERIFY / CHECK_STATUS  (license-serv
 
 ## 4. 待裁决项（须产品/合规确认，**确认前不得实现**）
 
-> **落地进度（2026-10-19）**：**D1 ✅ / D6 ✅ 已实现**（commit `b019a38`，回归 `tests/ipc-license-gate-d1-d6.test.ts` 10 项）；**D2 ✅ / D3 ✅ / D4 ✅ / D5 ✅ 已实现**（回归 `tests/ipc-license-gate-d2-d5.test.ts` 19 项；撤销修复后 19 项中 11 项失败）。两套件撤销修复运行均 `exit 1`。
+> **落地进度（2026-10-19）**：**D1 ✅ / D6 ✅ 已实现**（commit `b019a38`，回归 `tests/ipc-license-gate-d1-d6.test.ts` 10 项）；**D2 ✅ / D3 ✅ / D4 ✅ / D5 ✅ 已实现**（回归 `tests/ipc-license-gate-d2-d5.test.ts` 21 项；撤销修复后 19 项中 11 项失败）。两套件撤销修复运行均 `exit 1`。
+> **2026-10-19 复核补记**：D4 首轮只拦了读端/重启/探测，漏掉**动作端 `AUTOMATION.IMAP_POLL`**（同族门禁不对称，读端拦而动作端放行）——已补齐并补 2 项用例，IMAP 家族（§3.2 #29–#32）现全部收口。
 > **仅 D7 仍待裁决**（能力扩张，需产品排期确认）：未裁决前不得改动 `isEmailType` 分支，也不得对其余 plain 通道批量追加门禁。
 
 | ID | 议题 | 两个选项 | 本文档建议 |
@@ -210,6 +211,25 @@ registerSecureFeatureIpc(
 | 文档一致性 | `npm run verify:consistency` | EXIT 0 |
 | 负向测试 | `node --test tests/ipc-registry-*-migration.test.ts` | Trial 直连每个新门禁通道 → `403 FEATURE_DENIED` |
 | 激活不回归 | 手动/`ipc-startup-gate` | 未激活用户仍可 LOGIN / 配密钥 / 提交激活码 |
+
+---
+
+## 5.1 剩余未收口通道（2026-10-19 复核结论，**下阶段执行清单**）
+
+D1–D6 收口后，§3.2 中仍有 12 个通道为 ⚠（已裁决但未实现，或未裁决）。复核同时完成了**渲染层调用方与回归风险实测**，据此分为「可直接收口」与「需先改渲染层」两类：
+
+| # | 通道 | 目标键 | 渲染层调用方（实测） | 收口前置 | 判定 |
+|---|---|---|---|---|---|
+| 19 | `AGENT.GET_STATUS` | `local_autopilot` | `leads-table.tsx:216` | **已 `try/catch` 静默回退**（`:220` 注释「徽标回退为搜索时携带的 agentStatus」） | 可直接加门禁 |
+| 20–22 | `AGENT.SUPPRESS_LIST / ADD / REMOVE` | `local_autopilot` | `src/` 内**无调用方** | 无 | 可直接加门禁 |
+| 26 | `AUTOPILOT.SYNC_STATE` | `local_autopilot` | `search-engine.tsx:353` | **已 `.catch()`**（仅打日志） | 可直接加门禁 |
+| 23 | `AUTOPILOT.GET_STATE` | `local_autopilot` | `autopilot-store.ts` ← `search-engine.tsx:329` `void hydrateAutopilot()`（**Trial 首屏即调用**） | 需先加套餐前置判断或 `.catch`，否则 Trial 每次进搜索页产生未处理拒绝 | 需先改渲染层 |
+| 24 | `AUTOPILOT.SET_STATE` | `local_autopilot` | `search-engine.tsx:336-344` 托盘动作 `void pause()/start()/stopAndClear()`（**无 catch**） | 同上 | 需先改渲染层 |
+| 33–36 | `CLOUD.CLOUDFLARE_CONFIGURED / TEST_CONNECTION / DASHBOARD_STATS / POLL_OUTREACH_STATUS` | `cloud_send` | `system-settings.tsx:514` **无条件渲染** `CloudSettingsTab`，其 `:43` 用 `Promise.all` 聚合读取 | 设置页需先做「未解锁 → 渲染升级引导而非发起 IPC」，否则复现 **P0-2 同类缺陷**（任一 403 即整页降级） | 需先改渲染层 |
+
+> **为什么 33–36 不能只加门禁**：`CONFIG_GET_ALLOWED_NAMESPACES` 含 `cloud`（P0-2 修复），设置页依赖读取回显；`CloudSettingsTab` 对**所有套餐**无条件挂载，通道级 403 会让 Trial/Basic 用户的云端页整体降级。正确顺序是**先渲染层降级、后 IPC 门禁**。
+>
+> **缓解现状**：`cloud.*` 写端已被 D3 按 `cloud_send` 收口，Trial/Basic 无法写入云端配置，因此 #33–#36 的可读数据在其套餐下恒为空 —— 泄漏面被 D3 实质性削弱，故可按「先改渲染层」节奏排期，不构成 P0。
 
 ---
 

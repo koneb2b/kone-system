@@ -52,7 +52,7 @@ const electronMock = {
     requestSingleInstanceLock: () => true,
     commandLine: { appendSwitch() {}, hasSwitch: () => false },
     getName: () => 'Kone AI',
-    getVersion: () => '1.4.36',
+    getVersion: () => '1.4.37',
     getAppPath: () => process.cwd(),
     disableHardwareAcceleration() {},
   },
@@ -368,6 +368,18 @@ test('D4 · 付费 Basic 可测试 IMAP 连接', async () => {
   const { IPC_CHANNELS, ipc } = loadHarness('basic')
   const result = await invoke(ipc, IPC_CHANNELS.AUTOMATION.IMAP_TEST_CONNECTION)
   assertNotDenied(result, 'Basic · IMAP 连接测试')
+})
+
+test('D4 · 活跃 Trial 不可手动触发 IMAP 轮询（动作端；复核补齐的不对称缺口）', async () => {
+  const { IPC_CHANNELS, ipc } = loadHarness('trial')
+  const result = await invoke(ipc, IPC_CHANNELS.AUTOMATION.IMAP_POLL)
+  assertFeatureDenied(result, 'Trial · IMAP 手动轮询')
+})
+
+test('D4 · 付费 Basic 可手动触发 IMAP 轮询', async () => {
+  const { IPC_CHANNELS, ipc } = loadHarness('basic')
+  const result = await invoke(ipc, IPC_CHANNELS.AUTOMATION.IMAP_POLL)
+  assertNotDenied(result, 'Basic · IMAP 手动轮询')
 })
 
 /* ──────────────────────────────────────────────

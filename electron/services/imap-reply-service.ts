@@ -530,9 +530,11 @@ export const registerImapReplyHandlers = (
   licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
   getWindow: () => Electron.BrowserWindow | null,
 ): void => {
-  /* D4（2026-10-19 修复）：三个 IMAP 通道此前**无任何门禁**——试用版可读取 / 重启 / 测试
-     邮件回信服务（属 Agent 域状态，PRD §6.0 禁止向 Trial 暴露）。统一按 `local_autopilot`
-     拦截；Basic 持有该能力（AGENTS.md：Paid Basic 可用低量本地 Email），Trial 不持有。 */
+  /* D4（2026-10-19 修复）：四个 IMAP 通道此前**无任何门禁**——试用版可轮询 / 读取 /
+     重启 / 测试邮件回信服务（属 Agent 域状态与动作，PRD §6.0 禁止向 Trial 暴露）。
+     统一按 `local_autopilot` 拦截；Basic 持有该能力（AGENTS.md：Paid Basic 可用低量
+     本地 Email），Trial 不持有。**动作端（IMAP_POLL）与读端同等拦截** —— 读端拦、
+     动作端放行是不对称的假收口。 */
   const requireLocalAutopilot = (operationName: string) => {
     try {
       licenseGuard.requireFeature('local_autopilot', operationName)
@@ -551,6 +553,11 @@ export const registerImapReplyHandlers = (
       responseRule: { type: 'any' },
     },
     async (_event: unknown) => {
+      // D4 补（2026-10-19 复核发现）：本通道是 IMAP 家族的**动作端** —— 会真实使用
+      // 已配置凭据访问邮箱，权限敏感度高于读端。此前只拦了 STATUS / RESTART /
+      // TEST_CONNECTION 而漏掉本通道，属**同族门禁不对称**（读端拦、动作端放行）。
+      const denied = requireLocalAutopilot('IMAP 手动轮询')
+      if (denied) return denied
       const result = await pollReplies(store, getWindow())
       return { success: true, data: result }
     },
