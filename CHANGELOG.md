@@ -30,6 +30,19 @@ lastVerifiedAt: 2026-10-19
   非高级版不再挂载云端设置面板，改渲染升级引导。变更细节与证据见 `[1.4.37]` 节 2026-10-20 相关条目。
 - 受影响 SSOT：`package.json` / `package-lock.json`（版本）、`CHANGELOG.md`、
   `KONE-V1.3-干净机器验收手册-2026-09-25.md`（包名 / 体积 / 冒烟口径回填）。
+- **发布判定治理（2026-10-20，owner 决策，纠正本仓自身过度约束）**：
+  ① **代码签名降级**：权威发布判定 `CLOUD-COLLABORATION-DELIVERY.md §0` 的 `NO-GO` 四项中**从未包含代码签名**；
+  此前将其写成"交付硬门禁"（`docs/release-gate.md §4` "B-2 签名硬门禁" 与 "交付时必须加 `--strict`"）属**本仓过度约束**，
+  现订正为"**交付后加固项**"。同步修正 `V1.2-商业版交付与运维手册.md §3`（原文"发布制品缺少签名…一律保持 `NO-GO`"）
+  与 `ARCH-STANDARDS.md §17` item 6 的注解。`verify:signature` **保持接线**（§17 item 9 的接线断言不变），
+  证书到位后可在**公开发行**渠道切回 `--strict`。
+  ② **`NO-GO` ② 闭环**：打包态冒烟在 `1.4.38` 上以 `scripts/packaged-smoke.cjs` 显式判定规则通过
+  （`booted` ∧ `preloadBridgeVisible` ∧ (`activationScreenVisible` ∨ `dashboardNavVisible`)；证据 `tests/packaged-smoke-report.json`）。
+  原文所述 `app.asar` 被系统进程持有属本机构建环境问题，非产品缺陷。**`NO-GO` 由四项缩为三项**
+  （① 干净机器人工验收 / ③ 审批门禁部署开启留证 / ④ 小流量实发）。
+  ③ **计数订正**：见同页 2026-10-19 "云端门禁真相校正"条目（59 → 63 项，实测）。
+  受影响 SSOT：`CLOUD-COLLABORATION-DELIVERY.md §0`、`V1.2-商业版交付与运维手册.md §3`、
+  `ARCH-STANDARDS.md §17`、`docs/release-gate.md §4`、`docs/evidence/clean-machine-acceptance-1.4.38.md §7`。
 
 ---
 
@@ -59,7 +72,7 @@ lastVerifiedAt: 2026-10-19
   未覆盖专项单测计数（6 → 7，补 `serper`）与干净机器验收手册旧安装包名；
   `verify-doc-consistency` 新增第 11 项「现行文档旧版本残留」校验（17 份现行文档）。
 - 云端门禁真相校正（2026-10-19）：`CLOUD-COLLABORATION-DELIVERY.md` 原写「服务端二次门禁云端尚无实现」，
-  与代码不符；已核实 `kone-cloud/src/worker.ts` ⑤–⑨ 与 `tests/approval-gate.test.ts`（59 项云端测试全通过），
+  与代码不符；已核实 `kone-cloud/src/worker.ts` ⑤–⑨ 与 `tests/approval-gate.test.ts`（云端测试全通过；**2026-10-20 复核实测 `kone-cloud` 共 63 项 / 2 文件**，原文"59 项"计数有误且与本节的"+4 项负向测试"自相矛盾，已订正），
   改为「已实现、`APPROVAL_GATE_ENABLED=false`、待部署环境开启并留证」。
 - 云端投递门禁加固（2026-10-19）：`kone-cloud/src/worker.ts` `/cron/send` 新增**投递时复核**（Fail-Closed，与入队门禁 ⑤–⑨
   共用 `APPROVAL_GATE_ENABLED`，默认关闭时零行为变化）——入队仅校验一次，历史 `queued` 行/入队后审批撤销/草稿变更/收件人被加入

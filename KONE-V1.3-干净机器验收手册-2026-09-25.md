@@ -7,8 +7,9 @@
 >
 > **版本适用性（2026-10-20 复核，取代 2026-10-19 注记）**：本文成文时为 1.3.0（HEAD `1ac113c`），文中示例包名
 > `Kone-Intellect-Setup-1.3.0.exe` 已过期。本次复核时 `package.json` 为 **1.4.38**，安装包已由 `npm run dist`
-> 产出为 `release/Kone-Intellect-Setup-1.4.38.exe`（85.8 MB；**未签名**）。签名缺口属**预期**：代码签名证书与
-> Windows SDK 尚未接入，`verify:signature` 默认放行，**交付时须加 `--strict`**（见 `docs/release-gate.md` §4）。
+> 产出为 `release/Kone-Intellect-Setup-1.4.38.exe`（85.8 MB；**未签名**）。签名缺口属**预期且非阻断**：代码签名证书与
+> Windows SDK 尚未接入；**owner 决策（2026-10-20）将代码签名推迟为交付后加固项**，`verify:signature` 默认放行，
+> 交付流程不再强制 `--strict`（见 `docs/release-gate.md` §4）。
 > **§2 的 20 项验收步骤适用于 1.4.x，结构未变；但步骤本身仍未逐项重验**；重跑前请按 `package.json` 当前版本替换包名
 > （成文时版本仅作历史参照）。
 

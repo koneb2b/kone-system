@@ -386,7 +386,8 @@ Any unmet item is `NO-GO`:
 3. workspace/tenant isolation has no negative cross-tenant tests;
 4. SMTP/API secrets appear in normal config, Renderer, logs or package;
 5. clean-machine Agent/delivery behavior cannot be reproduced;
-6. the artifact lacks commit, dependency lock, hash, test result, signature, gray-release threshold, rollback trigger or owner;
+6. the artifact lacks commit, dependency lock, hash, test result, gray-release threshold, rollback trigger or owner;
+   - **代码签名 deferral（2026-10-20 owner 决策）**：Authenticode 签名**不作为**交付阻断项，推迟为交付后加固项（见 `docs/release-gate.md` §4）。本项其余属性（commit / 依赖锁 / hash / 测试结果 / 灰度阈值 / 回滚触发 / 责任人）**全部仍然阻断**。
 7. CI treats `timed_out`, `action_required`, empty or any non-success result as pass;
 8. Provider truth, sales claims, UI and implementation remain in unresolved conflict;
 9. `npm run verify:release-gate`（`docs/release-gate.md` 的机械化子集，已接入 `npm test`）为红 —— 该脚本同时断言既有门禁（`verify:ipc` / `test:cloud` / `test:ipc` / `test:e2e-smoke` / `test:security-audit` / `verify:signature`）**仍被接线**，防静默移除。

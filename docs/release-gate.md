@@ -93,10 +93,14 @@
 | `npm run test:security-audit` | `release/win-unpacked/KoneAI.exe` | G5-SEC3 全绿 |
 | `npm run test:smoke` | 重新打包 | 打包态启动冒烟（booted / preload bridge / 授权页或仪表盘） |
 | `npm run test:packaged-premium` | 重新打包 | 打包态 Premium 能力（L4） |
-| `npm run verify:signature -- --strict` | 代码签名证书 + Windows SDK | B-2 签名硬门禁 |
+| `npm run verify:signature`（默认；`--strict` 可选） | 无（默认不依赖证书） | **非阻断**：代码签名经 owner 决策（2026-10-20）推迟为交付后加固项 |
 | 干净机器 20 项人工验收 | 干净 Windows 机器 | NO-GO ① |
 
-> ⚠️ `verify:signature` 默认**退出 0**（证书未接入属预期），仅在 `--strict` 下退出 1。**交付时必须加 `--strict`**，否则未签名包会被静默放过。
+> ℹ️ `verify:signature` 默认**退出 0**（证书未接入属预期），仅在 `--strict` 下退出 1。
+> **owner 决策（2026-10-20）：代码签名不作为交付阻断** —— 依据是权威发布判定 `CLOUD-COLLABORATION-DELIVERY.md §0`
+> 的 `NO-GO` 四项中**从未包含代码签名**；此前将其写成"硬门禁"属本文件 §4 的**过度约束**，现订正。
+> `verify:signature` **保持接线**（`ARCH-STANDARDS.md §17` item 9 的接线断言不变）。待证书采购到位后，
+> 可在**公开发行**渠道切回 `--strict` 硬门禁（届时同步本表与 `V1.2-商业版交付与运维手册.md §3`）。
 
 ## 5. 与发布判定的关系
 
