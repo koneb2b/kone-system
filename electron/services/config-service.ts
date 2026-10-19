@@ -38,6 +38,9 @@ export const SECRET_KEYS = {
      邮箱+手机 enrich 10 credits —— 邮箱成本比 Apollo 低一个数量级。
      经 safeStorage 加密落盘，渲染层设置页必须能写。 */
   PROSPEO_API_KEY: 'secrets.prospeo.apiKey',
+  /* 2026-10-17：Serper（自备密钥的可选 Google 网页搜索来源，BYOK）。与 SerpApi 分列，
+     经 safeStorage 加密落盘，渲染层设置页必须能写。 */
+  SERPER_API_KEY: 'secrets.serper.apiKey',
 } as const
 
 export const PROVIDER_SECRET_KEYS: Record<string, string> = {
@@ -46,6 +49,7 @@ export const PROVIDER_SECRET_KEYS: Record<string, string> = {
   'google-maps': SECRET_KEYS.GOOGLE_MAPS_API_KEY,
   'decision-maker': SECRET_KEYS.DECISION_MAKER_API_KEY,
   anysearch: SECRET_KEYS.ANYSEARCH_API_KEY,
+  serper: SECRET_KEYS.SERPER_API_KEY,
 }
 
 /* ── 原生文件存储 Store 替代 electron-store ── */
@@ -481,6 +485,8 @@ const SECRET_SET_WHITELIST: Set<string> = new Set([
   SECRET_KEYS.APOLLO_API_KEY,
   /* 2026-10-13：Prospeo（Apollo 的低成本前置）同样必须可写，否则设置页无法配置。 */
   SECRET_KEYS.PROSPEO_API_KEY,
+  /* 2026-10-17：Serper（自备密钥的可选网页来源）同样必须可写，否则设置页无法配置。 */
+  SECRET_KEYS.SERPER_API_KEY,
 ])
 
 interface IElectronMain extends Electron.IpcMain {

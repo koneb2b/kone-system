@@ -37,6 +37,9 @@ export type EnrichmentCallStatus =
   | 'skipped_not_opted_in'
   | 'skipped_cache'
   | 'skipped_not_high_value'
+  /* Phase 1 / R2（2026-10-17）：请求缺少**必要人员标识**（Apollo `people/match` 无法据公司字段
+     可靠定位个人）→ 未发起请求。与「未配置密钥」「用户未开启」区分，避免把契约不满足误报为已解决。 */
+  | 'skipped_no_identifier'
 
 export type EnrichmentCallRecord = {
   provider: EnrichmentProviderId

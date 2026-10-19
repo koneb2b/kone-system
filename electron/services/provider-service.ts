@@ -27,11 +27,14 @@ export function buildProviderConfig(store: ConfigStore): ProviderConfig {
   const googleKey = getSecret(googleLeads.secretKey).trim() || getSecret(googleMaps.secretKey).trim()
   const anysearchApiKey = getSecret(SECRET_KEYS.ANYSEARCH_API_KEY).trim()
   const anysearchBaseUrl = getSecret(SECRET_KEYS.ANYSEARCH_BASE_URL).trim()
+  /* 2026-10-17：Serper（可选 BYOK 网页来源）——独立密钥槽，**不回退** SerpApi。 */
+  const serperApiKey = getSecret(SECRET_KEYS.SERPER_API_KEY).trim()
 
   return {
     googleKey: googleKey || undefined,
     anysearchApiKey: anysearchApiKey || undefined,
     anysearchBaseUrl: anysearchBaseUrl || undefined,
+    serperApiKey: serperApiKey || undefined,
   }
 }
 

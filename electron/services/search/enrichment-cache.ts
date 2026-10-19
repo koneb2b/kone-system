@@ -51,28 +51,41 @@ let misses = 0
 
 export const getEnrichmentCacheStats = () => ({ hits, misses, size: cache.size })
 
-/** 稳定的**字段级去重键**：`provider|domain|field`。域名缺失时回退公司名小写归一。 */
+/** 稳定的**字段级去重键**：`provider|domain|field`（可选第 4 段 `|contactScope`）。
+ *
+ * 域名缺失时回退公司名小写归一。
+ *
+ * ## 联系人级隔离（Phase 1 / R1，2026-10-17）
+ * 当传入 `contactScope`（由 `deriveContactScopeKey` 派生）时，键扩展为
+ * `provider|domain|field|contactScope` —— **同一域名下的不同联系人不再共享同一缓存项**。
+ * 联系人级联系方式（邮箱/手机）**必须**带 scope 读写；只有「无任何联系人标识的公司级查询」
+ * 才使用 `-` 作用域。**旧的 3 段键绝不会被当作联系人级读取**（写入方也一律用 4 段键）。
+ */
 export const buildEnrichmentCacheKey = (
   provider: EnrichmentProviderId,
   domainOrCompany: string,
   field: EnrichmentField,
+  contactScope?: string,
 ): string => {
   const normalized =
     extractDomainFromUrl(String(domainOrCompany || '')) ||
     String(domainOrCompany || '')
       .trim()
       .toLowerCase()
-  return `${provider}|${normalized}|${field}`
+  const base = `${provider}|${normalized}|${field}`
+  const scope = String(contactScope ?? '').trim()
+  return scope ? `${base}|${scope}` : base
 }
 
-/** 命中返回深拷贝；未命中/已过期返回 `undefined`。 */
-export const getEnrichmentCached = <T>(key: string): T | undefined => {
+/** 命中返回深拷贝；未命中/已过期返回 `undefined`。`nowMs` 可注入（可测）。 */
+export const getEnrichmentCached = <T>(key: string, nowMs?: number): T | undefined => {
+  const now = typeof nowMs === 'number' ? nowMs : Date.now()
   const entry = cache.get(key)
   if (!entry) {
     misses += 1
     return undefined
   }
-  if (Date.now() > entry.expiresAt) {
+  if (now > entry.expiresAt) {
     cache.delete(key)
     misses += 1
     return undefined
@@ -81,8 +94,9 @@ export const getEnrichmentCached = <T>(key: string): T | undefined => {
   return JSON.parse(JSON.stringify(entry.value)) as T
 }
 
-/** 写入缓存；超容量按 FIFO 逐出最旧条目。`ttlMs` 缺省按字段类别推导。 */
-export const setEnrichmentCached = (key: string, value: unknown, ttlMs?: number): void => {
+/** 写入缓存；超容量按 FIFO 逐出最旧条目。`ttlMs` 缺省按字段类别推导；`nowMs` 可注入（可测）。 */
+export const setEnrichmentCached = (key: string, value: unknown, ttlMs?: number, nowMs?: number): void => {
+  const now = typeof nowMs === 'number' ? nowMs : Date.now()
   const field = key.split('|')[2] as EnrichmentField
   const ttl =
     typeof ttlMs === 'number' && ttlMs > 0 ? ttlMs : ENRICHMENT_CACHE_TTL_MS[field] || ENRICHMENT_CACHE_TTL_MS.email
@@ -90,7 +104,7 @@ export const setEnrichmentCached = (key: string, value: unknown, ttlMs?: number)
     const oldestKey = cache.keys().next().value
     if (oldestKey !== undefined) cache.delete(oldestKey)
   }
-  cache.set(key, { value, expiresAt: Date.now() + ttl })
+  cache.set(key, { value, expiresAt: now + ttl })
 }
 
 export const clearEnrichmentCache = (): void => {

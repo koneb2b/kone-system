@@ -42,6 +42,7 @@ type SearchDataSource =
   | 'yellow_pages'
   | 'linkedin_search'
   | 'facebook_search'
+  | 'serper'
 
 interface SearchEngineProps {
   userRole?: UserRole | null
@@ -247,6 +248,8 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
     handleSearch,
     debouncedHandleSearch,
     goToSearchPage,
+    manualSearchSource,
+    setManualSearchSource,
   } = engine
 
   // UI-only state (stays in component, not search-related)
@@ -691,6 +694,24 @@ export function SearchEngine({ userRole }: SearchEngineProps) {
           onCountryChange={setSearchCountry}
           onCityChange={setSearchCity}
         />
+
+        {/* 搜索来源选择（2026-10-17，Phase 2B-Lite.1）：默认值保持既有全模式盲搜语义不变；
+            显式选择 Serper 后仅调用 Serper 单源（自备密钥，失败明确报错、不回退其它来源）。 */}
+        <div className="flex items-center gap-2">
+          <label htmlFor="manual-search-source" className="text-xs font-medium text-slate-500">
+            搜索来源
+          </label>
+          <select
+            id="manual-search-source"
+            data-testid="select-search-source"
+            value={manualSearchSource}
+            onChange={(event) => setManualSearchSource(event.target.value === 'serper' ? 'serper' : 'default')}
+            className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 focus-visible:ring-blue-500/20"
+          >
+            <option value="default">默认：AI 全模式盲搜</option>
+            <option value="serper">单源：Serper（Google，自备密钥）</option>
+          </select>
+        </div>
 
         {/* 第四行：操作按钮 */}
         <div className="space-y-2">

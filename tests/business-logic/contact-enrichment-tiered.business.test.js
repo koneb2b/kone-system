@@ -302,7 +302,7 @@ test('Step4/D-3: Apollo 邮箱状态与匹配置信度**如实回传**（不再�
       phone_numbers: [],
     },
   }))
-  const result = await APOLLO.enrichFromApollo({ domain: 'acme.com' })
+  const result = await APOLLO.enrichFromApollo({ domain: 'acme.com', person: { name: 'John Smith' } })
   assert.equal(result.emailStatus, 'guessed')
   assert.notEqual(result.emailStatus, APOLLO.APOLLO_VERIFIED_EMAIL_STATUS, 'guessed 不得被当作已验证')
   assert.equal(result.matchConfidence, 'low')
@@ -319,7 +319,7 @@ test('Step4: Apollo `match_confidence=none` → 不得当作真实联系人', as
       match_confidence: 'none',
     },
   }))
-  const result = await APOLLO.enrichFromApollo({ domain: 'acme.com' })
+  const result = await APOLLO.enrichFromApollo({ domain: 'acme.com', person: { name: 'John Smith' } })
   assert.equal(result.used, false, '未匹配到记录时不得产出数据')
   assert.equal(result.email, undefined)
 })

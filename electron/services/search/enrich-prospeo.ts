@@ -75,10 +75,30 @@ export interface ProspeoEnrichResult {
   contactTitle?: string
   /** 决策人 LinkedIn（供应商返回时才有；缺失不臆造） */
   contactLinkedinUrl?: string
+  /**
+   * 供应商的**稳定人员 ID**（Prospeo `person_id`）。
+   * Phase 1 / R1：作为联系人级缓存隔离的最强标识（`deriveContactScopeKey` 优先使用），
+   * 亦用于冲突复核。供应商未返回时 `undefined`（不臆造）。
+   */
+  contactId?: string
   /** 是否真正拿到可用数据。 */
   used: boolean
   source: 'prospeo'
+  /**
+   * Phase 1 / R2（2026-10-17）：失败**原因类别**（`used:false` 时为具体原因），
+   * 供调用方在账本中区分「无匹配 / 鉴权失败 / 限流 / 网络异常」等，而不再一律吞成同一种失败。
+   */
+  failureKind?: ProspeoFailureKind
 }
+
+/** Prospeo 富化的失败原因类别（Fail-Closed 下 `used:false` 的细分）。 */
+export type ProspeoFailureKind =
+  | 'missing_key'
+  | 'invalid_target'
+  | 'http_error'
+  | 'api_error'
+  | 'no_match'
+  | 'network_error'
 
 const EMPTY_RESULT: ProspeoEnrichResult = {
   email: undefined,
@@ -89,9 +109,13 @@ const EMPTY_RESULT: ProspeoEnrichResult = {
   contactName: undefined,
   contactTitle: undefined,
   contactLinkedinUrl: undefined,
+  contactId: undefined,
   used: false,
   source: 'prospeo',
 }
+
+/** Fail-Closed 出口：附带**失败原因类别**（`used:false`），供调用方如实记账。 */
+const fail = (kind: ProspeoFailureKind): ProspeoEnrichResult => ({ ...EMPTY_RESULT, failureKind: kind })
 
 /** Prospeo 自报为「已验证」的邮箱状态（大小写不敏感比较）。 */
 export const PROSPEO_VERIFIED_EMAIL_STATUS = 'VERIFIED'
@@ -152,10 +176,10 @@ export const enrichFromProspeo = async (payload: {
   timeoutMs?: number
 }): Promise<ProspeoEnrichResult> => {
   const apiKey = getUserProspeoApiKey()
-  if (!apiKey) return EMPTY_RESULT
+  if (!apiKey) return fail('missing_key')
 
   const domain = extractDomainFromUrl(payload.domain || '') || ''
-  if (!domain) return EMPTY_RESULT
+  if (!domain) return fail('invalid_target')
 
   const timeoutMs = payload.timeoutMs ?? 15_000
   const headers = { 'Content-Type': 'application/json', 'X-KEY': apiKey }
@@ -174,11 +198,11 @@ export const enrichFromProspeo = async (payload: {
       },
       timeoutMs,
     )
-    if (!searchResponse.ok) return EMPTY_RESULT
+    if (!searchResponse.ok) return fail('http_error')
     const searchJson: any = await searchResponse.json().catch(() => ({}))
-    if (searchJson?.error) return EMPTY_RESULT
+    if (searchJson?.error) return fail('api_error')
     const best = pickBestPerson(searchJson?.results || [])
-    if (!best) return EMPTY_RESULT
+    if (!best) return fail('no_match')
 
     /* ② 揭示联系方式。`only_verified_email: true` 保证只返回已验证邮箱。 */
     const wantMobile = Boolean(payload.wantMobile)
@@ -195,9 +219,9 @@ export const enrichFromProspeo = async (payload: {
       },
       timeoutMs,
     )
-    if (!enrichResponse.ok) return EMPTY_RESULT
+    if (!enrichResponse.ok) return fail('http_error')
     const enrichJson: any = await enrichResponse.json().catch(() => ({}))
-    if (enrichJson?.error) return EMPTY_RESULT
+    if (enrichJson?.error) return fail('api_error')
 
     const person = enrichJson?.person || {}
     const emailBlock = person?.email || {}
@@ -235,11 +259,12 @@ export const enrichFromProspeo = async (payload: {
       contactName: best.fullName || undefined,
       contactTitle: best.title || undefined,
       contactLinkedinUrl: best.linkedinUrl,
+      contactId: best.personId || undefined,
       used: true,
       source: 'prospeo',
     }
   } catch {
     /* 网络异常 / 超时 / 解析失败 → Fail-Closed。 */
-    return EMPTY_RESULT
+    return fail('network_error')
   }
 }

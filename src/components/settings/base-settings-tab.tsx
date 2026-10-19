@@ -27,10 +27,12 @@ const secretKeysByProvider: Record<string, string> = {
   anysearch: 'secrets.anysearch.apiKey',
   apollo: 'secrets.apollo.apiKey',
   prospeo: 'secrets.prospeo.apiKey',
+  /* 2026-10-17：Serper（自备密钥的可选 Google 网页来源，BYOK） */
+  serper: 'secrets.serper.apiKey',
 }
 
 /* 无 Base URL 的服务商：密钥本身即完整凭据，服务端点固定，无需用户填写地址。 */
-const providersWithoutBaseUrl = new Set(['apollo', 'prospeo'])
+const providersWithoutBaseUrl = new Set(['apollo', 'prospeo', 'serper'])
 
 const providerBaseUrlHints: Record<string, { placeholder: string; hint: string }> = {
   llm: {
@@ -61,6 +63,10 @@ const providerDescriptions: Record<string, string> = {
     '安全保存 Apollo.io API 密钥，用于补全高价值线索的已验证邮箱与手机号（弥补官网不公开联系方式的覆盖短板）。按线索计费，仅对高价值线索（匹配分 ≥ 60）启用，受每轮搜索查询额度上限约束；查询失败时自动降级为官网抓取，不影响搜索。',
   prospeo:
     '安全保存 Prospeo API 密钥，作为 Apollo 的**低成本前置**：优先补全已验证邮箱（成本极低），命中后即跳过 Apollo 以节省费用。仅在缺邮箱/缺手机号的高价值线索上按需查询，受每轮搜索额度上限约束；失败自动降级，不影响搜索。',
+  /* 2026-10-17：Serper（自备密钥的可选 Google 网页来源）。诚实口径——它是**与 SerpApi 并列的
+     可选网页搜索来源**，仅在您已配置 SerpApi 搜索的基础上并行补充；不替代现有来源，失败自动隔离。 */
+  serper:
+    '安全保存 Serper.dev API 密钥，作为**可选的 Google 网页搜索来源**（您自备额度，按次消耗）。在您已启用搜索的前提下并行补充网页线索，来源单独标注；该来源失败会自动隔离，不影响其它数据源。密钥仅本机加密保存，不会上传。',
 }
 
 type SecretState = {
@@ -323,8 +329,15 @@ export function BaseSettingsTab({
 
     /* 2026-10-11：Apollo 无 Base URL、也无「测试连接」端点。此处做**软校验**
      * （非空 + 形似凭据）后直接保存，**不做主动探测**（避免消耗 Apollo credits）；
-     * 真实连通性在下次搜索的高价值线索富化时验证，失败即 fail-closed 降级到官网抓取。 */
-    if (api.id === 'apollo') {
+     * 真实连通性在下次搜索的高价值线索富化时验证，失败即 fail-closed 降级到官网抓取。
+     * 2026-10-17：Serper 同样无 Base URL（端点固定 google.serper.dev），沿用同一软校验路径——
+     * 不做主动探测以免消耗用户自备额度；真实连通性在下次搜索作为可选来源并行启用时验证。 */
+    if (api.id === 'apollo' || api.id === 'serper') {
+      const providerLabel = api.id === 'apollo' ? 'Apollo' : 'Serper'
+      const savedNote =
+        api.id === 'apollo'
+          ? '将在下次搜索的高价值线索富化时启用；查询失败会自动降级到官网抓取，不影响搜索。'
+          : '将在后续搜索中作为可选的 Google 网页来源并行启用；该来源失败会自动隔离，不影响其它数据源。'
       setTestingById((prev) => ({ ...prev, [api.id]: true }))
       try {
         if (!secretKey || !key) {
@@ -332,7 +345,7 @@ export function BaseSettingsTab({
           onUpdateConfig(api.id, { status: 'error' })
           toast({
             title: '无法开始校验',
-            description: '请先在上方填写 Apollo API Key。',
+            description: `请先在上方填写 ${providerLabel} API Key。`,
             variant: 'destructive',
           })
           return
@@ -342,7 +355,7 @@ export function BaseSettingsTab({
           onUpdateConfig(api.id, { status: 'error' })
           toast({
             title: '密钥格式异常',
-            description: 'Apollo API Key 通常为较长的字母数字串，请检查是否复制完整。',
+            description: `${providerLabel} API Key 通常为较长的字母数字串，请检查是否复制完整。`,
             variant: 'destructive',
           })
           return
@@ -368,15 +381,15 @@ export function BaseSettingsTab({
           { connectionStatus: 'connected' },
         )
         toast({
-          title: 'Apollo 密钥已保存',
-          description: '将在下次搜索的高价值线索富化时启用；查询失败会自动降级到官网抓取，不影响搜索。',
+          title: `${providerLabel} 密钥已保存`,
+          description: savedNote,
         })
       } catch (error) {
         setLocalConnectionStatus((prev) => ({ ...prev, [api.id]: 'error' }))
         onUpdateConfig(api.id, { status: 'error' })
         const detail = error instanceof Error ? error.message : ''
         toast({
-          title: '保存 Apollo 密钥失败',
+          title: `保存 ${providerLabel} 密钥失败`,
           description: detail || '保存失败，请稍后重试。',
           variant: 'destructive',
         })

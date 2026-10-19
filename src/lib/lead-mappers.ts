@@ -45,6 +45,7 @@ const VALID_DATASOURCE_VALUES = new Set<string>([
   'linkedin_search',
   'facebook_search',
   'anysearch',
+  'serper',
 ])
 
 const normalizeDataSourceType = (raw?: unknown): DataSourceType | undefined => {

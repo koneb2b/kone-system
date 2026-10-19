@@ -100,7 +100,34 @@ test('Apollo 富化：既无域名也无公司名必须 Fail-Closed（不发请�
   const result = await adapter.enrichFromApollo({})
 
   assert.equal(result.used, false)
+  assert.equal(result.failureKind, 'no_target')
   assert.equal(fetchCalls.length, 0, '无可匹配标识不得浪费一次查询')
+})
+
+test('Apollo 富化（Phase 1 R2/B1）：仅有域名、缺少人员标识 → **不发起请求**（people/match 契约不满足）', async () => {
+  let called = 0
+  const { adapter, fetchCalls } = loadAdapter({
+    secretValue: 'mock-key-123456',
+    fetchImpl: () => {
+      called += 1
+      return { ok: true, status: 200, json: async () => ({ person: { email: 'x@acme.com' } }) }
+    },
+  })
+
+  const result = await adapter.enrichFromApollo({ domain: 'https://acme.com', company: 'ACME' })
+
+  assert.equal(result.used, false)
+  assert.equal(result.failureKind, 'insufficient_identifier', '必须如实报告契约不满足，不得伪装成功')
+  assert.equal(called, 0, '缺少必要人员标识时不得发起网络请求')
+  assert.equal(fetchCalls.length, 0)
+})
+
+test('Apollo 富化（Phase 1 R2）：缺少 API Key → failureKind=missing_key（零请求）', async () => {
+  const { adapter, fetchCalls } = loadAdapter({ secretValue: '' })
+  const result = await adapter.enrichFromApollo({ domain: 'https://acme.com', person: { name: 'Jane' } })
+  assert.equal(result.used, false)
+  assert.equal(result.failureKind, 'missing_key')
+  assert.equal(fetchCalls.length, 0)
 })
 
 test('Apollo 富化：429 / 5xx 必须 Fail-Closed，不得抛错', async () => {
@@ -110,7 +137,7 @@ test('Apollo 富化：429 / 5xx 必须 Fail-Closed，不得抛错', async () => 
       fetchImpl: () => ({ ok: false, status, json: async () => ({}) }),
     })
 
-    const result = await adapter.enrichFromApollo({ domain: 'https://acme.com' })
+    const result = await adapter.enrichFromApollo({ domain: 'https://acme.com', person: { email: 'buyer@acme.com' } })
 
     assert.equal(result.used, false, `HTTP ${status} 必须降级为 used:false`)
     assert.equal(result.email, undefined)
@@ -126,7 +153,7 @@ test('Apollo 富化：网络异常 / 超时（fetch 抛错）必须 Fail-Closed'
     },
   })
 
-  const result = await adapter.enrichFromApollo({ domain: 'https://acme.com' })
+  const result = await adapter.enrichFromApollo({ domain: 'https://acme.com', person: { name: 'Jane Doe' } })
 
   assert.equal(result.used, false, '网络异常必须吞掉并降级')
   assert.equal(result.phoneKind, 'unknown')
@@ -138,7 +165,11 @@ test('Apollo 富化：有密钥但无命中（空 person）必须 Fail-Closed', 
     fetchImpl: () => ({ ok: true, status: 200, json: async () => ({}) }),
   })
 
-  const result = await adapter.enrichFromApollo({ domain: 'https://acme.com', company: 'ACME' })
+  const result = await adapter.enrichFromApollo({
+    domain: 'https://acme.com',
+    company: 'ACME',
+    person: { name: 'Jane Doe' },
+  })
 
   assert.equal(result.used, false)
   assert.equal(result.email, undefined)
@@ -147,7 +178,7 @@ test('Apollo 富化：有密钥但无命中（空 person）必须 Fail-Closed', 
 
 /* ── ② 命中时的回填契约与号码类型判定 ─────────────────────────── */
 
-test('Apollo 富化：命中时必须回填已验证邮箱 + mobile 手机号，并携带 reveal 参数', async () => {
+test('Apollo 富化：命中时必须回填已验证邮箱 + mobile 手机号，请求体**不得**携带手机揭示（Phase 1 R2）', async () => {
   const { adapter, fetchCalls } = loadAdapter({
     secretValue: 'mock-key-123456',
     fetchImpl: () => ({
@@ -162,7 +193,12 @@ test('Apollo 富化：命中时必须回填已验证邮箱 + mobile 手机号，
     }),
   })
 
-  const result = await adapter.enrichFromApollo({ domain: 'https://acme.com', company: 'ACME', country: 'US' })
+  const result = await adapter.enrichFromApollo({
+    domain: 'https://acme.com',
+    company: 'ACME',
+    country: 'US',
+    person: { email: 'buyer@acme.com' },
+  })
 
   assert.equal(result.used, true)
   assert.equal(result.source, 'apollo')
@@ -177,8 +213,13 @@ test('Apollo 富化：命中时必须回填已验证邮箱 + mobile 手机号，
   assert.equal(body.api_key, 'mock-key-123456')
   assert.equal(body.domain, 'acme.com')
   assert.equal(body.company, 'ACME')
+  assert.equal(body.email, 'buyer@acme.com', '人员标识必须随请求下发（people/match 契约）')
   assert.equal(body.reveal_personal_emails, true, '必须请求个人邮箱')
-  assert.equal(body.reveal_phone_number, true, '必须请求手机号')
+  assert.equal(
+    body.reveal_phone_number,
+    false,
+    '标准同步端点不支持手机揭示（需 webhook/poll）；开启会被官方 400 WEBHOOK_URL_REQUIRED 拒绝',
+  )
 })
 
 test('Apollo 富化：CN 手机号（Apollo mobile）必须可达 WhatsApp', async () => {
@@ -196,7 +237,12 @@ test('Apollo 富化：CN 手机号（Apollo mobile）必须可达 WhatsApp', asy
     }),
   })
 
-  const result = await adapter.enrichFromApollo({ domain: 'https://cnfirm.cn', company: 'CNFIRM', country: 'CN' })
+  const result = await adapter.enrichFromApollo({
+    domain: 'https://cnfirm.cn',
+    company: 'CNFIRM',
+    country: 'CN',
+    person: { name: 'Li Wei' },
+  })
 
   assert.equal(result.phoneKind, 'mobile')
   assert.equal(result.phoneReachable, true)
@@ -217,7 +263,11 @@ test('Apollo 富化：座机 / 非 mobile 类型**不得**被夸大为 mobile', 
     }),
   })
 
-  const result = await adapter.enrichFromApollo({ domain: 'https://usfirm.com', country: 'US' })
+  const result = await adapter.enrichFromApollo({
+    domain: 'https://usfirm.com',
+    country: 'US',
+    person: { name: 'John Smith' },
+  })
 
   assert.equal(result.used, true)
   assert.equal(result.phone, '+1 832 555 9999')
@@ -242,7 +292,11 @@ test('Apollo 富化：多条电话必须**优先选 mobile** 类型', async () =
     }),
   })
 
-  const result = await adapter.enrichFromApollo({ domain: 'https://usfirm.com', country: 'US' })
+  const result = await adapter.enrichFromApollo({
+    domain: 'https://usfirm.com',
+    country: 'US',
+    person: { name: 'John Smith' },
+  })
 
   assert.equal(result.phone, '+1 832 555 0002', '必须优先返回 mobile 类型号码')
   assert.equal(result.phoneKind, 'mobile')
@@ -253,7 +307,10 @@ test('Apollo 富化：仅邮箱或仅电话命中都算 used（部分回填仍�
     secretValue: 'mock-key-123456',
     fetchImpl: () => ({ ok: true, status: 200, json: async () => ({ person: { email: 'a@b.com' } }) }),
   })
-  const emailResult = await emailOnly.adapter.enrichFromApollo({ domain: 'https://b.com' })
+  const emailResult = await emailOnly.adapter.enrichFromApollo({
+    domain: 'https://b.com',
+    person: { email: 'a@b.com' },
+  })
   assert.equal(emailResult.used, true)
   assert.equal(emailResult.email, 'a@b.com')
   assert.equal(emailResult.phone, undefined)
@@ -267,7 +324,11 @@ test('Apollo 富化：仅邮箱或仅电话命中都算 used（部分回填仍�
       json: async () => ({ person: { phone_numbers: [{ sanitized_number: '+49 151 1234567', type: 'mobile' }] } }),
     }),
   })
-  const phoneResult = await phoneOnly.adapter.enrichFromApollo({ domain: 'https://d.de', country: 'DE' })
+  const phoneResult = await phoneOnly.adapter.enrichFromApollo({
+    domain: 'https://d.de',
+    country: 'DE',
+    person: { name: 'Hans Mueller' },
+  })
   assert.equal(phoneResult.used, true)
   assert.equal(phoneResult.phoneKind, 'mobile')
 })

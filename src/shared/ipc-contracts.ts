@@ -423,6 +423,7 @@ export type DataSourceType =
   | 'linkedin_search'
   | 'facebook_search'
   | 'anysearch'
+  | 'serper'
 
 export type DecisionMaker = {
   name: string

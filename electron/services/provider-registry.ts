@@ -12,6 +12,8 @@ export type ProviderQuery = {
   googleBaseUrl?: string
   anysearchApiKey?: string
   anysearchBaseUrl?: string
+  /* 2026-10-17：Serper（可选 BYOK Google 网页来源）密钥——独立槽，不回退 SerpApi。 */
+  serperApiKey?: string
   timeoutMs?: number
 }
 
@@ -62,6 +64,7 @@ export type ProviderConfig = {
   googleKey?: string
   anysearchApiKey?: string
   anysearchBaseUrl?: string
+  serperApiKey?: string
 }
 
 export interface SearchProvider {
@@ -112,6 +115,7 @@ export class ProviderRegistry {
       googleKey: query.googleKey,
       anysearchApiKey: query.anysearchApiKey,
       anysearchBaseUrl: query.anysearchBaseUrl,
+      serperApiKey: query.serperApiKey,
     }
     const targets = (
       ids ? (ids.map((id) => this.providers.get(id)).filter(Boolean) as SearchProvider[]) : this.getAll()

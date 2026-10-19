@@ -53,6 +53,7 @@ const DATA_SOURCE_LABELS: Record<string, string> = {
   facebook_search: 'Facebook',
   yellow_pages: '黄页',
   anysearch: 'AnySearch',
+  serper: 'Serper 网页',
 }
 
 const DATA_SOURCE_COLORS: Record<string, string> = {
@@ -64,6 +65,7 @@ const DATA_SOURCE_COLORS: Record<string, string> = {
   facebook_search: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   yellow_pages: 'bg-amber-50 text-amber-700 border-amber-200',
   anysearch: 'bg-slate-100 text-slate-700 border-slate-200',
+  serper: 'bg-indigo-50 text-indigo-700 border-indigo-200',
 }
 
 const stripInternalMarkers = (items?: string[]) =>

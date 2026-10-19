@@ -511,6 +511,7 @@ if (import.meta.env.DEV) {
             providers: [
               { id: 'google_maps', name: 'SerpApi Google Maps', available: true, requiredConfig: ['googleKey'] },
               { id: 'google_organic', name: 'SerpApi Google Organic', available: true, requiredConfig: ['googleKey'] },
+              { id: 'serper', name: 'Serper (Google)', available: true, requiredConfig: ['serperApiKey'] },
               {
                 id: 'anysearch',
                 name: 'AnySearch Multi-Source',

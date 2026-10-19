@@ -66,10 +66,29 @@ export interface ApolloEnrichResult {
   contactLinkedinUrl?: string
   /** Apollo 自报的匹配置信度（`high` / `medium` / `low` / `none`）；缺失时不臆造。 */
   matchConfidence?: string
+  /** Phase 1 / R1：供应商稳定人员 ID（Apollo `person.id`），用作联系人级缓存隔离最强标识。 */
+  contactId?: string
+  /**
+   * Phase 1 / R2（2026-10-17）：本次请求是否**基于真实人员标识**（邮箱/姓名/LinkedIn/ID）。
+   * `false` 表示仅按公司字段匹配 —— `people/match` 契约下不可靠，**不得冒认**为某指定联系人的已确认数据。
+   */
+  matchedPersonIdentity?: boolean
   /** 是否真正消耗了一次 Apollo 查询并得到可用数据。 */
   used: boolean
   source: 'apollo'
+  /** Phase 1 / R2：失败**原因类别**（`used:false` 时为具体原因），供调用方如实记账。 */
+  failureKind?: ApolloFailureKind
 }
+
+/** Apollo 富化的失败原因类别（Fail-Closed 下 `used:false` 的细分）。 */
+export type ApolloFailureKind =
+  | 'missing_key'
+  | 'no_target'
+  | 'insufficient_identifier'
+  | 'http_error'
+  | 'api_error'
+  | 'no_match'
+  | 'network_error'
 
 const EMPTY_RESULT: ApolloEnrichResult = {
   email: undefined,
@@ -81,9 +100,14 @@ const EMPTY_RESULT: ApolloEnrichResult = {
   contactTitle: undefined,
   contactLinkedinUrl: undefined,
   matchConfidence: undefined,
+  contactId: undefined,
+  matchedPersonIdentity: undefined,
   used: false,
   source: 'apollo',
 }
+
+/** Fail-Closed 出口：附带**失败原因类别**（`used:false`），供调用方如实记账。 */
+const fail = (kind: ApolloFailureKind): ApolloEnrichResult => ({ ...EMPTY_RESULT, failureKind: kind })
 
 /** Apollo 自报为「已验证」的邮箱状态（大小写不敏感比较）。 */
 export const APOLLO_VERIFIED_EMAIL_STATUS = 'verified'
@@ -113,26 +137,54 @@ export const enrichFromApollo = async (payload: {
   domain?: string
   company?: string
   country?: string
+  /**
+   * Phase 1 / R2：**人员标识**（`people/match` 契约要求）。
+   * 仅凭 domain/company 的请求不满足契约 → 不发起（见函数体注释）。
+   */
+  person?: { email?: string; name?: string; linkedinUrl?: string; id?: string }
+  /**
+   * 是否请求手机揭示（默认 `false`）。
+   * 标准同步端点**不支持**手机揭示（需 `webhook_url`/`poll_only`），开启会被官方
+   * `400 WEBHOOK_URL_REQUIRED` 拒绝；接入异步通道前保持关闭。
+   */
+  revealPhone?: boolean
   /** 单次请求超时（默认 15s，与 WEBSITE_PROBE_TIMEOUT_MS 同量级）。 */
   timeoutMs?: number
 }): Promise<ApolloEnrichResult> => {
   const apiKey = getUserApolloApiKey()
   if (!apiKey) {
-    return EMPTY_RESULT
+    return fail('missing_key')
   }
 
   const domain = extractDomainFromUrl(payload.domain || payload.company || '') || ''
-  if (!domain && !payload.company) {
-    return EMPTY_RESULT
+  const email = String(payload.person?.email || '').trim()
+  const name = String(payload.person?.name || '').trim()
+  const linkedinUrl = String(payload.person?.linkedinUrl || '').trim()
+  const personId = String(payload.person?.id || '').trim()
+  const hasPersonIdentifier = Boolean(email || name || linkedinUrl || personId)
+  const hasTarget = Boolean(domain || payload.company || email || linkedinUrl || personId)
+  if (!hasTarget) {
+    return fail('no_target')
+  }
+  /* Phase 1 / R2（B1）：`people/match` **不是**公司范围内的「找人」接口。仅凭 company/domain
+     无法满足契约 → **不发起请求**。域名 → 决策人 的已授权能力是 Prospeo `search-person`；
+     公司级 Apollo 搜索属独立后续设计（不在本轮范围）。 */
+  if (!hasPersonIdentifier) {
+    return fail('insufficient_identifier')
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     api_key: apiKey,
     domain: domain || undefined,
     company: payload.company || undefined,
     reveal_personal_emails: true,
-    reveal_phone_number: true,
+    /* Phase 1 / R2（B2）：无异步通道时恒为 false（避免 400 WEBHOOK_URL_REQUIRED 拖垮整个请求）。 */
+    reveal_phone_number: Boolean(payload.revealPhone),
   }
+  if (email) body.email = email
+  if (name) body.name = name
+  if (linkedinUrl) body.linkedin_url = linkedinUrl
+  if (personId) body.id = personId
 
   try {
     const response = await fetchWithTimeout(
@@ -147,10 +199,11 @@ export const enrichFromApollo = async (payload: {
 
     /* Fail-Closed：429（限流/额度）或任一非 2xx → 不抛错，降级到官网抓取。 */
     if (!response.ok) {
-      return EMPTY_RESULT
+      return fail('http_error')
     }
 
     const json: any = await response.json().catch(() => ({}))
+    if (json?.error) return fail('api_error')
     const person = json?.person || (Array.isArray(json?.people) ? json.people[0] : undefined) || {}
 
     /* Step 4：Apollo 自报的匹配置信度。`none` = 未找到匹配记录 ——
@@ -172,7 +225,7 @@ export const enrichFromApollo = async (payload: {
     const contactLinkedinUrl = noMatch ? '' : String(person?.linkedin_url || '').trim()
 
     if (!email && !bestPhone && !contactName) {
-      return EMPTY_RESULT
+      return fail('no_match')
     }
 
     const countryCode = resolveCountryCode(payload.country) || ''
@@ -197,11 +250,13 @@ export const enrichFromApollo = async (payload: {
       contactTitle: contactTitle || undefined,
       contactLinkedinUrl: contactLinkedinUrl || undefined,
       matchConfidence: matchConfidence || undefined,
+      contactId: String(person?.id || '').trim() || undefined,
+      matchedPersonIdentity: hasPersonIdentifier,
       used: Boolean(email || bestPhone || contactName),
       source: 'apollo',
     }
   } catch {
     /* 网络异常 / 超时 / 解析失败 → Fail-Closed。 */
-    return EMPTY_RESULT
+    return fail('network_error')
   }
 }

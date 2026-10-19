@@ -41,6 +41,8 @@ const secretKeysByProvider: Record<string, string> = {
   apollo: 'secrets.apollo.apiKey',
   /* 2026-10-13：Prospeo 作为 Apollo 的低成本前置（邮箱 1 credit / 手机 10 credits） */
   prospeo: 'secrets.prospeo.apiKey',
+  /* 2026-10-17：Serper（自备密钥的可选 Google 网页来源，BYOK，与 SerpApi 分列） */
+  serper: 'secrets.serper.apiKey',
 }
 
 interface SystemSettingsProps {
@@ -63,6 +65,14 @@ export function SystemSettings({ userRole: _userRole }: SystemSettingsProps) {
   const defaultConfigs: ApiKeyConfig[] = [
     { id: 'llm', name: '智能决策大脑 (LLM)', icon: Cpu, key: '', baseUrl: '', status: 'pending' },
     { id: 'google-leads', name: 'SerpApi（Google 搜索 / 地图）', icon: Globe, key: '', baseUrl: '', status: 'pending' },
+    {
+      id: 'serper',
+      name: 'Serper (Google) 网页搜索（自备密钥·可选）',
+      icon: Globe,
+      key: '',
+      baseUrl: '',
+      status: 'pending',
+    },
     { id: 'anysearch', name: '@ AnySearch B2B 多维数据穿透雷达', icon: Radar, key: '', baseUrl: '', status: 'pending' },
     {
       id: 'prospeo',

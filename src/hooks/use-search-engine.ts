@@ -68,6 +68,7 @@ type SearchDataSource =
   | 'yellow_pages'
   | 'linkedin_search'
   | 'facebook_search'
+  | 'serper'
 
 const buildSearchKeyword = (keyword: string, _dataSource: SearchDataSource) => {
   const normalizedKeyword = keyword
@@ -251,6 +252,9 @@ export interface UseSearchEngineReturn {
   hasSearched: boolean
   searchKeyword: string
   setSearchKeyword: (keyword: string) => void
+  /* 2026-10-17（Phase 2B-Lite.1）：手动搜索来源选择器（'default' 保持盲搜语义） */
+  manualSearchSource: 'default' | 'serper'
+  setManualSearchSource: (source: 'default' | 'serper') => void
   searchCountry: string
   setSearchCountry: (country: string) => void
   searchCity: string
@@ -312,6 +316,9 @@ export function useSearchEngine(): UseSearchEngineReturn {
   const [hasSearched, setHasSearched] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchDataSource] = useState<SearchDataSource>('google_maps')
+  /* 2026-10-17（Phase 2B-Lite.1）：手动搜索的「搜索来源」选择器——'default' 保持既有
+     盲搜语义（payload.dataSourceType 仍为 undefined）；显式选 'serper' 时仅调用 Serper。 */
+  const [manualSearchSource, setManualSearchSource] = useState<'default' | 'serper'>('default')
   const [searchCountry, setSearchCountry] = useState('')
   const [searchCity, setSearchCity] = useState('')
   const [emptyStateMessage, setEmptyStateMessage] = useState('')
@@ -694,7 +701,9 @@ export function useSearchEngine(): UseSearchEngineReturn {
         keyword: searchKeywordForRequest,
         country: searchCountry,
         city: searchCity,
-        dataSourceType: undefined,
+        /* 2026-10-17：'default' 保持 undefined（全模式盲搜，既有语义不变）；
+           显式选择 serper 时才传 'serper'（主进程据此只派发 Serper 单源）。 */
+        dataSourceType: manualSearchSource === 'serper' ? 'serper' : undefined,
         filterOptions: {
           priorityWebsite: officialOnlyEnabled,
           localDomainOnly: localDomainOnlyEnabled,
@@ -813,6 +822,8 @@ export function useSearchEngine(): UseSearchEngineReturn {
     hasSearched,
     searchKeyword,
     setSearchKeyword,
+    manualSearchSource,
+    setManualSearchSource,
     searchCountry,
     setSearchCountry,
     searchCity,

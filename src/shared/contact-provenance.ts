@@ -49,6 +49,62 @@ export type ContactProvenance = {
   contact?: ContactFieldProvenance
 }
 
+/**
+ * 归一化 LinkedIn 个人主页 URL → 稳定的 `/in/<slug>` 标识（小写）。
+ * 无法解析出个人主页时返回 `''`（不臆造）。
+ */
+export const normalizeLinkedInSlug = (url?: string | null): string => {
+  const raw = String(url || '').trim()
+  if (!raw) return ''
+  const match = raw.match(/linkedin\.com\/in\/([^/?#]+)/i)
+  return match ? match[1].trim().toLowerCase() : ''
+}
+
+/**
+ * 派生**联系人级缓存隔离键**（Phase 1 / R1，2026-10-17）。
+ *
+ * ## 为什么需要
+ * 富化缓存此前只有 `provider|domain|field` 三段，**同一域名下的不同联系人会命中同一条缓存**
+ * （A 联系人补全的手机/邮箱被串给 B 联系人）——审计 R1。联系人级联系方式必须**按联系人隔离**。
+ *
+ * ## 优先级（去标识最强 → 最弱）
+ * 1. 供应商稳定人员 ID（`person_id` / `id`）；
+ * 2. 标准化 LinkedIn `/in/<slug>`；
+ * 3. 邮箱（归一为小写）；
+ * 4. **来源提供的**联系人姓名（仅作**分区**用途，防止不同姓名共享；**不用于跨来源身份匹配**，
+ *    故不使用「职位」这类可变文本，也**不猜测**身份）；
+ * 5. 都没有 → `-`（**公司级候选**作用域：仅由同样无联系人标识的查询复用，绝不满足**指定联系人**）。
+ *
+ * 返回值会作为缓存键的**第 4 段**；其中不得包含 `|`（缓存键分隔符），已统一剔除。
+ */
+export const deriveContactScopeKey = (
+  input?: {
+    personId?: string | null
+    linkedinUrl?: string | null
+    email?: string | null
+    contactName?: string | null
+  } | null,
+): string => {
+  const strip = (value: string) => value.replace(/\|/g, '').trim()
+
+  const personId = strip(String(input?.personId || ''))
+  if (personId) return `pid:${personId.toLowerCase()}`
+
+  const linkedin = normalizeLinkedInSlug(input?.linkedinUrl)
+  if (linkedin) return `li:${strip(linkedin)}`
+
+  const email = strip(String(input?.email || '')).toLowerCase()
+  if (email) return `em:${email}`
+
+  /* 姓名仅用于**分区**（同名同域者仍可能共享，属既有限制）：去除可变的职位文本，不猜身份。 */
+  const name = strip(String(input?.contactName || ''))
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  if (name) return `nm:${name}`
+
+  return '-'
+}
+
 /** 档位显示名（UI 统一口径，避免各处硬编码漂移）。 */
 export const CONTACT_TIER_LABEL: Record<ContactTier, string> = {
   verified: '已验证',

@@ -22,6 +22,12 @@ export const DATASOURCE_META_MAP: Record<DataSourceType, DataSourceMeta> = {
   linkedin_search: { label: 'LinkedIn', shortLabel: 'LinkedIn', color: 'bg-blue-50 text-blue-700 border-blue-200' },
   facebook_search: { label: 'Facebook', shortLabel: 'FB', color: 'bg-blue-50 text-blue-600 border-blue-200' },
   anysearch: { label: 'AnySearch', shortLabel: 'Any', color: 'bg-teal-50 text-teal-700 border-teal-200' },
+  /* 2026-10-17：Serper（自备密钥的可选 Google 网页来源）。与 google_organic 分列，保证来源标注诚实。 */
+  serper: {
+    label: '网页搜索（Serper）',
+    shortLabel: 'Serper',
+    color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  },
 }
 
 export const DATASOURCE_LABEL_LOOKUP: Record<string, DataSourceMeta> = DATASOURCE_META_MAP

@@ -7,6 +7,7 @@ import { CustomsShipmentProvider } from './customs-shipment-provider'
 import { TradeShowProvider } from './trade-show-provider'
 import { YellowPagesProvider } from './yellow-pages-provider'
 import { FacebookSearchProvider } from './facebook-search-provider'
+import { SerperProvider } from './serper-provider'
 
 export function createDefaultProviderRegistry(): ProviderRegistry {
   const registry = new ProviderRegistry()
@@ -19,6 +20,7 @@ export function createDefaultProviderRegistry(): ProviderRegistry {
   registry.register(new TradeShowProvider())
   registry.register(new YellowPagesProvider())
   registry.register(new FacebookSearchProvider())
+  registry.register(new SerperProvider())
 
   return registry
 }

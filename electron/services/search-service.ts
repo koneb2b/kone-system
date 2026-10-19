@@ -7,24 +7,17 @@ import { resolveCountryCode } from '../../src/lib/country-code'
 /* 联系方式来源与可信度（三档）—— 双端 SSOT */
 import {
   pickContactWithProvenance,
+  deriveContactScopeKey,
   type ContactFieldProvenance,
   type ContactProvenance,
   type ContactTier,
 } from '../../src/shared/contact-provenance'
+/* 邮箱可用性判定 SSOT（Phase 1 / R2）：仅"符合验证标准"的结果方可终止回退 */
+import { assessEmailUsability } from '../../src/shared/email-availability'
 /* 用户「相关 / 不相关」反馈闭环（S4c）—— 本地、零成本，让匹配精度**越用越准** */
 import { applyFeedbackAdjustment, deriveFeedbackKey, type LeadFeedbackMap } from '../../src/shared/lead-feedback'
-import {
-  enrichFromApollo,
-  getUserApolloApiKey,
-  APOLLO_VERIFIED_EMAIL_STATUS,
-  type ApolloEnrichResult,
-} from './search/enrich-apollo'
-import {
-  enrichFromProspeo,
-  getUserProspeoApiKey,
-  PROSPEO_VERIFIED_EMAIL_STATUS,
-  type ProspeoEnrichResult,
-} from './search/enrich-prospeo'
+import { enrichFromApollo, getUserApolloApiKey, type ApolloEnrichResult } from './search/enrich-apollo'
+import { enrichFromProspeo, getUserProspeoApiKey, type ProspeoEnrichResult } from './search/enrich-prospeo'
 /* Step 3（2026-10-16 数据链路审计）：补全调用账本 + 字段级去重缓存 */
 import { recordEnrichmentCall, type RecordEnrichmentCallInput } from './search/enrichment-ledger'
 import { buildEnrichmentCacheKey, getEnrichmentCached, setEnrichmentCached } from './search/enrichment-cache'
@@ -243,7 +236,7 @@ const emitStage = (
     | 'complete'
     | 'localized_search',
   message: string,
-  searchMode?: 'anysearch' | 'maps' | 'maps-keyword-fallback' | 'organic-fallback',
+  searchMode?: 'anysearch' | 'maps' | 'maps-keyword-fallback' | 'organic-fallback' | 'serper',
   extra?: Record<string, unknown>,
 ) => {
   sender.send(IPC_CHANNELS.SEARCH.STAGE, { stage, message, searchMode, ...extra })
@@ -1098,6 +1091,118 @@ const pickBestPhoneForReach = (
   return { phone: '' }
 }
 
+/* ── Phase 1 / R1：联系人级、字段级的富化缓存读写 ──────────────────────────────
+   键为 `provider|domain|field|contactScope`，**按联系人隔离**（同域不同联系人不串值）；
+   身份（30d）/邮箱（14d）/手机（14d）**分别**写入，各自尊重 TTL
+   （不再把整坨结果继承 identity 的 30 天 TTL）。仅「无任何联系人标识的公司级查询」用 `-` 作用域，
+   且 `-` 结果**绝不被**任何有联系人标识的查询读取。 */
+type CachedEnrichIdentity = {
+  contactId?: string
+  contactName?: string
+  contactTitle?: string
+  contactLinkedinUrl?: string
+  matchConfidence?: string
+  matchedPersonIdentity?: boolean
+}
+type CachedEnrichEmail = { email?: string; emailStatus?: string; attempted: true }
+type CachedEnrichMobile = { phone?: string; phoneKind: string; phoneReachable: boolean; attempted: true }
+
+const readCachedProspeo = (domain: string, scope: string, needMobile: boolean): ProspeoEnrichResult | null => {
+  const identity = getEnrichmentCached<CachedEnrichIdentity>(
+    buildEnrichmentCacheKey('prospeo', domain, 'identity', scope),
+  )
+  if (!identity) return null
+  /* 邮箱是核心交付物：其 14d 条目缺失（过期/从未写入）→ 不以身份命中充当完整结果，触发刷新。 */
+  const emailEntry = getEnrichmentCached<CachedEnrichEmail>(buildEnrichmentCacheKey('prospeo', domain, 'email', scope))
+  if (!emailEntry) return null
+  const mobileEntry = needMobile
+    ? getEnrichmentCached<CachedEnrichMobile>(buildEnrichmentCacheKey('prospeo', domain, 'mobile', scope))
+    : undefined
+  if (needMobile && !mobileEntry) return null
+  return {
+    contactId: identity.contactId,
+    contactName: identity.contactName,
+    contactTitle: identity.contactTitle,
+    contactLinkedinUrl: identity.contactLinkedinUrl,
+    email: emailEntry.email,
+    emailStatus: emailEntry.emailStatus,
+    phone: mobileEntry?.phone,
+    phoneKind: (mobileEntry?.phoneKind as ProspeoEnrichResult['phoneKind']) || 'unknown',
+    phoneReachable: Boolean(mobileEntry?.phoneReachable),
+    used: true,
+    source: 'prospeo',
+  }
+}
+
+const writeCachedProspeo = (
+  domain: string,
+  scope: string,
+  result: ProspeoEnrichResult,
+  includeMobile: boolean,
+): void => {
+  setEnrichmentCached(buildEnrichmentCacheKey('prospeo', domain, 'identity', scope), {
+    contactId: result.contactId,
+    contactName: result.contactName,
+    contactTitle: result.contactTitle,
+    contactLinkedinUrl: result.contactLinkedinUrl,
+  } satisfies CachedEnrichIdentity)
+  /* 无论是否揭示成功都写 email 条目（`attempted` 标记）：命中身份即可避免短期内重复付费找人；
+     邮箱不可用时如实存空，不臆造。 */
+  setEnrichmentCached(buildEnrichmentCacheKey('prospeo', domain, 'email', scope), {
+    email: result.email,
+    emailStatus: result.emailStatus,
+    attempted: true,
+  } satisfies CachedEnrichEmail)
+  if (includeMobile) {
+    setEnrichmentCached(buildEnrichmentCacheKey('prospeo', domain, 'mobile', scope), {
+      phone: result.phone,
+      phoneKind: result.phoneKind,
+      phoneReachable: result.phoneReachable,
+      attempted: true,
+    } satisfies CachedEnrichMobile)
+  }
+}
+
+const readCachedApollo = (domain: string, scope: string): ApolloEnrichResult | null => {
+  const identity = getEnrichmentCached<CachedEnrichIdentity>(
+    buildEnrichmentCacheKey('apollo', domain, 'identity', scope),
+  )
+  if (!identity) return null
+  const emailEntry = getEnrichmentCached<CachedEnrichEmail>(buildEnrichmentCacheKey('apollo', domain, 'email', scope))
+  if (!emailEntry) return null
+  return {
+    contactId: identity.contactId,
+    contactName: identity.contactName,
+    contactTitle: identity.contactTitle,
+    contactLinkedinUrl: identity.contactLinkedinUrl,
+    matchConfidence: identity.matchConfidence,
+    matchedPersonIdentity: identity.matchedPersonIdentity,
+    email: emailEntry.email,
+    emailStatus: emailEntry.emailStatus,
+    phone: undefined,
+    phoneKind: 'unknown',
+    phoneReachable: false,
+    used: true,
+    source: 'apollo',
+  }
+}
+
+const writeCachedApollo = (domain: string, scope: string, result: ApolloEnrichResult): void => {
+  setEnrichmentCached(buildEnrichmentCacheKey('apollo', domain, 'identity', scope), {
+    contactId: result.contactId,
+    contactName: result.contactName,
+    contactTitle: result.contactTitle,
+    contactLinkedinUrl: result.contactLinkedinUrl,
+    matchConfidence: result.matchConfidence,
+    matchedPersonIdentity: result.matchedPersonIdentity,
+  } satisfies CachedEnrichIdentity)
+  setEnrichmentCached(buildEnrichmentCacheKey('apollo', domain, 'email', scope), {
+    email: result.email,
+    emailStatus: result.emailStatus,
+    attempted: true,
+  } satisfies CachedEnrichEmail)
+}
+
 const enrichLeadWithDeepProbe = async (payload: {
   candidate: Partial<SearchExecuteResult>
   llmEndpoint: string
@@ -1148,6 +1253,25 @@ const enrichLeadWithDeepProbe = async (payload: {
   const allowEmailEnrich = payload.enrichmentOptions?.email !== false
   const allowMobileEnrich = payload.enrichmentOptions?.mobile === true
 
+  /* Phase 1 / R1：联系人级缓存隔离键 —— 由线索自带的联系人标识派生（稳定 ID > LinkedIn > 邮箱 > 姓名）。
+     个人邮箱/手机必须按此作用域缓存，杜绝同域不同联系人串值（审计 R1）。 */
+  const enrichDomain = website || String(payload.candidate.company || '')
+  const contactScope = deriveContactScopeKey({
+    linkedinUrl: payload.candidate.decisionMakers?.[0]?.linkedinUrl,
+    email: payload.candidate.email,
+    contactName: payload.candidate.contact,
+  })
+  /* Phase 1 / R2（B1）：Apollo `people/match` 需要**人员标识**；仅凭公司字段不满足契约。
+     优先用线索已带的邮箱/姓名/LinkedIn 作为匹配标识。 */
+  const apolloPersonIdentifier = {
+    email: String(payload.candidate.email || '').trim() || undefined,
+    name: String(payload.candidate.contact || '').trim() || undefined,
+    linkedinUrl: String(payload.candidate.decisionMakers?.[0]?.linkedinUrl || '').trim() || undefined,
+  }
+  const hasApolloPersonIdentifier = Boolean(
+    apolloPersonIdentifier.email || apolloPersonIdentifier.name || apolloPersonIdentifier.linkedinUrl,
+  )
+
   let prospeo: ProspeoEnrichResult | null = null
   try {
     const prospeoKey = getUserProspeoApiKey()
@@ -1180,13 +1304,9 @@ const enrichLeadWithDeepProbe = async (payload: {
     } else if (!emailBudget || emailBudget.used >= emailBudget.limit) {
       pushEnrichmentCall({ provider: 'prospeo', field: 'identity', status: 'skipped_budget' })
     } else {
-      /* Step 3：字段级去重缓存 —— 命中即**不发起请求**，天然不消耗额度。 */
-      const identityCacheKey = buildEnrichmentCacheKey(
-        'prospeo',
-        website || String(payload.candidate.company || ''),
-        'identity',
-      )
-      const cachedProspeo = getEnrichmentCached<ProspeoEnrichResult>(identityCacheKey)
+      /* Step 3：字段级去重缓存 —— 命中即**不发起请求**，天然不消耗额度。
+         Phase 1 / R1：按 `contactScope` 隔离，身份/邮箱/手机**分别**按各自 TTL 读写。 */
+      const cachedProspeo = readCachedProspeo(enrichDomain, contactScope, wantMobile)
       if (cachedProspeo) {
         prospeo = cachedProspeo
         pushEnrichmentCall({
@@ -1209,7 +1329,7 @@ const enrichLeadWithDeepProbe = async (payload: {
         })
         if (result.used) {
           prospeo = result
-          setEnrichmentCached(identityCacheKey, result)
+          writeCachedProspeo(enrichDomain, contactScope, result, wantMobile)
           pushEnrichmentCall({
             provider: 'prospeo',
             field: 'identity',
@@ -1239,9 +1359,9 @@ const enrichLeadWithDeepProbe = async (payload: {
           pushEnrichmentCall({
             provider: 'prospeo',
             field: 'identity',
-            status: 'miss',
+            status: result.failureKind === 'no_match' ? 'miss' : 'error',
             billingUnit: 'credit',
-            detail: 'search-person 无命中（公布价 1 credit，未与账单核对）',
+            detail: `search-person 未产出（原因=${result.failureKind || 'unknown'}；公布价 1 credit，未与账单核对）`,
           })
         }
       }
@@ -1253,9 +1373,11 @@ const enrichLeadWithDeepProbe = async (payload: {
 
   let apollo: ApolloEnrichResult | null = null
   try {
-    /* Step 2D：**第二供应商只在首选未给出符合要求的结果时**才执行。
-       「符合要求」= 拿到了邮箱（Prospeo 未拿到邮箱才回退 Apollo），避免重复付费。 */
-    const prospeoHasQualifyingEmail = Boolean(prospeo?.email)
+    /* Step 2D：**第二供应商只在首选未给出"符合验证标准"的结果时**才执行。
+       Phase 1 / R2（B3）：判据由 `Boolean(prospeo.email)` 收紧为「邮箱达到 `verified` 档」——
+       UNKNOWN/RISKY/CATCH_ALL 等未证实地址**不得**终止回退（审计 R2）。 */
+    const prospeoHasQualifyingEmail =
+      assessEmailUsability({ email: prospeo?.email, status: prospeo?.emailStatus }).tier === 'verified'
     if (!payload.highValue) {
       pushEnrichmentCall({ provider: 'apollo', field: 'email', status: 'skipped_not_high_value' })
     } else if (!payload.enrichBudget || !getUserApolloApiKey()) {
@@ -1270,17 +1392,22 @@ const enrichLeadWithDeepProbe = async (payload: {
         provider: 'apollo',
         field: 'email',
         status: 'skipped_not_opted_in',
-        detail: '首选供应商已给出邮箱，按 Step 2D 不重复调用',
+        detail: '首选供应商已给出符合验证标准的邮箱，按 Step 2D 不重复调用',
+      })
+    } else if (!hasApolloPersonIdentifier) {
+      /* Phase 1 / R2（B1）：无人员标识 → `people/match` 契约不满足，**不发起请求**
+         （不靠关闭手机揭示参数来"伪装"已解决；域名找人由 Prospeo 承担）。 */
+      pushEnrichmentCall({
+        provider: 'apollo',
+        field: 'email',
+        status: 'skipped_no_identifier',
+        detail: '缺少人员标识（邮箱/姓名/LinkedIn），people/match 契约不满足',
       })
     } else if (payload.enrichBudget.used >= payload.enrichBudget.limit) {
       pushEnrichmentCall({ provider: 'apollo', field: 'email', status: 'skipped_budget' })
     } else {
-      const apolloCacheKey = buildEnrichmentCacheKey(
-        'apollo',
-        website || String(payload.candidate.company || ''),
-        'identity',
-      )
-      const cachedApollo = getEnrichmentCached<ApolloEnrichResult>(apolloCacheKey)
+      /* Phase 1 / R1：Apollo 结果同样按 `contactScope` 隔离缓存（身份 30d / 邮箱 14d 分写）。 */
+      const cachedApollo = readCachedApollo(enrichDomain, contactScope)
       if (cachedApollo) {
         apollo = cachedApollo
         pushEnrichmentCall({
@@ -1297,10 +1424,11 @@ const enrichLeadWithDeepProbe = async (payload: {
           domain: website,
           company: String(payload.candidate.company || '').trim(),
           country: payload.country,
+          person: apolloPersonIdentifier,
         })
         if (result.used) {
           apollo = result
-          setEnrichmentCached(apolloCacheKey, result)
+          writeCachedApollo(enrichDomain, contactScope, result)
           pushEnrichmentCall({
             provider: 'apollo',
             field: 'identity',
@@ -1309,7 +1437,13 @@ const enrichLeadWithDeepProbe = async (payload: {
             detail: `people/match（公布价 1-9 credits，match_confidence=${result.matchConfidence || 'unknown'}）`,
           })
         } else {
-          pushEnrichmentCall({ provider: 'apollo', field: 'identity', status: 'miss', billingUnit: 'credit' })
+          pushEnrichmentCall({
+            provider: 'apollo',
+            field: 'identity',
+            status: result.failureKind === 'no_match' ? 'miss' : 'error',
+            billingUnit: 'credit',
+            detail: `people/match 未产出（原因=${result.failureKind || 'unknown'}）`,
+          })
         }
       }
     }
@@ -1385,10 +1519,16 @@ const enrichLeadWithDeepProbe = async (payload: {
      邮箱可信档**如实标注**：Prospeo/Apollo 仅在**自报状态为已验证**时才算 `verified`，
      否则降为 `extracted` —— 不把「供应商返回了」等同于「已验证」（审计 D-3/D-4）。 */
   const enrichAt = Date.now()
+  /* Phase 1 / R2（B3）：可信档统一由 `assessEmailUsability` 判定（集中、可测试的邮箱可用性 SSOT）。
+     仅供应商**自报已验证**才记 `verified`，其余（UNKNOWN/RISKY/CATCH_ALL…）一律降为 `extracted`。 */
   const prospeoEmailTier: ContactTier =
-    String(prospeo?.emailStatus || '').toUpperCase() === PROSPEO_VERIFIED_EMAIL_STATUS ? 'verified' : 'extracted'
+    assessEmailUsability({ email: prospeo?.email, status: prospeo?.emailStatus }).tier === 'verified'
+      ? 'verified'
+      : 'extracted'
   const apolloEmailTier: ContactTier =
-    String(apollo?.emailStatus || '').toLowerCase() === APOLLO_VERIFIED_EMAIL_STATUS ? 'verified' : 'extracted'
+    assessEmailUsability({ email: apollo?.email, status: apollo?.emailStatus }).tier === 'verified'
+      ? 'verified'
+      : 'extracted'
   const emailPick = pickContactWithProvenance([
     {
       value: prospeo?.email,
@@ -1799,6 +1939,8 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         const llmConfig = providers.find((k) => k.id === 'llm')
         const googleKey = getSecret(googleConfig.secretKey).trim()
         const googleBaseUrl = googleConfig.baseUrl
+        /* 2026-10-17：Serper（可选 BYOK 网页来源）独立密钥槽，不回退 SerpApi。 */
+        const serperKey = getSecret(SECRET_KEYS.SERPER_API_KEY).trim()
         const llmKey = getUserLlmApiKey(store)
         const llmBaseUrl = llmConfig?.baseUrl?.trim()
         const hasLlmConfig = Boolean(llmKey && llmBaseUrl)
@@ -1832,7 +1974,20 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         })
 
         const llmEndpoint = hasLlmConfig ? buildLlmEndpoint(llmBaseUrl || '') : ''
-        if (!googleKey || !googleBaseUrl) {
+        /* 2026-10-17（Phase 2B-Lite.1）：Serper 单源放行。
+           serper 是独立 DataSourceType（不复用 google_organic 槽）：用户在搜索页显式选择
+           「单源 Serper」时 payload.dataSourceType === 'serper'，只要配置了自备密钥即放行，
+           且本轮只调用 Serper（SerpApi 主源、AnySearch 皆被跳过，见下方各分支）。
+           未配置 Serper 密钥时明确报错，绝不静默回退消耗 SerpApi/AnySearch 额度。
+           其余情况保持原门禁语义不变。 */
+        const serperOnlyMode = dataSourceType === 'serper'
+        if (serperOnlyMode && !serperKey) {
+          throw new Error(
+            '尚未配置 Serper 密钥：请先在「系统设置 → 基础配置」填写 Serper (Google) 网页搜索密钥，再使用单源搜索。',
+          )
+        }
+        const serperBypassesSerpGate = serperOnlyMode && Boolean(serperKey)
+        if ((!googleKey || !googleBaseUrl) && !serperBypassesSerpGate) {
           // ⚠️ 异常消息会沿 IPC 传到渲染层并直接显示在界面上，因此：
           //  1) 必须对用户可读（「缺少配置. Debug: key=[...], url=[...]」是开发期调试文案）
           //  2) **绝不能内插密钥或端点原文** —— 用户只填了半个 key 时原文会被回显到 UI
@@ -1954,7 +2109,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
 
         const anysearchCfg = getAnySearchConfig(store)
         const anySearchEnabled = Boolean(
-          anysearchCfg.apiKey && anysearchCfg.baseUrl && dataSourceType !== 'google_organic',
+          anysearchCfg.apiKey &&
+          anysearchCfg.baseUrl &&
+          dataSourceType !== 'google_organic' &&
+          /* 2026-10-17：serper 单源模式只调 Serper，不并行 AnySearch（避免重复调用与额外额度消耗）。 */
+          !serperOnlyMode,
         )
         if (anySearchEnabled) {
           emitStage(
@@ -1967,10 +2126,13 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         emitStage(
           _event.sender,
           'fetching',
-          dataSourceType === 'google_organic'
-            ? ' 正在通过 Google 网页搜索引擎进行全局线索采集...'
-            : '正在抓取 Google Maps / SerpApi 搜索结果...',
-          dataSourceType === 'google_organic' ? 'organic-fallback' : 'maps',
+          /* 2026-10-17：serper 单源分支——来源预告必须诚实，不得缓称 SerpApi/Maps。 */
+          serperOnlyMode
+            ? '正在通过 Serper（Google 网页搜索，自备密钥）采集线索...'
+            : dataSourceType === 'google_organic'
+              ? ' 正在通过 Google 网页搜索引擎进行全局线索采集...'
+              : '正在抓取 Google Maps / SerpApi 搜索结果...',
+          serperOnlyMode ? 'serper' : dataSourceType === 'google_organic' ? 'organic-fallback' : 'maps',
         )
 
         const isSerpApi = /serpapi\.com/i.test(googleBaseUrl)
@@ -1980,13 +2142,17 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
         if (llmHost) resetCircuitBreaker(llmHost)
 
         /* 慢源后台聚合句柄：SerpApi 分支填充真实聚合器，非 SerpApi 为空（无渐进式慢源）。
-           let 而非 const 以允许分支内赋值；双波代码（if/else 之后）在此作用域读取。 */
+           let 而非 const 以允许分支内赋值；双波代码（if/else 之后）在此作用域读取。
+           2026-10-17：serper 单源同样走双波分支（providerPromise 仅派发 serper）。 */
         let lateSourcesPromise: Promise<{ lateOrganic: any[]; lateLocal: any[] }> = Promise.resolve({
           lateOrganic: [],
           lateLocal: [],
         })
+        /* serper 单源模式收集 provider 真实失败原因：唯一来源对「0 结果 + error」时，
+           最终以明确错误冒泡到前端（见 wave2 合并后的检查），不伪装成「搜索成功但 0 条」。 */
+        const serperOnlyFailures: string[] = []
 
-        if (isSerpApi) {
+        if (isSerpApi || serperOnlyMode) {
           const attemptSearch = async (mode: SerpSearchMode, modeQuery: string, modeLocation: string) => {
             const useOrganic = mode === 'organic-keyword'
 
@@ -2107,30 +2273,35 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                     return null
                   })
                 : Promise.resolve(null)
-              const serpPromise = resolveSerpSearchPlan({
-                keyword: mutatedKeyword,
-                city,
-                country,
-                googleKey,
-                timeoutMs,
-                dataSourceType,
-                attemptSearch: (mode, modeQuery, modeLocation) => attemptSearch(mode, modeQuery, modeLocation),
-                onStage: (message, searchMode) => {
-                  if (myJobId === activeJobIdFor()) emitStage(_event.sender, 'fetching', message, searchMode)
-                },
-                onFallback: (event, detail) => {
-                  if (myJobId !== activeJobIdFor()) return
-                  if (event === 'location-rejected') {
-                    probeLog('[Probe-Fallback] Location rejected, switching to keyword-based query.', detail)
-                  }
-                  if (event === 'zero-local-organic') {
-                    probeLog(
-                      '[Probe-Fallback] Maps keyword returned zero local results, switching to Google Organic.',
-                      detail,
-                    )
-                  }
-                },
-              })
+              /* 2026-10-17：serper 单源模式不运行 SerpApi 主源（§4.1——
+                 显式选择 serper ⇒ 只调用 Serper；不消耗 SerpApi 额度，也不因 Serper
+                 空结果而回退到其它来源。activeSearchMode 标注唯一来源便于观测）。 */
+              const serpPromise = serperOnlyMode
+                ? Promise.resolve({ allOrganic: [], allLocal: [], activeSearchMode: 'serper-only' })
+                : resolveSerpSearchPlan({
+                    keyword: mutatedKeyword,
+                    city,
+                    country,
+                    googleKey,
+                    timeoutMs,
+                    dataSourceType,
+                    attemptSearch: (mode, modeQuery, modeLocation) => attemptSearch(mode, modeQuery, modeLocation),
+                    onStage: (message, searchMode) => {
+                      if (myJobId === activeJobIdFor()) emitStage(_event.sender, 'fetching', message, searchMode)
+                    },
+                    onFallback: (event, detail) => {
+                      if (myJobId !== activeJobIdFor()) return
+                      if (event === 'location-rejected') {
+                        probeLog('[Probe-Fallback] Location rejected, switching to keyword-based query.', detail)
+                      }
+                      if (event === 'zero-local-organic') {
+                        probeLog(
+                          '[Probe-Fallback] Maps keyword returned zero local results, switching to Google Organic.',
+                          detail,
+                        )
+                      }
+                    },
+                  })
               const providerQuery: ProviderQuery = {
                 keyword: mutatedKeyword,
                 language: searchLanguage || 'en',
@@ -2142,6 +2313,7 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                 googleKey: googleKey || undefined,
                 anysearchApiKey: anysearchCfg.apiKey || undefined,
                 anysearchBaseUrl: anysearchCfg.baseUrl || undefined,
+                serperApiKey: serperKey || undefined,
                 timeoutMs,
               }
               const registry = getOrCreateProviderRegistry()
@@ -2150,12 +2322,17 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
               // and must NOT fan out to Maps/LinkedIn/customs/etc. Constrain the registry
               // to the organic provider; the default blind-search still dispatches to all.
               const providerIds: DataSourceType[] | undefined =
-                dataSourceType === 'google_organic' ? ['google_organic'] : undefined
+                dataSourceType === 'google_organic'
+                  ? ['google_organic']
+                  : dataSourceType === 'serper'
+                    ? ['serper']
+                    : undefined
               const availableProviders = registry
                 .getAvailableProviders({
                   googleKey,
                   anysearchApiKey: anysearchCfg.apiKey,
                   anysearchBaseUrl: anysearchCfg.baseUrl,
+                  serperApiKey: serperKey,
                 })
                 .filter((p) => !providerIds || providerIds.includes(p.id))
               if (availableProviders.length > 0 && myJobId === activeJobIdFor()) {
@@ -2170,6 +2347,16 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
                   const results: ProviderResult[] = []
                   for (const result of map.values()) {
                     results.push(...result.results)
+                  }
+                  /* Serper 单源模式：唯一来源的失败必须记录并最终冒泡（executeAll 把
+                     provider 错误折进 map 的 error 字段，此处不能丢——丢掉会让前端
+                     只看到「0 条结果」的伪成功）。多源盲搜时既有语义不变（错误保持静默隔离）。 */
+                  if (serperOnlyMode) {
+                    for (const result of map.values()) {
+                      if (result.error && result.results.length === 0) {
+                        serperOnlyFailures.push(result.error)
+                      }
+                    }
                   }
                   return results
                 })
@@ -2908,6 +3095,11 @@ export const registerSearchHandlers = (ipcMain: Electron.IpcMain, store: ConfigS
             const slowScored = await executeScoring(newLate.slice(0, SEARCH_LLM_SCORE_LIMIT), newLate)
             mergedFinal.push(...slowScored)
           }
+        }
+        /* 2026-10-17：serper 单源唯一来源失败 ⇒ 明确报错冒泡（外层 catch → stream:error），
+           不伪装为「搜索成功但 0 条」，也不回退其它来源（§4.1/§五）。 */
+        if (serperOnlyMode && mergedFinal.length === 0 && serperOnlyFailures.length > 0) {
+          throw new Error(serperOnlyFailures[serperOnlyFailures.length - 1])
         }
         /* 两波合并去重（按域名）后统一投放 */
         const deduped = new Map<string, SearchExecuteResult>()
