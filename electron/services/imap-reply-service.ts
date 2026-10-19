@@ -29,6 +29,7 @@ import { registerIpc, registry } from '../ipc/registry'
 import { isCloudflareConfigured, pollOutreachStatus, reportOutreachReply } from './cloudflare-service'
 import { getSecret } from './secret-manager'
 import { SECRET_KEYS, type ConfigStore } from './config-service'
+import { buildFeatureDeniedResponse } from './license-service'
 import type { AgentStatus } from '../../src/shared/ipc-contracts'
 
 /* ──────────────────────────────────────────────
@@ -521,11 +522,26 @@ export const getImapReplyStatus = (
  *  IPC Handler Registration
  * ────────────────────────────────────────────── */
 
+/* D4（2026-10-19）：`licenseGuard` 由 main.ts 注入（唯一实例），紧邻 `store` 以与
+   cloudflare/autopilot/config 三个服务的签名次序保持一致。 */
 export const registerImapReplyHandlers = (
   ipcMain: Electron.IpcMain,
   store: ConfigStore,
+  licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
   getWindow: () => Electron.BrowserWindow | null,
 ): void => {
+  /* D4（2026-10-19 修复）：三个 IMAP 通道此前**无任何门禁**——试用版可读取 / 重启 / 测试
+     邮件回信服务（属 Agent 域状态，PRD §6.0 禁止向 Trial 暴露）。统一按 `local_autopilot`
+     拦截；Basic 持有该能力（AGENTS.md：Paid Basic 可用低量本地 Email），Trial 不持有。 */
+  const requireLocalAutopilot = (operationName: string) => {
+    try {
+      licenseGuard.requireFeature('local_autopilot', operationName)
+      return null
+    } catch (error: any) {
+      return buildFeatureDeniedResponse(operationName, error)
+    }
+  }
+
   // automation:imap-poll — 手动触发一次轮询
   registerIpc(
     IPC_CHANNELS.AUTOMATION.IMAP_POLL,
@@ -549,6 +565,9 @@ export const registerImapReplyHandlers = (
       responseRule: { type: 'any' },
     },
     async (_event: unknown) => {
+      // D4：读端同拦——IMAP 状态即 Agent 域运行指标（PRD §6.0 禁向 Trial 暴露）。
+      const denied = requireLocalAutopilot('IMAP 状态读取')
+      if (denied) return denied
       return { success: true, data: getImapReplyStatus(store) }
     },
   )
@@ -565,6 +584,9 @@ export const registerImapReplyHandlers = (
       responseRule: { type: 'any' },
     },
     async (_event: unknown) => {
+      // D4：必须在**副作用之前**拦截——不得出现"拒绝但仍重启了 timer"的半执行状态。
+      const denied = requireLocalAutopilot('IMAP 自动检测重启')
+      if (denied) return denied
       startImapReplyPoll(store, getWindow())
       return { success: true, data: getImapReplyStatus(store) }
     },
@@ -581,6 +603,9 @@ export const registerImapReplyHandlers = (
       responseRule: { type: 'any' },
     },
     async (_event: unknown) => {
+      // D4：连接性探测同样向 Trial 暴露"是否已配置邮箱"，必须在发起前拦截。
+      const denied = requireLocalAutopilot('IMAP 连接测试')
+      if (denied) return denied
       const result = await testImapConnection(store)
       return { success: true, data: result }
     },

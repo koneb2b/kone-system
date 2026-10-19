@@ -10,6 +10,7 @@ import {
 } from '../ipc/contracts/autopilot.contract'
 import type { AutopilotStateEnvelope, AutopilotStateKind } from '../../src/shared/ipc-contracts'
 import { getPublicUserConfig, setConfigValue, type ConfigStore } from './config-service'
+import { buildFeatureDeniedResponse } from './license-service'
 
 const AUTOPILOT_STATE_FILE = 'autopilot_state.json'
 const AUTOPILOT_STATE_TMP_FILE = 'autopilot_state.json.tmp'
@@ -84,7 +85,14 @@ export const clearLegacyAutopilotNode = (store: ConfigStore) => {
  *
  * 注意：`AUTOPILOT.SYNC_STATE` 由 `main.ts` 直接 `ipcMain.handle` 注册，不在本处。
  */
-export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
+/* D5（2026-10-19）：`licenseGuard` 由 main.ts 注入（createLicenseService 的**唯一**实例）。
+   不得在本服务内另建第二个 guard —— 授权判断必须收敛到单实例，否则重现
+   license-features.ts 注释里所述"多份可独立演化的副本"缺陷。 */
+export const registerAutopilotStateHandlers = (
+  ipcMain: Electron.IpcMain,
+  store: ConfigStore,
+  licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
+) => {
   registerIpc(IPC_CHANNELS.AUTOPILOT.GET_STATE, autopilotGetStateContract, async () => {
     try {
       return { success: true, data: readAutopilotStateEnvelope() }
@@ -110,6 +118,13 @@ export const registerAutopilotStateHandlers = (ipcMain: Electron.IpcMain, store:
   )
 
   registerIpc(IPC_CHANNELS.AUTOPILOT.CLEAR_LEGACY, autopilotClearLegacyContract, async () => {
+    /* D5（2026-10-19 修复）：本通道此前**无任何门禁**——试用版可直接清理巡航遗留节点。
+       与同族 AUTOPILOT.* 一致，按 `local_autopilot`（付费基础版起）拦截。 */
+    try {
+      licenseGuard.requireFeature('local_autopilot', '巡航遗留清理')
+    } catch (error: any) {
+      return buildFeatureDeniedResponse('巡航遗留清理', error)
+    }
     try {
       clearLegacyAutopilotNode(store)
       return { success: true, data: null }

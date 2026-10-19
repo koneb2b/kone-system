@@ -17,6 +17,7 @@ import { extractDomain } from '../utils/domain'
 import { IPC_CHANNELS } from '../ipc/channels'
 import { registerIpc } from '../ipc/registry'
 import type { ConfigStore } from './config-service'
+import { buildFeatureDeniedResponse } from './license-service'
 import * as crypto from 'crypto'
 
 /* ──────────────────────────────────────────────
@@ -795,7 +796,13 @@ export const reportOutreachReply = async (
  *  IPC Handler Registration（供 Settings UI 使用）
  * ────────────────────────────────────────────── */
 
-export const registerCloudflareHandlers = (ipcMain: Electron.IpcMain, store: ConfigStore) => {
+/* D2（2026-10-19）：`licenseGuard` 由 main.ts 注入（唯一实例）。本服务此前全部通道
+   无授权门禁；审批类通道（CREATE_APPROVAL / LIST_APPROVALS）按 `cloud_send` 收口。 */
+export const registerCloudflareHandlers = (
+  ipcMain: Electron.IpcMain,
+  store: ConfigStore,
+  licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
+) => {
   // cloud:cloudflare-configured — 前端询问 Cloudflare 是否已配置
   registerIpc(
     IPC_CHANNELS.CLOUD.CLOUDFLARE_CONFIGURED,
@@ -891,6 +898,13 @@ export const registerCloudflareHandlers = (ipcMain: Electron.IpcMain, store: Con
       responseRule: { type: 'any' },
     },
     async (_event: unknown, ...args: unknown[]) => {
+      /* D2（2026-10-19 修复）：本通道此前**无任何门禁**——试用版/基础版均可写入云端审批
+         记录。审批是 `cloud_send` 服务端二次门禁的前置（PRD §5.1.2 / §13.1）。 */
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端审批提交')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端审批提交', error)
+      }
       try {
         const payload = args[0] as CreateApprovalPayload
         return { success: true, data: await createApproval(store, payload) }
@@ -915,6 +929,13 @@ export const registerCloudflareHandlers = (ipcMain: Electron.IpcMain, store: Con
       responseRule: { type: 'any' },
     },
     async (_event: unknown, ...args: unknown[]) => {
+      /* D2（2026-10-19 修复）：本通道此前**无任何门禁**——审批记录属 `cloud_send` 域，
+         试用版/基础版不应读取。 */
+      try {
+        licenseGuard.requireFeature('cloud_send', '云端审批查询')
+      } catch (error: any) {
+        return buildFeatureDeniedResponse('云端审批查询', error)
+      }
       try {
         const opts = (args[0] ?? {}) as { leadId?: string; limit?: number }
         return { success: true, data: await listApprovals(store, opts) }

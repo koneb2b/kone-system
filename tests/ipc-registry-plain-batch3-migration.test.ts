@@ -149,7 +149,9 @@ test('第三批 plain 通道迁移：注册 / 自绑定 / 路由 / 信封 / 错�
   const { registerAutomationHandlers } = require(automationPath)
   const { createLicenseService } = require(licensePath)
 
-  registerAutopilotStateHandlers(ipcAutopilot, store)
+  /* D5 后新增 licenseGuard 形参：本文件验证 registry 迁移（CLEAR_LEGACY 期望 success），
+     故用 permissive stub；真实授权拒绝由 tests/ipc-license-gate-d2-d5.test.ts 覆盖。 */
+  registerAutopilotStateHandlers(ipcAutopilot, store, { requireFeature() {}, requireAnyFeature() {} })
   registerAuthHandlers(ipcAuth)
   registerSandboxHandlers(ipcSandbox, store)
   const { licenseGuard } = createLicenseService(store)

@@ -145,7 +145,12 @@ test('config-service 经 registry.registerIpc 迁移：注册 / 路由 / 信封�
     flushSync: () => {},
     path: path.join(userDataDir, 'kone-config.json'),
   }
-  registerConfigHandlers({ handle() {}, on() {}, removeHandler() {} }, store)
+  /* D3 后新增 licenseGuard 形参：本文件只验证 CONFIG.* 的 registry 迁移，
+     传入 permissive stub（授权行为由 tests/ipc-license-gate-d2-d5.test.ts 覆盖）。 */
+  registerConfigHandlers({ handle() {}, on() {}, removeHandler() {} }, store, {
+    requireFeature() {},
+    requireAnyFeature() {},
+  })
 
   // 1) 四个通道确实登记进 registry
   const channels = registry.channels

@@ -181,7 +181,9 @@ test('autopilot state handler returns ready_empty when state file is absent', as
   fs.rmSync(electronMock.app.getPath('userData'), { recursive: true, force: true })
   assert.equal(fs.existsSync(filePath), false)
 
-  registerAutopilotStateHandlers(ipcMain, store)
+  /* D5 后新增 licenseGuard 形参：本文件只验证 GET_STATE 的语义，不验证授权，
+     故传入 permissive stub（授权行为由 tests/ipc-license-gate-d2-d5.test.ts 覆盖）。 */
+  registerAutopilotStateHandlers(ipcMain, store, { requireFeature() {}, requireAnyFeature() {} })
   const result = await ipcMain.getHandler(IPC_CHANNELS.AUTOPILOT.GET_STATE)()
 
   assert.equal(result?.success, true)
@@ -202,7 +204,9 @@ test('autopilot state handler returns state_unavailable when state file is corru
   fs.mkdirSync(userDataDir, { recursive: true })
   fs.writeFileSync(path.join(userDataDir, 'autopilot_state.json'), '{invalid-json', 'utf8')
 
-  registerAutopilotStateHandlers(ipcMain, store)
+  /* D5 后新增 licenseGuard 形参：本文件只验证 GET_STATE 的语义，不验证授权，
+     故传入 permissive stub（授权行为由 tests/ipc-license-gate-d2-d5.test.ts 覆盖）。 */
+  registerAutopilotStateHandlers(ipcMain, store, { requireFeature() {}, requireAnyFeature() {} })
   const originalConsoleError = console.error
   const capturedErrors = []
   console.error = (...entries) => capturedErrors.push(entries)

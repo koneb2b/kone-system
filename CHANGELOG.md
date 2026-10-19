@@ -63,6 +63,16 @@ lastVerifiedAt: 2026-10-19
   新增回归 `tests/ipc-license-gate-d1-d6.test.ts`（10 项：D1 trial/basic/授权过期拒绝 + Premium 放行；D6 trial 三通道拒绝 + Basic/Premium 放行）。
   证据：撤销修复后该套件 `exit 1`（Trial 泄漏用例失败），修复后 10/10 通过；`npm run test:unit` 605/605、`tsc --noEmit` 0 error、`lint` 0 error。
   受影响 SSOT：`ARCH-STANDARDS.md §3`。
+- IPC 授权缺陷修复（2026-10-19，**D2–D5 已裁决并落地**）：① `CLOUD.CREATE_APPROVAL` / `CLOUD.LIST_APPROVALS` 补 `cloud_send`
+  —— 活跃 Trial 与 Basic 不再能读写云端审批记录（`approvals` 是服务端二次门禁的前置，脱离 Premium 无业务意义）。
+  ② `CONFIG.SET` 保持**通道级免门禁**（否则锁死 Trial 的 ICP/密钥配置 = 激活死锁），改为 `cloud` / `cloud.*` **key 级**校验，
+  需 `cloud_send`；前缀边界为精确 `cloud` 或以 `cloud.` 开头（`cloudx.*` 不误伤），读端与其它 key 行为完全不变。
+  ③ `AUTOMATION.IMAP_STATUS` / `IMAP_RESTART` / `IMAP_TEST_CONNECTION` 与 `AUTOPILOT.CLEAR_LEGACY` 补 `local_autopilot`
+  （Paid Basic 起，对齐 `AGENTS.md`「Basic 可用低量本地 Email 与 WhatsApp Web」），门禁置于一切副作用之前。
+  四个 `register*Handlers` 改为注入 `main.ts` 创建的**同一个** `licenseGuard` 实例（不新建守卫，避免多份 SSOT）。
+  新增回归 `tests/ipc-license-gate-d2-d5.test.ts`（19 项：每通道 denied/allowed 双向 + D3 key 矩阵与前缀边界 + 漏传 guard 的 Fail-Closed）。
+  证据：撤销修复后 19 项中 11 项失败（`exit 1`），修复后 19/19 通过；`npm run test:unit` 624/624、`tsc --noEmit` 0 error、`lint` 0 error。
+  **D7**（Basic 的 WhatsApp Web 能力扩张）仍待产品排期确认，本次未改动 `isEmailType` 分支。受影响 SSOT：`ARCH-STANDARDS.md §3`。
 
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、

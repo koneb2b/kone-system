@@ -82,7 +82,8 @@ Responsibilities:
 > - `AUTOMATION.QUEUE_OUTREACH`：原仅 `ensureTrialAccess` → 活跃 Trial 与 Basic 均可直连云端入队；现补 `requireFeature('cloud_send')`，返回 `FEATURE_DENIED` / 403（与 `AUTOMATION.START_CAMPAIGN` 同信封）。
 > - `ACCOUNT.CONNECT / DISCONNECT / GET_LIST`：代理键原为 `search_basic`（`TRIAL_FEATURES` 亦持有）→ 活跃 Trial 可绑定/读取/断开真实邮箱账号；现统一改为 `local_autopilot`（仅替换代理键，不新增/移除 feature 定义；参数级 `isEmailType` 限制保持原样）。
 >
-> 回归证据：`tests/ipc-license-gate-d1-d6.test.ts`（10 项；撤销修复即 `exit 1`，修复后全绿）。**D2–D5、D7 未裁决前，不得对其余 plain 通道批量追加门禁。**
+> 回归证据：`tests/ipc-license-gate-d1-d6.test.ts`（10 项）与 `tests/ipc-license-gate-d2-d5.test.ts`（19 项）；两者撤销修复后均 `exit 1`，修复后全绿。
+> **第二批收口（2026-10-19，D2–D5 已裁决并落地）**：`CLOUD.CREATE_APPROVAL` / `CLOUD.LIST_APPROVALS` 补 `cloud_send`；`AUTOMATION.IMAP_STATUS` / `IMAP_RESTART` / `IMAP_TEST_CONNECTION` 与 `AUTOPILOT.CLEAR_LEGACY` 补 `local_autopilot`；`CONFIG.SET` 维持**通道级免门禁**（否则锁死 Trial 的 ICP/密钥配置 → 激活死锁），改为 `cloud` / `cloud.*` **key 级**校验（前缀边界：精确 `cloud` 或以 `cloud.` 开头）。门禁一律置于副作用之前，且注入 `main.ts` 创建的**同一个** `licenseGuard` 实例，禁止在服务内新建守卫。**D7（Basic WhatsApp Web 能力扩张）仍需产品确认——未裁决前不得改动 `isEmailType` 分支，也不得对其余 plain 通道批量追加门禁。**
 
 ### `preload/` - Minimal secure bridge
 Allowed:

@@ -535,7 +535,15 @@ const resolveOperationName = <TArgs extends unknown[]>(
   return String(resolved || channel).trim() || channel
 }
 
-const buildFeatureDeniedResponse = (operationName: string, error: { message?: string; code?: number } | undefined) => ({
+/* D2/D4/D5（2026-10-19）：导出为**唯一**的 FEATURE_DENIED 信封构造器，供
+   cloudflare-service / imap-reply-service / autopilot-state-service 复用，
+   避免每个调用点各自手写一份信封导致形状分叉。
+   注：config-service 与本模块存在循环依赖，故其 403 使用本文件原生信封 +
+   `FEATURE_DENIED` 标记，不做运行时 import。 */
+export const buildFeatureDeniedResponse = (
+  operationName: string,
+  error: { message?: string; code?: number } | undefined,
+) => ({
   success: false,
   error: 'FEATURE_DENIED',
   message: String(error?.message || `当前授权无权执行${operationName}`),

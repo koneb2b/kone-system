@@ -441,6 +441,12 @@ const CONFIG_SET_BLACKLIST = ['license.', 'billing.', 'secrets.', 'system.hardwa
 
 const isConfigKeyBlocked = (key: string): boolean => CONFIG_SET_BLACKLIST.some((prefix) => key.startsWith(prefix))
 
+/* D3（2026-10-19）：`cloud.*` 属高级版能力（README §六 / PRD §5.1.2：云端能力 Trial/Basic
+   均不开放）。通道整体**保持免门禁**以避免激活死锁，但该命名空间必须做 **key 级**付费校验。
+   仅限制写端；读端（CONFIG_GET_ALLOWED_NAMESPACES 含 'cloud'）保持不变，否则设置页回显
+   已配置值时会被 403 拖垮（P0-2 历史缺陷）。 */
+const isCloudNamespaceKey = (key: string): boolean => key === 'cloud' || key.startsWith('cloud.')
+
 /* DATA-05 修复：config:get 读取命名空间白名单 — 仅允许渲染进程读取以下命名空间。
    未列入的键将被拒绝，防止 renderer 被 XSS/依赖污染后越权读取敏感配置。 */
 const CONFIG_GET_ALLOWED_NAMESPACES = [
@@ -503,7 +509,15 @@ interface IElectronMain extends Electron.IpcMain {
  * null/undefined/类型校验并返回 400/403 信封，见 config.contract.ts 设计取舍）。
  * `ipcMain` 参数保留以维持 `main.ts` 调用签名一致，注册动作改由 registry 完成。
  */
-export const registerConfigHandlers = (_ipcMain: Electron.IpcMain, store: ConfigStore) => {
+/* D3（2026-10-19）：`licenseGuard` 由 main.ts 注入（唯一实例）。**通道整体仍保持免门禁**
+   ——加通道级门禁会锁死 Trial 的 ICP/密钥配置（激活死锁）；仅对 `cloud.*` 命名空间做
+   **key 级**校验（需 `cloud_send`）。注意：本文件与 license-service 存在循环依赖，
+   故此处只用 guard（运行时对象），**不** import license-service 任何符号。 */
+export const registerConfigHandlers = (
+  _ipcMain: Electron.IpcMain,
+  store: ConfigStore,
+  licenseGuard: ReturnType<typeof import('../security/license-guard').createLicenseGuard>,
+) => {
   registerIpc(IPC_CHANNELS.CONFIG.GET, configGetContract, async (_event: unknown, key: unknown) => {
     try {
       // DATA-05 修复：读取白名单校验——非白名单命名空间拒绝读取
@@ -529,6 +543,21 @@ export const registerConfigHandlers = (_ipcMain: Electron.IpcMain, store: Config
       if (isConfigKeyBlocked(key)) {
         console.warn(`[Config] 已拦截受保护配置项写入: ${key}`)
         return { success: false, error: `禁止直接修改受保护的配置项: ${key}`, code: 403 }
+      }
+      /* D3（2026-10-19 修复）：`cloud.*` 写入需 `cloud_send`（高级版起）。本文件与
+         license-service 循环依赖，故不 import buildFeatureDeniedResponse —— 改用本文件
+         既有的 `error: string` + 403 信封，并保留 `FEATURE_DENIED` 标记供渲染层统一识别
+         （accounts-management / agents-panel 的 /FEATURE_DENIED|TRIAL_EXPIRED/ 正则）。 */
+      if (isCloudNamespaceKey(key)) {
+        try {
+          licenseGuard.requireFeature('cloud_send', '云端配置写入')
+        } catch (error: any) {
+          return {
+            success: false,
+            error: `FEATURE_DENIED：云端配置写入需要高级版授权（${String(error?.message || key)}）`,
+            code: Number(error?.code) || 403,
+          }
+        }
       }
       setConfigValue(store, key, value)
       // P0-5：用户可见的配置写入必须立即持久化，并让落盘失败同步回传给渲染层
