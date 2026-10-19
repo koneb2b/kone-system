@@ -102,6 +102,21 @@ lastVerifiedAt: 2026-10-19
   干净机器 20 项）**刻意不接入 `npm test`** —— 它们依赖打包产物或外部环境，接入会让干净检出误炸。
   受影响 SSOT：`ARCH-STANDARDS.md §16/§17`、`docs/release-gate.md`（新增）、`package.json`、
   `KONE-V1.3-干净机器验收手册-2026-09-25.md`（版本适用性升版至 1.4.x）。
+- **AUTOPILOT / CLOUD.CLOUDFLARE_\* 授权分级判定成文法化（2026-10-20，仅测试与文档，不改变运行时行为）**：
+  审计遗留把这两域标为「疑似能力泄漏 / 收口未完成」。经只读核实，**逐通道加门禁会制造第三处过度约束事故**
+  （前两处 `AGENT.GET_STATUS` / `AGENT.SUPPRESS_*` 均由全量 `test:unit` 拦下并回滚），故改为**把判定固化**：
+  新增 `tests/business-logic/autopilot-cloud-gate-classification.business.test.js`（6 用例；双向断言 + 清单腐烂防护）。
+  判定依据（源码实测）：① **AUTOPILOT 的真实能力边界在搜索层**，不在本域通道 ——
+  `src/lib/autopilot-runner.ts:319` → `searchExecute()`，Trial 已被搜索层 10 条/次、间隔 15 秒限额约束；
+  故 `GET_STATE` / `SET_STATE` / `SYNC_STATE` 属**状态管道**而非能力授予面。尤其 `SET_STATE` 是
+  `createThrottledPersister` 的持久化底座（随草稿输入触发），加门禁 = 对 Trial 搜索页**可见降级**；
+  `SYNC_STATE` 注册顺序已被 `autopilot-sync-attach-guard.business.test.js` 锁定，加门禁有重现托盘 P0 风险。
+  ② **陷阱锁定**：`CLOUD.CLOUDFLARE_TEST_CONNECTION` 被**双重注册**（`cloudflare-service.ts` 先注册、
+  `outreach-sync-service.ts` 后注册**覆盖**），且 `registerOutreachSyncHandlers` **未接收 `licenseGuard`** ——
+  任何只写在 `cloudflare-service.ts` 内的门禁对该通道都是**死代码**。③ `CLOUD.CLOUDFLARE_*` 收口的
+  **前置条件是渲染层条件化**（`CloudSettingsTab` 无条件挂载 `system-settings.tsx:514` + 内部 `Promise.all`
+  `cloud-settings-tab.tsx:43`），否则重演 P0-2「整页降级」；故当前列为 `PENDING_GUARD_AFTER_RENDERER_DEGRADE`
+  （**非永久豁免**，渲染层降级落地后方可收口）。受影响 SSOT：`docs/release-gate.md`（新增 §6）。
 
 ---
 

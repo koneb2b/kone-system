@@ -103,3 +103,24 @@
 - 本文件是**工程质量门禁**；`CLOUD-COLLABORATION-DELIVERY.md §0` 的 `NO-GO` 是**产品级**发布判定。
 - **本文件全绿 ≠ 可转 GO**。转 GO 仍需 NO-GO 四项闭环（干净机器验收 / 打包冒烟与签名 / 审批门禁部署开启留证 / 小流量实发）。
 - 反之，本文件任一 HARD 项失败即为发版阻断，与 NO-GO 状态无关。
+
+## 6. 授权分级判定：AUTOPILOT / CLOUD.CLOUDFLARE_*（2026-10-20）
+
+门禁分类的**判定依据**（防止第三次过度约束事故）。可执行守护见
+`tests/business-logic/autopilot-cloud-gate-classification.business.test.js`（双向断言 + 清单腐烂防护）。
+
+| 通道 | 判定 | 依据 |
+|---|---|---|
+| `AUTOPILOT.CLEAR_LEGACY` | **门禁**（`local_autopilot`） | 配置删除写动作 |
+| `AUTOPILOT.GET_STATE` | 免门禁 | 状态读取；Trial 搜索页 `hydrateFromStorage` 合法调用（同 `AGENT.GET_STATUS` 先例） |
+| `AUTOPILOT.SET_STATE` | 免门禁 | 节流持久化底座（随草稿输入触发）——加门禁 = Trial 可见降级 |
+| `AUTOPILOT.SYNC_STATE` | 免门禁 | 托盘生命周期遥测；注册顺序已被 `autopilot-sync-attach-guard` 锁定 |
+| `CLOUD.CLOUDFLARE_CONFIGURED` / `_TEST_CONNECTION` / `_DASHBOARD_STATS` / `_POLL_OUTREACH_STATUS` | **暂不门禁**（PENDING） | 前置条件 = 渲染层条件化（`system-settings.tsx:514` 无条件挂载 + `cloud-settings-tab.tsx:43` `Promise.all`），否则重演 P0-2 整页降级 |
+
+**关键结论**：AUTOPILOT 的**真实能力边界在搜索层**（`src/lib/autopilot-runner.ts:319` → `searchExecute()`，
+Trial 已受 10 条/次、间隔 15 秒限额）。对状态管道加门禁**不关闭任何能力泄漏**，只会降级 UX。
+
+**已锁定陷阱**：`CLOUD.CLOUDFLARE_TEST_CONNECTION` 由 `cloudflare-service.ts` 与 `outreach-sync-service.ts`
+**双重注册**，后者**后注册覆盖**（其注释自述此前因此出现"测试连接永远失败"真实缺陷）；且
+`registerOutreachSyncHandlers` **未接收 `licenseGuard`**。故该通道的门禁**必须**做在 outreach-sync
+（先为其补授权参数），写在 `cloudflare-service.ts` 内是**死代码**。
