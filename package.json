@@ -94,12 +94,12 @@
     "publish": null
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.103.0",
+    "@supabase/supabase-js": "^2.118.0",
     "electron-updater": "^6.8.9",
-    "imapflow": "1.0.191",
+    "imapflow": "2.5.2",
     "node-machine-id": "^1.1.12",
-    "nodemailer": "^8.0.10",
-    "puppeteer": "^23.11.1"
+    "nodemailer": "^10.1.2",
+    "puppeteer": "^25.14.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
