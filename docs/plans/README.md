@@ -14,8 +14,16 @@
 
 ## 目录内容
 
+共 31 份计划（按主题相关性排序，非时间顺序）。
+
 | 文件 | 主题 |
 |---|---|
+| `KONE-DATA-PIPELINE-AUDIT.md` | 数据管道审计 |
+| `KONE-DATA-QUALITY-APPROVAL-PACK.md` | 数据质量审批包 |
+| `KONE-DATA-QUALITY-GATE-REPORT.md` | 数据质量门禁报告 |
+| `KONE-DATA-QUALITY-PILOT.md` | 数据质量试点 |
+| `KONE-ENRICHMENT-PHASE1-FIX.md` | 富化 Phase 1 修复 |
+| `KONE-ENRICHMENT-REVIEW-1436.md` | 1.4.36 富化评审 |
 | `kone-v1.4-production-hardening.md` | V1.4 生产环境加固 |
 | `kone-v1.4-architectural-improvements.md` | V1.4 架构改进 |
 | `p0-commercial-honesty-hardening.md` | P0 商用诚实性加固 |

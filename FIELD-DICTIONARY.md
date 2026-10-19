@@ -4,8 +4,8 @@ status: active
 authoritative: false
 ssotFor: []
 codeSSOT: src/shared/ipc-contracts.ts
-asOfCommit: 0925cde
-lastVerifiedAt: 2026-09-22
+asOfCommit: ef2badd
+lastVerifiedAt: 2026-10-19
 ---
 
 # KONE 字段字典 (FIELD DICTIONARY)
@@ -54,11 +54,13 @@ lastVerifiedAt: 2026-09-22
 | `agentStatus` | `AgentStatus?` | 智能体触达状态（持久化线索态） |
 | `analysisCache` | `Record<string, unknown>?` | AI 深度分析缓存 |
 
-## 3. `DataSourceType`（8 值，含向后兼容项）
+## 3. `DataSourceType`（9 值，含向后兼容项）
 
-`'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search' | 'anysearch'`
+`'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search' | 'anysearch' | 'serper'`
 
-> `yellow_pages` 保留枚举值以兼容历史数据，但对应 Provider **已弃用**。真实可用状态以 `PROVIDER-CAPABILITY.md` 为唯一事实源。
+> `yellow_pages` 保留枚举值以兼容历史数据，其 Provider **已弃用**（`execute()` 返回 `DEPRECATED`）。
+> `serper` 为 BYOK 独立搜索源（用户自带 key，不消耗 SerpApi 配额，不参与多源并行），仅在用户显式选择「单源：Serper」时产生。
+> 真实可用状态以 `PROVIDER-CAPABILITY.md` 为唯一事实源。
 
 ## 4. `DecisionMaker`
 

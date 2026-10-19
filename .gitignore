@@ -63,5 +63,9 @@ release.rar
 /2026-09-15/
 /2026-09-20/
 
+# ── 可再生的预览产物（由 scripts/preview-*.cjs 生成，不入库）──────
+/export-center-preview.html
+/whitepaper-preview.html
+
 
 

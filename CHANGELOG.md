@@ -19,6 +19,16 @@ lastVerifiedAt: 2026-10-07
 
 ## [1.4.36] — 2026-10-16 · 分级 B2B 联系人补全（Step 1–5 最小完整链路）
 
+### 文档治理（2026-10-19）
+- 规范真相对齐：`kone-PRD.md`（版本 `1.4.36` / 9 个搜索变体 / `serper` 枚举）、`PROJECT-PRD.md`、`FIELD-DICTIONARY.md`、
+  `ARCH-STANDARDS.md`（IPC 72/61/41、独立 Serper Provider）、`STATE-MACHINES.md`（真实 11 态 / 7 态 + `replied`）、
+  `README.md` 安装包命名、`GLOSSARY.md` 章节指针。
+- 门禁增强：`verify-doc-consistency` 新增 PRD 版本一致性、`DataSourceType` 枚举一致性、时点快照迁移解析；
+  负向测试已验证（版本回退即 `exit 1`）。
+- 目录治理：17 份根目录时点快照 + 4 份 `archive/` 被引用文档迁入 `docs/archive/snapshots/`（共 21 份，非活规范）；
+  UI 审计证据迁入 `docs/evidence/ui-audit/`；`docs/deprecated/` 代码迁入 `docs/archive/deprecated-code/`；
+  两份可再生预览 HTML 改为忽略；`kone项目使用说明.markdown` 迁入 `docs/`；`docs/plans/README.md` 补全 31 份计划索引。
+
 ### 触发
 基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
 Apollo 邮箱未校验却标 `verified`（D-3）、Prospeo 注释与实现不一致（D-4）、成本完全不可追踪（D-5）、

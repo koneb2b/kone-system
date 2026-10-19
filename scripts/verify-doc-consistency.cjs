@@ -47,7 +47,21 @@ const SNAPSHOT_PATTERNS = [
   /^KONE-V1\.3-规范文档与架构数据交互深度梳理报告\.md$/,
   /^\d{4}-\d{2}-\d{2}\//,
   /^archive\//,
+  /^docs\/archive\//,
 ]
+
+/**
+ * 文档治理迁移解析（2026-10-19）：
+ * 时点快照已从仓库根迁移到 docs/archive/snapshots/，但 CHANGELOG 等历史条目
+ * 仍以旧根路径引用。为保留历史原文不改写，校验时按以下规则解析到新位置。
+ */
+const ARCHIVE_DIR = 'docs/archive/snapshots/'
+const resolveMovedDoc = (target) => {
+  const base = path.posix.basename(target.replace(/\\/g, '/'))
+  if (!target.includes('/')) return ARCHIVE_DIR + base
+  if (target.startsWith('archive/')) return ARCHIVE_DIR + base
+  return null
+}
 
 /** 代码中不存在的历史符号（勘误行允许提及） */
 const STALE_SYMBOLS = ['computeLeadScore', 'enrichLeadWebsite', 'emitDecisionMakers']
@@ -267,9 +281,10 @@ function checkDocumentReferences() {
         if (target.startsWith('/') || target.includes('..')) continue
         if (target.endsWith('.md') === false) continue
         checked += 1
-        if (!exists(target)) {
-          failures.push(`[断链] ${rel}:${idx + 1} 引用了不存在的文档: ${target}`)
-        }
+        if (exists(target)) continue
+        const relocated = resolveMovedDoc(target)
+        if (relocated && exists(relocated)) continue
+        failures.push(`[断链] ${rel}:${idx + 1} 引用了不存在的文档: ${target}`)
       }
     })
   }
@@ -347,6 +362,86 @@ function checkVersionConsistency() {
   notes.push(`版本口径一致：package.json ${pkg.version} = CHANGELOG 最新（共 ${versions.length} 条，逆序校验通过）`)
 }
 
+// ── 9. PRD 版本真相（kone-PRD §0.1 / PROJECT-PRD 头部 ↔ package.json）──
+/**
+ * 为什么必须门禁：两份 PRD 是 Agent 强制读链的**顶层裁决锚点**。
+ * 历史教训（2026-10-19 审计）：kone-PRD §0.1 与 PROJECT-PRD 头部长期写 `1.3.0`，
+ * 而 `package.json` 已到 `1.4.36`；原有门禁只校验 package.json ↔ CHANGELOG，
+ * 导致读链第一页给出错误版本，Agent 据此实施会产出与真实版本不符的结论。
+ */
+function checkVersionTruthInPRDs() {
+  const pkg = JSON.parse(read('package.json'))
+  const targets = [
+    { file: 'kone-PRD.md', re: /当前发布版本\s*=\s*`(\d+\.\d+\.\d+)`/ },
+    { file: 'PROJECT-PRD.md', re: /当前发布版本为\s*`(\d+\.\d+\.\d+)`/ },
+  ]
+  for (const { file, re } of targets) {
+    if (!exists(file)) {
+      failures.push(`[版本真相] 缺少 ${file}`)
+      continue
+    }
+    const m = read(file).match(re)
+    if (!m) {
+      failures.push(`[版本真相] ${file} 未找到版本声明（期望形如「当前发布版本 = \`x.y.z\`」）`)
+      continue
+    }
+    if (m[1] !== pkg.version) {
+      failures.push(
+        `[版本真相] ${file} 声明 ${m[1]} ≠ package.json ${pkg.version} —— 读链裁决锚点必须与 package.json 同步`,
+      )
+    }
+  }
+  notes.push(`PRD 版本真相校验 ${targets.length} 份`)
+}
+
+// ── 10. DataSourceType 枚举一致（代码 ↔ 三份文档）─────────
+/**
+ * 为什么必须门禁：`DataSourceType` 是 Provider 溯源与前端徽标的契约枚举。
+ * 历史教训（2026-10-19 审计）：代码已 9 值（含 `serper`），而 kone-PRD 两处写 7/8 值、
+ * PROJECT-PRD 写 7 值、FIELD-DICTIONARY 写 8 值 —— 新增 Provider 无法在文档链内自洽。
+ * 本检查以 `src/shared/ipc-contracts.ts` 为唯一事实源，逐份比对枚举集合与计数声明。
+ */
+function checkDataSourceTypeParity() {
+  const contracts = read('src/shared/ipc-contracts.ts')
+  const union = contracts.match(/export type DataSourceType\s*=([\s\S]*?)\n\s*\n/)
+  if (!union) {
+    failures.push('[枚举一致] src/shared/ipc-contracts.ts 未找到 `export type DataSourceType` 定义')
+    return
+  }
+  const codeValues = [...union[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
+  const targets = [
+    { file: 'kone-PRD.md', anchor: /export type DataSourceType[^\n]*/, count: /`DataSourceType`\s*(\d+)\s*个变体/ },
+    { file: 'PROJECT-PRD.md', anchor: /`dataSourceType`[^\n]*google_maps[^\n]*/ },
+    { file: 'FIELD-DICTIONARY.md', anchor: /^`'google_maps'[^\n]*/m, count: /## 3\. `DataSourceType`（(\d+) 值/ },
+  ]
+  for (const { file, anchor, count } of targets) {
+    const text = read(file)
+    const line = text.match(anchor)
+    if (!line) {
+      failures.push(`[枚举一致] ${file} 未找到 DataSourceType 枚举行`)
+      continue
+    }
+    const docValues = [...line[0].matchAll(/[`']([a-z_]+)[`']/g)].map((m) => m[1])
+    const missing = codeValues.filter((v) => !docValues.includes(v))
+    const extra = docValues.filter((v) => !codeValues.includes(v))
+    if (missing.length || extra.length) {
+      failures.push(
+        `[枚举一致] ${file} 与代码不一致：缺少 [${missing.join(', ') || '无'}]，多出 [${extra.join(', ') || '无'}]` +
+          `（代码 ${codeValues.length} 值：${codeValues.join(', ')}）`,
+      )
+    }
+    if (count) {
+      const declared = text.match(count)
+      if (!declared) {
+        failures.push(`[枚举一致] ${file} 未找到枚举数量声明（应写明 ${codeValues.length}）`)
+      } else if (Number(declared[1]) !== codeValues.length) {
+        failures.push(`[枚举一致] ${file} 声明 ${declared[1]} 值 ≠ 代码 ${codeValues.length} 值`)
+      }
+    }
+  }
+  notes.push(`DataSourceType 枚举一致（代码 ${codeValues.length} 值 ↔ 3 份文档）`)
+}
+
 // ── 执行 ────────────────────────────────────────────────────
 checkDocumentChain()
 checkStaleSymbols()
@@ -356,6 +451,8 @@ checkTombstonesRemoved()
 checkDocumentReferences()
 checkToolEntryFiles()
 checkVersionConsistency()
+checkVersionTruthInPRDs()
+checkDataSourceTypeParity()
 
 console.log('── 规范文档一致性校验 ──────────────────────────')
 for (const note of notes) console.log(`  · ${note}`)

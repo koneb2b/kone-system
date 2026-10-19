@@ -3,8 +3,8 @@ title: KONE 状态机总表
 status: active
 authoritative: true
 ssotFor: [state-machine-mapping]
-asOfCommit: 0925cde
-lastVerifiedAt: 2026-09-22
+asOfCommit: ef2badd
+lastVerifiedAt: 2026-10-19
 ---
 
 # KONE 状态机总表 (STATE MACHINES)
@@ -20,9 +20,9 @@ lastVerifiedAt: 2026-09-22
 |---|---|---|---|---|
 | 本地实现层 | `LeadStatus`（`SearchExecuteResult.status`） | 4 | ✅ 已落地 | `kone-PRD.md §5.1.1` |
 | 本地持久化层 | `AgentStatus`（线索触达态） | 结构体 | ✅ 已落地 | `kone-PRD.md §5.0.7` |
-| 云端业务层 | `LeadBusinessStatus` | 7 + 4 异常 | ⚠️ 目标态（未实现） | `CLOUD-COLLABORATION-DELIVERY.md §2.1` |
-| 云端投递层 | `OutreachStatus` | 4 + 3 异常 | ⚠️ 目标态 | `CLOUD-COLLABORATION-DELIVERY.md §2.2` |
-| 云端跟进层 | `FollowupStatus` | 6 | ⚠️ 目标态 | `CLOUD-COLLABORATION-DELIVERY.md §2.3` |
+| 云端业务层 | `LeadBusinessStatus` | 7 + 4 异常 | ✅ D1 schema 已落地（`kone-cloud/migrations/001_init.sql:73` CHECK 含 11 态）；审批门禁 `APPROVAL_GATE_ENABLED` 默认关闭 | `CLOUD-COLLABORATION-DELIVERY.md §2.1` |
+| 云端投递层 | `OutreachStatus` | 8（5 + 3 异常） | ✅ 已落地（`001_init.sql:125` 7 态 + `003_reply_detection.sql:43` 增 `replied`） | `CLOUD-COLLABORATION-DELIVERY.md §2.2` |
+| 云端跟进层 | `FollowupStatus` | 6 | ⚠️ 目标态（`worker.ts` 尚无 follow-up 实现） | `CLOUD-COLLABORATION-DELIVERY.md §2.3` |
 
 > ⚠️ **重要**：`FollowupStatus`（云端 6 态）与本地 `FollowUpStatus` **不是同一个东西**。
 > 本地不存在独立的 follow-up 状态机——它复用 `LeadStatus`（4 态）。任何把两者视为同一类型的写法都是错误的。
@@ -68,7 +68,7 @@ type AgentStatus = {
 - `linkedinContacted` **只读浏览不得置 true**（LinkedIn 仅允许只读 Profile 辅助）。
 - `emailPendingManual` 仅在 IMAP 未配置时置 true。
 
-## 4. 云端业务层 `LeadBusinessStatus`（7 态 + 4 异常，目标态）
+## 4. 云端业务层 `LeadBusinessStatus`（7 态 + 4 异常；D1 schema 已落地，审批门禁默认关闭）
 
 ```
 new → scored → pending_approval → approved → queued → sent → replied

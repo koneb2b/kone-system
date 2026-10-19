@@ -2,7 +2,7 @@
 
 > 📌 **V1.3 最新需求与架构扩展请参见:** `kone-PRD.md` — 该文档是 V1.3 的唯一权威开发需求来源，包含 AnySearch 四级弹性搜索协议、决策人穿透数据结构、智能体本地多开矩阵及 DNS 防火墙等全新功能模块。
 >
-> 📎 **版本与权威说明**：本文正文中出现的 "Kone V1.2" 均指**已交付的商业闭环基线（其规则在 V1.3 仍然生效）**，并非"当前版本为 V1.2"。当前发布版本为 `1.3.0`；版本真相与宪法常量（并发 2 / 3000 字 / ICP 40·30·20·10 / 四级搜索 / Trial 7 天等）统一以 `kone-PRD.md §零` 为准。本文所有 IPC 通道、类型与字段以 `src/shared/ipc-contracts.ts` 及代码现状为准。
+> 📎 **版本与权威说明**：本文正文中出现的 "Kone V1.2" 均指**已交付的商业闭环基线（其规则在 V1.3 仍然生效）**，并非"当前版本为 V1.2"。当前发布版本为 `1.4.36`（2026-10-19 与 `package.json` 复核对齐）；版本真相与宪法常量（并发 2 / 3000 字 / ICP 40·30·20·10 / 四级搜索 / Trial 7 天等）统一以 `kone-PRD.md §零` 为准。本文所有 IPC 通道、类型与字段以 `src/shared/ipc-contracts.ts` 及代码现状为准。
 
 ## 0. 文档说明
 
@@ -373,7 +373,7 @@ export type LeadItem = {
 - `matchReasons`：命中理由，通常 1-2 条
 - `riskFlags`：风险标签，通常 1 条
 - `fallbackStatus`：盲评标记，值为 `'social_blind_score'` 时表示官网无法访问，基于 snippet 轻量评估
-- `dataSourceType`：数据来源类型（`google_maps` | `google_organic` | `customs_shipment` | `trade_show` | `yellow_pages` | `linkedin_search` | `facebook_search`）— 内部溯源标记，前端不再暴露为手动选择渠道
+- `dataSourceType`：数据来源类型（`google_maps` | `google_organic` | `customs_shipment` | `trade_show` | `yellow_pages` | `linkedin_search` | `facebook_search` | `anysearch` | `serper`）— 内部溯源标记，前端不再暴露为逐渠道勾选；`serper` 仅在用户显式选择「单源：Serper」时产生
 - `exhibitionFootprints`：展会足迹名单，字符串数组
 - `customsData`：海关提单数据，包含 `annualImportVolume`、`topSuppliers`、`originCountries`、`lastShipmentDate`
 - `decisionMakers`：决策人列表，每个含 `name`、`title`、`email`、`phone`、`linkedinUrl`、`source`、`confidenceScore`

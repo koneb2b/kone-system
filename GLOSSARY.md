@@ -3,8 +3,8 @@ title: KONE 术语表
 status: active
 authoritative: true
 ssotFor: [glossary]
-asOfCommit: 0925cde
-lastVerifiedAt: 2026-09-22
+asOfCommit: ef2badd
+lastVerifiedAt: 2026-10-19
 ---
 
 # KONE 术语表 (GLOSSARY)
@@ -35,7 +35,7 @@ lastVerifiedAt: 2026-09-22
 | **Stage 0.5 — Eligibility Gate** | 在预筛之后、ICP 评分之前的结构性一票否决（B2C 零售终端、维修服务、二手翻新、平台卖家、纯资讯站等）。被否决者永不进入评分与 Agent 管道 | `ARCH-STANDARDS.md §9.6.1` |
 | **Stage 1 — 确定性 ICP 评分** | 纯函数 `computeIcpMatchScore`，权重 域名 40 / 产品词 30 / B2B 信号 20 / 联系人 10，无网络、无 LLM、无随机数 | `kone-PRD.md §零.3` |
 | **Stage 2 — LLM 机会分** | 结构化 `opportunityScore`：`icpFit(0-55) + intent(0-35) + evidence(0-10) − riskPenalty(0-20)`，`finalScore` 由公式重算 | `kone-PRD.md §0.5.1` |
-| **`matchScore` 三态语义** | `undefined` = 未评分（Scout 骨架态）；有效数字 = 已评分；**`null` = 上游判定无效值（独立第三态，不得并入 `undefined`）**。任何映射层**禁止**将 `undefined`/`null` 静默转为 `0`（0 = 评估过且极差，语义不同） | `kone-PRD.md §2.4`（V1.2 不变红线；原误引 `ARCH-STANDARDS.md §5.3`，该章节为条目引用且当时表述与本法典冲突，已于 2026-09-25 对齐） |
+| **`matchScore` 三态语义** | `undefined` = 未评分（Scout 骨架态）；有效数字 = 已评分；**`null` = 上游判定无效值（独立第三态，不得并入 `undefined`）**。任何映射层**禁止**将 `undefined`/`null` 静默转为 `0`（0 = 评估过且极差，语义不同） | `kone-PRD.md §三.2`（V1.2 不变红线；原误引 `ARCH-STANDARDS.md §5.3`，该章节为条目引用且当时表述与本法典冲突，已于 2026-09-25 对齐） |
 | **`scoreSource`** | 评分来源标识：`'ai'` = LLM 评分；`'deterministic'` = 40/30/20/10 确定性预筛分。用于 UI 区分精度层级 | `src/shared/ipc-contracts.ts` |
 | **盲评 (Blind Scoring)** | 官网抓取失败但仍有 snippet/title 时允许的降级评分，理由必须明示"基于简介的轻量判断" | `ARCH-STANDARDS.md §5.10` |
 | **五级邮箱验证** | `verified / probable / catch_all / risky / invalid`。映射为可发送：`verified｜probable｜catch_all → true`；`risky｜invalid → false` | `ARCH-STANDARDS.md §9.6.3` |

@@ -5,7 +5,7 @@
 > 本节为文档链的顶层裁决锚点，用于消除历史版本标签混乱与规范漂移。任何 Agent 在读链后如遇冲突，一律以本节裁决。
 
 ### 0.1 版本真相 (Single Version State)
-- **当前发布版本 = `1.3.0`**（以 `package.json` `version` 字段为唯一事实源）。
+- **当前发布版本 = `1.4.36`**（以 `package.json` `version` 字段为唯一事实源；本行已于 2026-10-19 与 `package.json` 复核对齐）。
 - 本仓库文档存在 V1.2 / V1.3 / V1.4 三代历史标签，统一含义如下，不得再产生歧义：
   - **V1.2**：已交付的商业闭环基线（授权防线、防白嫖、断网容错、本地重计算）。`ARCH-STANDARDS.md`、`PROJECT-PRD.md`、`V1.2-商业版交付与运维手册.md` 的 "V1.2" 表述均指此基线，**其规则在 V1.3 仍然生效**。
   - **V1.3**：当前主线（AnySearch 四级弹性搜索、决策人穿透、多源融合、本地智能体矩阵、DNS 防火墙、Search-to-Agent 管道）。
@@ -19,8 +19,8 @@
 - **方法论参考**：`METHODOLOGY-NORTHSTAR.md` 是通用获客方法论北极星（愿景/SOP），**非实装规格**；凡其内容（评分模型、技术栈、算力选型）与本文件冲突，一律以本文件为准。
 - **云端协同与投递真相**：`CLOUD-COLLABORATION-DELIVERY.md` 是审批后上云、云端二次门禁、团队防撞、投递、抑制、Webhook、回复、配额、熔断与租户隔离的领域唯一事实源。本文只定义产品定位、用户旅程和业务验收，不复制其字段级契约。
 - **治理件真相（2026-09-22 新增）**：术语以 `GLOSSARY.md` 为准；状态机**层级映射**以 `STATE-MACHINES.md` 为准（各状态机语义仍归本文件与云端协同文档）；字段形状以代码 `src/shared/ipc-contracts.ts` 为准，人类可读索引见 `FIELD-DICTIONARY.md`；"实现变更 → 规范回写"时间线以 `CHANGELOG.md` 为准。四者均不得反向改写本文件 §零.3 的宪法常量。
-- **时点快照（非活规范）**：`archive/KONE-V1.3-对齐审计分析报告.md`、`KONE-V1.3-优化计划.md`、`archive/KONE-V1.3-商用上线就绪度审计报告.md`、`KONE-V1.3-深度审计报告与优化执行计划.md` 为特定 commit 的治理/审计快照，仅供追溯，**不得作为当前规范裁决依据**。（历史上曾存在的两份文档——KONE-商用成熟度深度审计报告.md 与 V1.2-to-V1.3-alignment.md——已于文档治理轮清除：内容分别并入对齐审计报告 §6/§8/§10 与本文件 §三，两份墓碑桩文件已物理删除，不再作为可引用文档。另见 `archive/KONE-V1.3-商用就绪度终审报告-2026-09-24.md` 亦已归档。）
-- **现行梳理报告（可作决策依据）**：`archive/KONE-V1.3-规范文档与架构数据交互深度梳理报告.md` 为 2026-09-22 的治理级审计结论，用于消解本文档体系内的冲突与歧义，**不改变本文件的权威地位**。
+- **时点快照（非活规范）**：`docs/archive/snapshots/` 下 21 份 2026-09-24 ~ 2026-10-13 的治理/审计快照（含 `KONE-V1.3-优化计划.md`、`KONE-V1.3-深度审计报告与优化执行计划.md`、`KONE-V1.3-对齐审计分析报告.md`、`KONE-V1.3-商用上线就绪度审计报告.md`、`KONE-V1.3-商用就绪度终审报告-2026-09-24.md` 等）为特定 commit 的时点记录，仅供追溯，**不得作为当前规范裁决依据**。（历史上曾存在的两份文档——KONE-商用成熟度深度审计报告.md 与 V1.2-to-V1.3-alignment.md——已于文档治理轮清除：内容分别并入对齐审计报告 §6/§8/§10 与本文件 §三，两份墓碑桩文件已物理删除，不再作为可引用文档。）
+- **现行梳理报告（可作决策依据）**：`docs/archive/snapshots/KONE-V1.3-规范文档与架构数据交互深度梳理报告.md` 为 2026-09-22 的治理级审计结论，用于消解本文档体系内的冲突与歧义，**不改变本文件的权威地位**。
 
 ### 0.3 宪法常量单一源 (Constitutional Constants — 只此一份)
 以下硬性常量**只在本节定义一次**；其余所有文档（ARCH-STANDARDS、.clinerules、agent 蓝图、PROJECT-PRD 等）如需引用，**只能指针引用本节，不得改写数值**。任何与本节数值不一致的表述均视为文档缺陷：
@@ -93,7 +93,7 @@
 
 ### 3. Omni-Search 大一统智能盲搜大坝规范
 
-- **前端零渠道选择**：移除旧版"搜索数据源"渠道下拉选择器。用户仅输入自然语言关键词 + 国家/城市，系统在后台自动执行全渠道 Blind Search。后端内部仍保留 `DataSourceType` 7 个变体作为线索溯源标记，但不再暴露为 UI 手动选择项。
+- **前端零渠道选择**：移除旧版"搜索数据源"渠道下拉选择器。用户仅输入自然语言关键词 + 国家/城市，系统在后台自动执行全渠道 Blind Search。后端内部仍保留 `DataSourceType` 9 个变体作为线索溯源标记，但不再暴露为逐渠道勾选的多选面板。**唯一例外（2026-10-19 明确）**：用户可在「搜索来源」中显式切换为「单源：Serper」执行 BYOK 独立搜索（`dataSourceType: 'serper'`，不消耗 SerpApi/AnySearch 配额、不参与多源并行）；该单源开关不属于被移除的旧版权限式"渠道下拉"，其失败必须显式报错而非静默降级。
 - **前置意图离散矩阵化**：通过 LLM 将自然语言解析为结构体 `{ country, countryOfficialLanguages: string[], pureEnglishProducts: string[], localizedProducts: { language: string; terms: string[] }[], b2bAttributes: string[] }`。`pureEnglishProducts` 是多值数组（如 `["Golf Cart Battery","car monitor"]`），禁止将多个产品词拼接为单串垃圾命令。LLM 不可达时走 `fallbackMutateB2BKeywords()` 兜底。
 - **目标国官方语言搜索宪法**：只要自然语言或 `country` 字段限定了国家，LLM 必须补全该国主要官方语言，并生成本地语言产品词变体。例如 `Germany` 必须额外生成德语变体（如 `Golfwagen Batterie`、`Golfcart Akku`）并与英文变体并行搜索。英文变体始终保留为主干，本地语言变体作为增量扩面，不得替代英文主干。
 - **离散产品词交叉相乘矩阵算法**：将 `pureEnglishProducts[]` 与 `localizedProducts[].terms[]` 合并为 `allSearchProducts[]`，再与 `B2B_ROLE_TERMS = ['dealer','distributor','importer','wholesaler','supplier','manufacturer']` 前 4 个角色逐一交叉相乘，生成独立的高阶布尔组合（如 `"Golf Cart Battery dealer Germany"`, `"Golfwagen Batterie Händler Deutschland"`, `"car monitor distributor Germany"` 等）。每组变体必须携带 `{ language, sourceProduct, b2bRole }` 元数据，经 `search:stage` 推送至前端展示为专业、简体中文的执行状态。
@@ -118,7 +118,7 @@
 ### 1. 权威通信契约层同步扩充 (`src/shared/ipc-contracts.ts`)
 - 强制要求：所有 V1.3 实体及扩展属性必须在本文件建立唯一事实源，供主进程与渲染端 import。
 - `DataSourceType` 契约定义（内部溯源标记，前端不再暴露为手动选择渠道）：
-  - `export type DataSourceType = 'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search' | 'anysearch'`（`anysearch` 为 AnySearch 独立溯源标记；`yellow_pages` 保留向后兼容但对应 Provider 已弃用——详见 `PROVIDER-CAPABILITY.md`）
+  - `export type DataSourceType = 'google_maps' | 'google_organic' | 'customs_shipment' | 'trade_show' | 'yellow_pages' | 'linkedin_search' | 'facebook_search' | 'anysearch' | 'serper'`（`anysearch` 为 AnySearch 独立溯源标记；`serper` 为用户显式「单源：Serper」时的 BYOK 独立溯源标记；`yellow_pages` 保留向后兼容但对应 Provider 已弃用——详见 `PROVIDER-CAPABILITY.md`）
 - `DecisionMaker` 结构体契约定义：
   - `name: string` (高管姓名)
   - `title: string` (高管详细职称，包含 Purchasing/CEO 等采购信号)
