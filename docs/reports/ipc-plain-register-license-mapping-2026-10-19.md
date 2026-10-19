@@ -11,8 +11,8 @@
 
 1. **"41 个 plain `registerIpc`"不等于"41 个越权入口"**。其中 **16 个必须保持免门禁**（启动/激活/配置/密钥，加门禁会造成鸡生蛋死锁）；**22 个需要商业门禁**（其中 4 个已有 in-body 门禁、1 个门禁不完整）；**3 个需条件/参数化门禁**。
 2. 真实缺陷 **2 处已确认**（初稿的"2 处待核"已当场核实闭环）：
-   - **确认 ①**：`AUTOMATION.QUEUE_OUTREACH` 仅有 `ensureTrialAccess`，**缺 `requireFeature('cloud_send')`**，与 `CLOUD-COLLABORATION-DELIVERY.md` §13.1「premium feature」口径不符 → Basic 用户可直连云端投递入队。
-   - **确认 ②**：`ACCOUNT.CONNECT` / `ACCOUNT.DISCONNECT` / `ACCOUNT.GET_LIST` **三通道均有 in-body 门禁**（`sandbox-service.ts:270 / 347 / 381`），但**代理键选错**——非高级套餐分支要求 `search_basic`，而 `search_basic` **同时也是 Trial 的能力**（`TRIAL_FEATURES`），故 **Trial 可绑定并查看邮箱账号**，违反 PRD §六.0「Trial 必须熔断、严禁渲染智能体卡片或暴露运行指标」与 `AGENTS.md` 同款约束。正确键应为 `local_autopilot`（Basic+）。
+   - **确认 ①**：`AUTOMATION.QUEUE_OUTREACH` 仅有 `ensureTrialAccess`，**缺 `requireFeature('cloud_send')`**，与 `CLOUD-COLLABORATION-DELIVERY.md` §13.1「premium feature」口径不符 → **活跃 Trial 与 Basic 均可直连云端投递入队**（根因见 §1.1：`ensureTrialAccess` 只拦"过期/未授权"，不构成付费墙）。
+   - **确认 ②**：`ACCOUNT.CONNECT` / `ACCOUNT.DISCONNECT` / `ACCOUNT.GET_LIST` **三通道均有 in-body 门禁**（`sandbox-service.ts:270 / 347 / 381`），但**代理键选错**——非高级套餐分支要求 `search_basic`，而 `search_basic` **同时也是 Trial 的能力**（`TRIAL_FEATURES`），故 **Trial 可绑定并查看邮箱账号**，违反 PRD §六.0「Trial 必须熔断、严禁渲染智能体卡片或暴露运行指标」与 `AGENTS.md` 同款约束。正确键应为 `local_autopilot`（Basic+）。该路径**不含任何 Trial 有效期校验**，故对活跃 Trial 完全敞开。
    - **勘误**：初稿标记的"待核"项已消除——已完整读取 `sandbox-service.ts:257-404` 三个 handler，全部含门禁；问题从"缺失门禁"降级/升级为"**门禁键选取错误**"（见 D6）。
 3. 迁移**不得机械替换**：`AUTH.*` / `CONFIG.*` / `SECRET.*` / `LICENSE.*` / `SYSTEM.*` 一旦套上 `registerSecureIpc` 会**锁死激活与配置**，属 P0 级回归风险。
 
@@ -51,6 +51,24 @@ LICENSE.GET_INFO / REQUEST_TRIAL / SUBMIT / VERIFY / CHECK_STATUS  (license-serv
 - `registerSecureIpc(ipcMain, channel, store, licenseGuard, handler, operationName?)` —— 只做 **Trial/过期拦截**（`ensureTrialAccess`），并把通道**登记进 registry（`skipAttach: true`）**。见 `license-service.ts:559-593`。
 - `registerSecureFeatureIpc(..., featureName, handler, ...)` —— Trial 拦截 + `licenseGuard.requireFeature(featureName)`（数组则 `requireAnyFeature`），无权返回 `FEATURE_DENIED` 结构化信封。见 `license-service.ts:595-627`。
 - 两层包装**自身即 registry-known**，因此迁移后 `verify:ipc` 的"plain"计数会下降，`ARCH-STANDARDS §3` 注记需同步。
+
+### 1.1 关键语义（两处缺陷的共同根因）
+
+`ensureTrialAccess(store, licenseGuard, op)`（`license-service.ts:485-526`）的真实语义是**"有效期/授权状态"门禁，而非付费墙**：
+
+| 输入状态 | 结果 |
+|---|---|
+| `store` 缺失 | 放行 |
+| **开发态**（`!app.isPackaged`）或回归测试 harness | **无条件放行**（`shouldBypassLicenseInDev`，`:483`）→ 门禁在 dev 下不可观测 |
+| `claims.status === 'active'` 且未过期 | 放行（**活跃 Trial 亦在此列**） |
+| Trial 已过期 / 无活跃 claims | `403 TRIAL_EXPIRED` |
+
+**推论**：`registerSecureIpc`（仅 Trial 门禁）**不是付费墙**；真正的套餐墙只由 `registerSecureFeatureIpc` → `licenseGuard.requireFeature` 提供。因此：
+
+1. 任何"只挂 `ensureTrialAccess`、不挂 `requireFeature`"的 Premium 通道 = **对活跃 Trial 与 Basic 同等敞开**（缺陷 ① 正是此类）。
+2. 任何"用 `search_basic` 当 Basic 代理键"的判断 = **对活跃 Trial 同等敞开**，因 `search_basic ∈ TRIAL_FEATURES`（缺陷 ② 正是此类）。
+
+撰写迁移用例时必须覆盖三态：**活跃 Trial / 已过期 Trial / 付费 Basic**，且不可在 dev 态（门禁被跳过）下断言拒绝行为。
 
 ---
 

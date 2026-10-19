@@ -52,7 +52,7 @@ lastVerifiedAt: 2026-10-19
 - IPC 授权分层映射（2026-10-19，**仅分析、未改代码**）：新增 `docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`，
   对 41 个 plain `registerIpc` 通道给出 public/trial/paid 分层（**16 免门禁**（启动/激活/配置/密钥·加门禁会造成激活死锁）、
   **22 需 feature 门禁**、**3 条件/参数化门禁**），并锁定 2 处真实缺陷：① `AUTOMATION.QUEUE_OUTREACH` 仅 `ensureTrialAccess`、
-  **缺 `requireFeature('cloud_send')`** → Basic 可直连云端入队；② `ACCOUNT.CONNECT/DISCONNECT/GET_LIST` 虽有 in-body 门禁，
+  **缺 `requireFeature('cloud_send')`** → 活跃 Trial 与 Basic 均可直连云端入队；② `ACCOUNT.CONNECT/DISCONNECT/GET_LIST` 虽有 in-body 门禁，
   但代理键误用 `search_basic`（**Trial 亦持有该能力**）→ **Trial 可绑定/查看邮箱账号**，违反 PRD §六.0 熔断要求。
   迁移前置为 D1–D5 裁决；受影响 SSOT：`ARCH-STANDARDS.md §3`（迁移计数待迁移落地后回写）。
 
