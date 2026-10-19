@@ -1,6 +1,6 @@
 # 41 个 plain `registerIpc` 通道 · 授权分层映射与 Fail-Closed 迁移方案
 
-> 状态：**分析态（未改代码）**。本文是"迁移前必须先定策略"的决策文档，不是实现记录。
+> 状态：**分析态 + D1/D6 已落地**。本文是"迁移前必须先定策略"的决策文档；§4 中 D1、D6 已裁决并实现（2026-10-19，commit `b019a38`，回归 `tests/ipc-license-gate-d1-d6.test.ts`），D2–D5 / D7 仍为**确认前不得实现**。
 > 生成日期：2026-10-19　范围：`electron/` 主进程 IPC 授权边界
 > 唯一权威源引用：`kone-PRD.md §1.2 / §5.1.2 / §六.0`、`ARCH-STANDARDS.md §3 / §6 / §14`、
 > `src/shared/license-features.ts`（能力集 SSOT）、`electron/services/license-service.ts`（包装器实现）。
@@ -156,6 +156,9 @@ LICENSE.GET_INFO / REQUEST_TRIAL / SUBMIT / VERIFY / CHECK_STATUS  (license-serv
 ---
 
 ## 4. 待裁决项（须产品/合规确认，**确认前不得实现**）
+
+> **落地进度（2026-10-19）**：**D1 ✅ 已实现**（`AUTOMATION.QUEUE_OUTREACH` 补 `requireFeature('cloud_send')`）、**D6 ✅ 已实现**（`ACCOUNT.CONNECT/DISCONNECT/GET_LIST` 代理键 `search_basic` → `local_autopilot`）——commit `b019a38`，回归 `tests/ipc-license-gate-d1-d6.test.ts`（10 项，撤销修复即失败）。
+> **D2 / D3 / D4 / D5 / D7 仍待裁决**，未裁决前不得对其余 plain 通道追加门禁。
 
 | ID | 议题 | 两个选项 | 本文档建议 |
 |---|---|---|---|
