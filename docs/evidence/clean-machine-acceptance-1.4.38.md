@@ -61,24 +61,38 @@
 |---|---|---|
 | `Kone-Intellect-Setup-1.4.38.exe` | ✅ | 被验收对象 |
 | `Kone-Intellect-Setup-1.4.38.exe.sha256` | ✅ | 指纹校核文件（与 exe 放同一目录） |
-| `scripts/clean-machine-collect.ps1` | ✅ | 机器事实采集（只读；目标机**无需安装 Node**） |
+| `START-HERE.bat` | ✅ | **双击即运行**（无需敲命令 / 无需管理员） |
+| `clean-machine-collect.ps1` | ✅ | 采集器本体（由 `START-HERE.bat` 调用，勿单独挪走） |
 | `docs/evidence/clean-machine-acceptance-1.4.38.md` | ✅ | 本执行单（打印或本地打开） |
 
 > ⚠️ `release/` 被 `.gitignore` 排除（既定策略），**安装包与 `.sha256` 不在 GitHub 仓库内**，必须随 exe 走离线渠道分发。
 
-### 1.2 目标机开机第一件事：跑采集器（约 10 秒）
+### 1.2 目标机开机第一件事：双击 `START-HERE.bat`（约 10 秒）
 
-在**安装之前**跑一次（记录"干净基线"），完成 S11 后再跑一次（记录"已安装事实"）：
+**不敲命令、不要管理员权限。**
+
+在**安装之前**双击一次（记录"干净基线"），完成 S11 后再双击一次（记录"已安装事实"）。
+
+| 窗口显示的结论 | 含义 | 该做什么 |
+|---|---|---|
+| `RESULT: OK` | 安装包指纹一致 | 继续下一步 |
+| `RESULT: FINGERPRINT MISMATCH` | 安装包在传输中被改动 | **立即停止**，截图发回 |
+| `RESULT: COLLECTOR ERROR` | 采集器异常 | 窗口截图发回 |
+
+- 每次双击后，同目录会多出 `kone-evidence-1.4.38-<时间戳>` 文件夹，内含 `machine-info.json` / `machine-info.txt` / `logs-tail.txt`。
+- **把该文件夹整个发回**。⚠️ `logs-tail.txt` 可能含 API Key / 邮箱，**发回前删除该文件或先脱敏**。
+- 采集器**只读**：不写注册表、不动应用数据、不启动应用。
+
+<details>
+<summary>双击无反应时的备用方案（命令行）</summary>
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\clean-machine-collect.ps1 `
   -InstallerPath .\Kone-Intellect-Setup-1.4.38.exe -IncludeLogs
 ```
 
-- 退出码 `0` = 指纹一致，可继续验收；**`2` = 指纹不一致 → 立即停止并反馈**；`9` = 采集器异常。
-- 产出 `kone-evidence-1.4.38-<时间戳>\machine-info.json` / `machine-info.txt` / `logs-tail.txt`。
-- ⚠️ `logs-tail.txt` 可能含 API Key / 邮箱，**回传前必须人工脱敏**。
-- 采集器为**只读**：不写注册表、不动应用数据、不启动应用、无需管理员权限。
+退出码：`0` 一致 / `2` 指纹不一致 / `9` 采集器异常。
+</details>
 
 ---
 
