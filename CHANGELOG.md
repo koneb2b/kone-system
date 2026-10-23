@@ -53,6 +53,23 @@ lastVerifiedAt: 2026-10-19
   **覆盖边界**：不覆盖 NSIS 安装层（快捷方式 / 卸载项 / 安装目录）、目标机运行库依赖、真实第三方 API 联网，
   且“干净机器无历史残留”仅以空 profile 近似；**不构成 `CLOUD-COLLABORATION-DELIVERY.md §0` NO-GO ① 的关闭证据**，
   也不替代本单 S1–S11 人工验收。
+- 安装层自动化验收（2026-10-23）：新增 `scripts/install-layer-acceptance.cjs`（CommonJS），对
+  `release/Kone-Intellect-Setup-1.4.38.exe` 执行 NSIS 静默安装（`/S /D=<临时目录>`）→ 断言 A1–A5 →
+  在 `finally` 中静默卸载并校验清理，本机实测 **PASS（exit 0）**：A1 安装目录与 `KoneAI.exe` 出现（等待 1 ms）；
+  A2 `ProductVersion 1.4.38.0` / `FileVersion 1.4.38`；A3 卸载登记项存在、`UninstallString` 指向
+  `<targetDir>\Uninstall KoneAI.exe`、且 `HKCU\Software\*` 中恰有 1 个 `InstallLocation == targetDir` 的键
+  （`58ce24dd-de49-5cd5-8657-5b02091502a0`，等待 871 ms）；A4 桌面与开始菜单各 1 个 `Kone 智能获客.lnk`；
+  A5 卸载后安装目录 / 卸载登记项 / 快捷方式全部消失、`residue: []`（安装 6720 ms，卸载清理 6197 ms）。
+  安装包指纹前后不变（89,962,234 字节 / SHA-256 `6EF8459AA2F70CB5812E852D0426F0C7D20635EDDFAF0BEE2A55538CD7741D4B`）。
+  **A3 判据勘误（规范缺陷，非产品缺陷）**：初版 A3 断言“卸载登记项”上存在 `InstallLocation`，该值在卸载键上
+  按设计恒为 `null` —— electron-builder `installer.nsh:104` 将 `InstallLocation` 写入 `${INSTALL_REGISTRY_KEY}`，
+  `multiUser.nsh:8-9` 定义 `INSTALL_REGISTRY_KEY = "Software\${APP_GUID}"`（卸载键不带 `InstallLocation`）。
+  现改为“`UninstallString` 目录等价 + 恰有 1 个 `InstallLocation` 匹配键”，**不是放宽判据**：
+  路径不符即 0 命中，出现 2 个匹配键即失败（fail-closed）。
+  **不覆盖**：默认安装路径（本测试用 `/D` 指向临时目录）、非提升安装上下文（本机仅有 High 完整性令牌，
+  **未验证**非提升流程）、覆盖升级安装、非 ASCII（中文）安装路径、目标机缺失运行库。
+  **不构成 `CLOUD-COLLABORATION-DELIVERY.md §0` NO-GO ① 的关闭证据**，也不替代本单 S1–S11 人工验收；
+  受影响 SSOT：`docs/evidence/clean-machine-acceptance-1.4.38.md §7`。
 
 ---
 
