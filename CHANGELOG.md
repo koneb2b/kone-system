@@ -43,6 +43,16 @@ lastVerifiedAt: 2026-10-19
   ③ **计数订正**：见同页 2026-10-19 "云端门禁真相校正"条目（59 → 63 项，实测）。
   受影响 SSOT：`CLOUD-COLLABORATION-DELIVERY.md §0`、`V1.2-商业版交付与运维手册.md §3`、
   `ARCH-STANDARDS.md §17`、`docs/release-gate.md §4`、`docs/evidence/clean-machine-acceptance-1.4.38.md §7`。
+- 首次运行自动化（2026-10-23，commit `39c4318`）：新增 npm 入口 `test:first-run` 与 `scripts/packaged-first-run.cjs`，
+  以全新 `--user-data-dir` 启动 `release/win-unpacked/KoneAI.exe`，断言首启应用层 `booted` / `stageRendered` /
+  `preloadBridgeVisible`（实测桥接 27 键）/ `activationScreenVisible` / `trialEntryVisible` / `landedOnKnownScreen`；
+  报告与截图写入 `tests/packaged-first-run-report.json`（gitignored）/ `tests/packaged-first-run.png`。
+  本机全量跑批 10 条命令全部 EXIT 0：`verify:consistency` / `verify:release-gate` / `test:unit`（632）/
+  `test:cloud`（63 项 / 2 文件）/ `test:ipc`（1）/ `test:e2e-smoke`（7）/ `lint`（0 error）/ `typecheck` /
+  `packaged-smoke` / `packaged-first-run`（PASS）。
+  **覆盖边界**：不覆盖 NSIS 安装层（快捷方式 / 卸载项 / 安装目录）、目标机运行库依赖、真实第三方 API 联网，
+  且“干净机器无历史残留”仅以空 profile 近似；**不构成 `CLOUD-COLLABORATION-DELIVERY.md §0` NO-GO ① 的关闭证据**，
+  也不替代本单 S1–S11 人工验收。
 
 ---
 

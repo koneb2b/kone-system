@@ -271,6 +271,7 @@ powershell -ExecutionPolicy Bypass -File .\clean-machine-collect.ps1 `
 
 | 门禁 | 状态 | 说明 / 依赖 |
 |---|---|---|
+| NO-GO ① 应用层首次运行 | ✅ **已自动化覆盖（2026-10-23）** | 「应用层首次运行」已由 `npm run test:first-run`（`scripts/packaged-first-run.cjs`，全新 `--user-data-dir`）自动化覆盖（本机可复现）；NO-GO ① 的剩余范围**收窄为安装层与环境层**（NSIS 安装行为、目标机运行库依赖），仍为发布阻断项 |
 | NO-GO ② 打包冒烟 | ✅ **已闭环（2026-10-20）** | 打包态冒烟以 `scripts/packaged-smoke.cjs` 显式规则通过（见 §0 与 `tests/packaged-smoke-report.json`）；原 `app.asar` 占用属本机构建环境问题 |
 | NO-GO ③ 审批门禁部署开启留证 | ⏳ 待办 | 云端环境设 `APPROVAL_GATE_ENABLED=true` 并留证（生产当前 `false`）；需云端环境 + 产品决策 |
 | NO-GO ④ 小流量实发 | ⏳ 待办 | 真实 Resend / IMAP / 域名 DNS 打通小批量投递；需外部账号与域名资源 |
