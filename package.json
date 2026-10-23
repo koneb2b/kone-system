@@ -41,6 +41,7 @@
     "test:bypass": "npm run build:electron:dev && node --test tests/dev-bypass.test.ts",
     "test:all": "npm run build:electron:dev && node --test tests/*.test.{js,ts} tests/e2e/*.test.js tests/e2e/*.test.ts 2>&1",
     "test:smoke": "npm run dist && node ./scripts/packaged-smoke.cjs",
+    "test:first-run": "node ./scripts/packaged-first-run.cjs",
     "test:packaged-premium": "npm run dist && node ./scripts/verify-packaged-premium.cjs",
     "test:security-audit": "npm run test:gateway && npm run test:env && npm run test:bypass && node ./scripts/security-audit.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
