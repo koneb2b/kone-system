@@ -195,7 +195,7 @@ Autopilot is a background companion panel, not the hero surface.
 5. Paid Basic users may see Email and low-volume WhatsApp Web cards when configured; LinkedIn is Premium/Enterprise only and must be clearly labeled as read-only Profile辅助 + AI 文案生成, not auto outreach.
 6. Locked or unavailable capabilities show lock icon + upgrade CTA, but must not expose fake progress metrics.
 7. Email agent checks for connected email sandbox before allowing start; shows failure toast if no SMTP/IMAP account connected.
-8. Daily quota badge visible at panel top; WhatsApp Basic low-volume limit and Email Basic 20/day must be displayed clearly.
+8. Daily quota badge visible at panel top; WhatsApp Basic low-volume limit and Email Basic daily cap (authoritative values: `kone-PRD.md §零.3`) must be displayed clearly.
 9. Autopilot physical boundary warning banner: `本地 AI 智能体群正在安全复用您本机的住宅网络和独立沙箱环境...`
 10. LinkedIn UI must never show `自动加好友`、`自动私信` or equivalent wording. Approved wording: `浏览 Profile`、`生成破冰文案`、`复制文案人工触达`。
 

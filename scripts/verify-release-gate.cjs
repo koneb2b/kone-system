@@ -243,5 +243,5 @@ if (failed.length > 0) {
   process.exitCode = 1
 } else {
   console.log(`✅ 发布门禁静态校验通过（HARD ${hard.length} 项全绿，WARN ${warn.length} 项待人工裁决）`)
-  console.log('   提醒：DELIVERY 层（security-audit / smoke / packaged-premium / verify:signature --strict / 干净机器 20 项）不在本脚本内，发版前必须单独执行。')
+  console.log('   提醒：DELIVERY 层（security-audit / smoke / packaged-premium / verify:signature --strict / 干净机器验收 S1–S11）不在本脚本内，发版前必须单独执行。')
 }

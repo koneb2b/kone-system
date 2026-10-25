@@ -88,9 +88,9 @@ Agent 执行管道 (agent-pipeline.ts)
 ### Agent 类型与能力矩阵
 | Agent | 消费字段 | 执行通道 | 日频上限 | 技术实现 |
 |---|---|---|---|---|
-| WhatsApp 拓客猎手 | `phone` | Puppeteer + Web WA DOM 自动化（实验性·Beta，Basic）/ Cloud API (Premium) | 3-5/day Basic | 本地扫码 + DOM `data-testid` 选择器 / 官方 Cloud API |
-| LinkedIn 商务猎手 | `linkedinUrl` | 本地 Session Cookie 只读 Profile 辅助 | ≤30 profile view/day | 公开资料提取 + AI 文案生成，人工触达 |
-| 邮件长效跟随助理 | `email` | Nodemailer SMTP+IMAP (Basic) / Cloudflare Workers (Premium, 目标态) | 20/day Basic | 本地 SMTP 直连 / 云端队列 (Phase 1) |
+| WhatsApp 拓客猎手 | `phone` | Puppeteer + Web WA DOM 自动化（实验性·Beta，Basic）/ Cloud API (Premium) | 见 `kone-PRD.md §零.3` | 本地扫码 + DOM `data-testid` 选择器 / 官方 Cloud API |
+| LinkedIn 商务猎手 | `linkedinUrl` | 本地 Session Cookie 只读 Profile 辅助 | 见 `kone-PRD.md §零.3` | 公开资料提取 + AI 文案生成，人工触达 |
+| 邮件长效跟随助理 | `email` | Nodemailer SMTP+IMAP (Basic) / Cloudflare Workers (Premium, 目标态) | 见 `kone-PRD.md §零.3` | 本地 SMTP 直连 / 云端队列 (Phase 1) |
 
 ### 宪法约束
 - Agent 在消费 `AgentTask` 时必须验证 `taskRunId !== currentPipelineRunId`，丢弃来自旧管道的过期任务

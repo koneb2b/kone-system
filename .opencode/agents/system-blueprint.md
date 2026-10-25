@@ -247,7 +247,7 @@ Current verified boundary:
 Three built-in sales agents run locally under the `/agents` panel:
 
 ### WhatsApp Hunter
-- Basic path uses Puppeteer + Web WhatsApp DOM automation (`data-testid` selectors, experimental·Beta — NOT the `whatsapp-web.js` protocol layer) with local QR login, real session health checks, low-volume 3-5/day sends, and explicit reconnect prompts
+- Basic path uses Puppeteer + Web WhatsApp DOM automation (`data-testid` selectors, experimental·Beta — NOT the `whatsapp-web.js` protocol layer) with local QR login, real session health checks, low-volume sends (daily cap: `kone-PRD.md §零.3`), and explicit reconnect prompts
 - Premium path uses official WhatsApp Cloud API where configured
 - Validates phone numbers from discovered decision makers when platform state allows
 - Must never claim immunity from platform anti-fraud systems
@@ -266,7 +266,7 @@ Three built-in sales agents run locally under the `/agents` panel:
 
 ### Agent Permission Model
 - Trial: upgrade/promo surface only for Agent panel; no protected metrics exposure
-- Basic: Email 20/day by default; WhatsApp Web 3-5/day when configured
+- Basic: Email and WhatsApp Web daily caps are defined only in `kone-PRD.md §零.3`; read `userConfig.agentDailyLimits` first, defaults only as fallback
 - Premium/Enterprise: LinkedIn read-only helper, WhatsApp Cloud API, account sandbox expansion, team collaboration, and cloud automation according to licensed features
 
 ---
