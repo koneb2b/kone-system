@@ -33,10 +33,10 @@
 | 项 | 值 |
 |---|---|
 | 工具包 | `kone-acceptance-kit-1.4.38.zip` |
-| 字节数 | `89977170`（≈ 85.8 MB） |
-| **SHA-256** | `129417A70CD2A9A2D7AF7A4122E3595670086CCB6A07A3CE30EA23F985FC91C7` |
+| 字节数 | `89980304`（≈ 85.8 MB） |
+| **SHA-256** | `7BD5EA43941002FFA0C1170A70134BD9B05C2622794D555AC329127F0BAEB7AE` |
 | 根条目数 | `5` |
-| 内含执行单 | 与本文件**同版本**（构建基线逐字节一致，含 §7.1 六场景矩阵）；本指纹小节为打包后追加 |
+| 内含执行单 | 与本文件**同版本**（含 §7.1 六场景矩阵与 §7.2 五状态验证）；本指纹小节为打包后追加，故包内副本不含此小节 |
 
 ---
 
@@ -319,9 +319,30 @@ git 考古结论：208 个提交、单一根提交 `4b77729`（2026-04-24，版�
 
 **本轮未覆盖（明确保留）**：非提升 / 中等完整性上下文（本机仅有 High 完整性令牌）；per-machine / Program Files 安装；2026-04 之前的旧版构建；Authenticode / 代码签名验证；AV / SmartScreen；文件占用锁定；磁盘写满；安装时应用正在运行；需要重启的安装。以上均**不因本轮 PASS 而视为已验证**。
 
+- 交互式（非静默）安装向导：本节全部场景均为 `/S` 静默安装，未验证人工点击向导的路径与文案。
+- 官方安装器制造的「真实并存双安装」：安装器对同一 `appId` / 卸载 GUID `58ce24dd-de49-5cd5-8657-5b02091502a0` 强制单实例，新旧版本会先卸载旧版，故未能取得并存样本；采集器的重复检测改由受控残留登记夹具验证（见 §7.2 D′）。
+
 **证据位置**：规范证据 `tests/install-layer-report.json`（已入库，约 11,884 B）；逐场景报告 `tests/install-layer-report-<场景名>.json`（含机器相关临时路径，按 `.gitignore` 忽略）。复现：`node scripts/install-layer-acceptance.cjs --scenario=custom-temp|default-path|non-ascii|reinstall|upgrade|legacy-migration`。
 
 > 结论边界：本轮只关闭「安装层」中的默认路径 / 中文路径 / 同版本重装 / 1.4.32→1.4.38 升级 / 旧式目录迁移取证；**NO-GO ① 仍未闭环**，环境层（目标机缺运行库 / 纯净机）与非提升上下文仍为发布阻断项。
+
+### 7.2 采集器五状态运行时验证（2026-10-25）
+
+> 对象：`scripts/clean-machine-collect.ps1`（采集器 v1.1.0，只读；证据输出全部位于仓库外的 `%TEMP%`）。
+> 本轮以真实 1.4.38 / 1.4.32 安装器完成 A–E 五状态实验，采集退出码均为 `0`，安装包指纹始终一致。
+
+| 状态 | 场景 | 关键实测结果 |
+|---|---|---|
+| A | 未安装 | `appInstalled=false`、`uninstallEntryCount=0`、`uninstallEntryFound=false`、`shortcutCount=0`、`koneProcessRunning=false`、指纹一致 |
+| B | 默认路径静默安装 1.4.38 | `appInstalled=true`、版本 `1.4.38`、`uninstallEntryCount=1`、`uninstallEntryFound=true`、`koneProcessRunning=false`；**实际生成 2 个快捷方式（桌面 + 开始菜单），不是 1 个** |
+| C | 启动应用后采集 | `koneProcessRunning=true`（Electron 多进程计 4 个进程）；关闭后确认归零 |
+| D | 尝试真实双安装 | **真实发现**：在 1.4.38 默认安装之上把 1.4.32 静默安装到临时 legacy 目录时，安装器先卸载了 1.4.38（同一卸载 GUID），最终仍为 1 条登记且 `appInstalled=false` —— 官方安装器不支持并存 |
+| D′ | 受控残留夹具 | 在 1.4.38 正常安装之上复制一条真实卸载登记（同一 DisplayName、不同 InstallLocation）→ `uninstallEntryCount=2`、`multipleInstallations=true`，`.txt` 输出 `⚠️ 检测到 2 个 Kone 卸载登记（疑似重复安装/升级残留），需人工核查` |
+| E | 卸载两者 + 清理 | 1.4.32 与 1.4.38 卸载退出码均 `0`；`appInstalled=false`、`uninstallEntryCount=0`、`shortcutCount=0`、`koneProcessRunning=false`，无安装目录残留 |
+
+**新增能力**：采集器现枚举 `HKCU`、`HKLM`、`HKLM\WOW6432Node`、`HKCU\WOW6432Node` 四处全部 Kone 卸载登记并去重，输出 `uninstallEntryCount` / `uninstallEntryFound` / `uninstallEntries[]` / `multipleInstallations`，因此**能检出重复安装与升级残留**（旧版 `Select-Object -First 1` 只能证明「≥1」）。同时新增 `koneProcessRunning` 与 `shortcuts[]` / `shortcutCount`，并把默认输出目录改为脚本所在目录；默认路径若落在含 `.git` 与 `package.json` 的仓库内则拒绝写入并退出 `9`，显式 `-OutDir` 行为不变。
+
+**边界**：D′ 为受控夹具，不是官方安装器制造的并存安装；安装器本身会自清理旧版。以上不改变采集器「只读」语义，也不改变退出码 `0` / `2` / `9`。
 
 ## 8. 证据最低要求与判读规则（防"看图主观"）
 
