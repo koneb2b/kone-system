@@ -1,8 +1,11 @@
-// 熔断只针对暂时性失败（额度受限/服务端异常）。
+// 熔断只针对暂时性失败（额度受限 / 服务端异常 / 网络异常）。
 // 400/401/403 属确定性配置错误（密钥无效等），计入熔断会让用户在反复
 // 输错密钥后整体锁死该服务地址 60 秒，与"4xx 配置错误不熔断"的成本
-// 保护设计冲突；429 保留——连续限流说明该 host 确实不可持续调用。
-const FAILURE_STATUSES = new Set([429])
+// 保护设计冲突；429 与 5xx 保留——连续限流/连续 5xx 说明该 host 确实
+// 不可持续调用。网络异常与请求超时同样是暂时性失败，计入熔断，避免
+// 断网时对同一 host 无界重试（每次都要等满超时）。
+// 宪法口径：kone-PRD.md §0.3「HTTP 熔断」。
+const isFailureStatus = (status: number) => status === 429 || (status >= 500 && status < 600)
 const FAILURE_THRESHOLD = 3
 const CIRCUIT_OPEN_MS = 60_000
 
@@ -10,7 +13,7 @@ type CircuitState = {
   consecutiveFailures: number
   openUntil: number
   /* 最近一次触发熔断的状态码 —— 用于把「429 限流」与其他服务异常区分开，
-     给出**可操作**的提示（当前仅 429 计入熔断，见 FAILURE_STATUSES）。 */
+     给出**可操作**的提示（429=查配额/速率；5xx=等上游恢复；0=网络/超时）。 */
   lastStatus?: number
 }
 
@@ -125,6 +128,12 @@ export const safeFetch = async (url: string, options?: RequestInit, timeoutMs = 
   try {
     response = await fetch(url, { ...(options || {}), signal: combineSignals(options?.signal, controller.signal) })
   } catch (error) {
+    /* 主动取消（调用方 signal）不是上游健康信号，不计入熔断；
+       自身超时与网络/DNS 失败属暂时性失败，计入（kone-PRD §0.3）。 */
+    const callerAborted = options?.signal?.aborted === true
+    if (!callerAborted) {
+      recordProtectedFailure(host, url, 0)
+    }
     if (controller.signal.aborted) {
       /* preserve-caught-error：把原始异常挂到 cause，便于排查底层网络原因 */
       throw new Error(`请求超时（${timeoutMs}ms）：${host}`, { cause: error })
@@ -134,7 +143,7 @@ export const safeFetch = async (url: string, options?: RequestInit, timeoutMs = 
     clearTimeout(timer)
   }
 
-  if (FAILURE_STATUSES.has(response.status)) {
+  if (isFailureStatus(response.status)) {
     recordProtectedFailure(host, url, response.status)
   } else if (response.ok) {
     recordSuccess(host)
