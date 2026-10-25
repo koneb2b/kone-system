@@ -46,9 +46,12 @@ gen_article2.js
 /probe-*.json
 # 一次性测试报告（非长期资产）
 /tests/*-report.json
+/tests/install-layer-report-*.json
 /tests/module-e2e-report.json
 # 例外：安全审计证据与打包冒烟证据同属「交付证据」，须入库
 !/tests/security-audit-report.json
+# 例外：安装层规范报告（小体积、可复现的规范证据）入库；逐场景报告仍忽略（含机器特定临时路径）
+!/tests/install-layer-report.json
 # 根目录审计报告产物（由 scripts/audit-ui-interaction.cjs 生成）
 /audit-ui-interaction-report.json
 # 打包产物与意外重定向文件

@@ -1,0 +1,283 @@
+{
+  "scenario": "custom-temp",
+  "reportPurpose": "Install-layer acceptance evidence for the 1.4.38 NSIS per-user installer: silent install, registry/shortcut assertions, silent uninstall and residue checks. Machine-specific paths are recorded verbatim.",
+  "coverage": {
+    "coveredScenarios": [
+      "custom-temp",
+      "default-path",
+      "non-ascii",
+      "reinstall",
+      "upgrade",
+      "legacy-migration"
+    ],
+    "notCovered": {
+      "nonElevatedContext": {
+        "covered": false,
+        "reason": "The harness only had a High-integrity administrator token in this environment; medium-integrity/non-elevated user behaviour was not exercised."
+      },
+      "perMachine": {
+        "covered": false,
+        "reason": "package.json build.perMachine is not true and no Program Files/UAC install was attempted; only the per-user default is covered."
+      },
+      "preApril2026LegacyBuild": {
+        "covered": false,
+        "reason": "Only the archived 1.4.32 build (release-v151) was exercised as a legacy baseline; builds older than the April 2026 installer generation were not tested."
+      },
+      "authenticode": {
+        "covered": false,
+        "reason": "No signature verification (Get-AuthenticodeSignature / chain trust) is asserted by this harness."
+      },
+      "antivirusSmartScreen": {
+        "covered": false,
+        "reason": "No antivirus scan, Defender reputation check or SmartScreen prompt path is exercised; silent mode bypasses interactive reputation UI."
+      },
+      "lockedFiles": {
+        "covered": false,
+        "reason": "No test holds target files open during install/uninstall, so locked-file failure handling is not covered."
+      },
+      "diskFull": {
+        "covered": false,
+        "reason": "Only a preflight free-space floor is checked; low-disk/disk-full install failure behaviour is not exercised."
+      },
+      "runningAppDuringInstall": {
+        "covered": false,
+        "reason": "The app is not launched before install; in-use upgrade behaviour (running KoneAI.exe during install) is not covered."
+      },
+      "rebootRequired": {
+        "covered": false,
+        "reason": "Reboot-required flows and post-reboot completion are not exercised; no reboot was performed."
+      }
+    }
+  },
+  "a3oracle": {
+    "criterion": "Exactly one Kone uninstall entry exists AND its UninstallString targets targetDir\\Uninstall*.exe AND exactly one HKCU\\Software\\* key has InstallLocation == targetDir",
+    "sources": [
+      "node_modules/app-builder-lib/templates/nsis/include/installer.nsh:104",
+      "node_modules/app-builder-lib/templates/nsis/include/installer.nsh:119-123",
+      "node_modules/app-builder-lib/templates/nsis/multiUser.nsh:8-9"
+    ]
+  },
+  "startedAt": "2026-10-25T08:05:52.170Z",
+  "finishedAt": "2026-10-25T08:06:04.313Z",
+  "targetDir": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755",
+  "targetDirPreExisted": false,
+  "defaultPath": {
+    "expectedDir": null,
+    "actualDir": null,
+    "resolvedFrom": null,
+    "matchedExpectation": null,
+    "derivationSource": null,
+    "derivation": null,
+    "legacyExpectedDir": null,
+    "legacyDirPresent": null,
+    "legacyDirSnapshot": null,
+    "preInstallSnapshot": []
+  },
+  "preexistingDefaultDir": null,
+  "oldInstaller": null,
+  "upgrade": null,
+  "reinstall": null,
+  "installOlder": null,
+  "secondInstall": null,
+  "legacyMigration": null,
+  "evidence": {
+    "canonicalReportPath": "C:\\Users\\Administrator\\Kone-System\\tests\\install-layer-report.json",
+    "canonicalReportProducedByScenario": "custom-temp",
+    "thisReportPath": "C:\\Users\\Administrator\\Kone-System\\tests\\install-layer-report-custom-temp.json",
+    "thisReportBytes": 11884,
+    "canonicalReportBytes": 11884,
+    "canonicalReportUnignored": true,
+    "canonicalReportIgnored": false,
+    "perScenarioReportsIgnored": true,
+    "maxTrackedCanonicalBytes": 262144,
+    "note": "tests/install-layer-report.json is below 256 KB and is deliberately NOT ignored (canonical evidence, like tests/packaged-smoke-report.json). Per-scenario install-layer-report-*.json files remain ignored because they embed machine-specific temp paths."
+  },
+  "artifact": {
+    "path": "C:\\Users\\Administrator\\Kone-System\\release\\Kone-Intellect-Setup-1.4.38.exe",
+    "expectedSize": 89962234,
+    "expectedSha256": "6EF8459AA2F70CB5812E852D0426F0C7D20635EDDFAF0BEE2A55538CD7741D4B",
+    "before": {
+      "size": 89962234,
+      "sha256": "6EF8459AA2F70CB5812E852D0426F0C7D20635EDDFAF0BEE2A55538CD7741D4B"
+    },
+    "after": {
+      "size": 89962234,
+      "sha256": "6EF8459AA2F70CB5812E852D0426F0C7D20635EDDFAF0BEE2A55538CD7741D4B"
+    }
+  },
+  "preflight": {
+    "existingUninstallEntries": [],
+    "existingShortcuts": [],
+    "existingProcesses": []
+  },
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "node": "v24.13.1",
+    "osTmpdir": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp",
+    "integrityNote": null,
+    "targetDriveFreeBytesBefore": 39762677760,
+    "targetDriveFreeBytesAfter": 39761977344
+  },
+  "assertions": {
+    "A1": {
+      "pass": true,
+      "expected": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\KoneAI.exe exists",
+      "observed": {
+        "path": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\KoneAI.exe",
+        "exists": true,
+        "waitedMs": 1,
+        "label": "custom-temp"
+      }
+    },
+    "A2": {
+      "pass": true,
+      "expected": "ProductVersion or FileVersion starts with 1.4.38",
+      "observed": {
+        "productVersion": "1.4.38.0",
+        "fileVersion": "1.4.38",
+        "productName": "Kone AI",
+        "versionError": null,
+        "label": "custom-temp"
+      }
+    },
+    "A3": {
+      "pass": true,
+      "expected": "exactly one Kone uninstall entry exists, its UninstallString targets C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall*.exe, and exactly one HKCU\\Software\\* key has InstallLocation == C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755",
+      "observed": {
+        "uninstallEntry": {
+          "DisplayName": "Kone AI 1.4.38",
+          "DisplayVersion": "1.4.38",
+          "InstallLocation": null,
+          "UninstallString": "\"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall KoneAI.exe\" /currentuser",
+          "Publisher": "Kone Team",
+          "PSPath": "Microsoft.PowerShell.Core\\Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\58ce24dd-de49-5cd5-8657-5b02091502a0"
+        },
+        "allKoneEntries": [
+          {
+            "DisplayName": "Kone AI 1.4.38",
+            "DisplayVersion": "1.4.38",
+            "InstallLocation": null,
+            "UninstallString": "\"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall KoneAI.exe\" /currentuser",
+            "Publisher": "Kone Team",
+            "PSPath": "Microsoft.PowerShell.Core\\Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\58ce24dd-de49-5cd5-8657-5b02091502a0"
+          }
+        ],
+        "allUninstallEntriesScanned": [
+          {
+            "DisplayName": "Kone AI 1.4.38",
+            "DisplayVersion": "1.4.38",
+            "InstallLocation": null,
+            "UninstallString": "\"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall KoneAI.exe\" /currentuser",
+            "Publisher": "Kone Team",
+            "PSPath": "Microsoft.PowerShell.Core\\Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\58ce24dd-de49-5cd5-8657-5b02091502a0"
+          }
+        ],
+        "entryCount": 1,
+        "entryCountOk": true,
+        "uninstallString": "\"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall KoneAI.exe\" /currentuser",
+        "parsedUninstallExecutable": {
+          "executable": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall KoneAI.exe",
+          "directory": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755",
+          "fileName": "Uninstall KoneAI.exe"
+        },
+        "uninstallExecutableNameOk": true,
+        "uninstallExecutableDirectoryOk": true,
+        "installLocationKeyMatches": [
+          {
+            "KeyName": "58ce24dd-de49-5cd5-8657-5b02091502a0",
+            "KeyPath": "HKEY_CURRENT_USER\\Software\\58ce24dd-de49-5cd5-8657-5b02091502a0",
+            "InstallLocation": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755"
+          }
+        ],
+        "installLocationKeyCount": 1,
+        "installLocationKeyName": "58ce24dd-de49-5cd5-8657-5b02091502a0",
+        "installLocationKeyPath": "HKEY_CURRENT_USER\\Software\\58ce24dd-de49-5cd5-8657-5b02091502a0",
+        "installLocationValue": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755",
+        "waitedMs": 613,
+        "label": "custom-temp"
+      }
+    },
+    "A4": {
+      "pass": true,
+      "expected": "a .lnk containing \"Kone\" exists in Desktop or Start Menu",
+      "observed": {
+        "baseline": [],
+        "current": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Kone 智能获客.lnk",
+          "C:\\Users\\Administrator\\Desktop\\Kone 智能获客.lnk"
+        ],
+        "newlyCreated": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Kone 智能获客.lnk",
+          "C:\\Users\\Administrator\\Desktop\\Kone 智能获客.lnk"
+        ],
+        "searchedRoots": [
+          "C:\\Users\\Administrator\\Desktop",
+          "C:\\Users\\Public\\Desktop",
+          "C:\\Users\\Administrator\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs",
+          "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs"
+        ],
+        "waitedMs": 3,
+        "label": "custom-temp"
+      }
+    },
+    "A5": {
+      "pass": true,
+      "expected": "target dir, uninstall registry entry and created shortcut are all gone (a pre-existing empty target dir may remain empty)",
+      "observed": {
+        "targetDirGone": true,
+        "targetDirExists": false,
+        "targetDirEmpty": null,
+        "targetDirRetainedAsPreExisting": false,
+        "registryEntryGone": true,
+        "shortcutGone": true,
+        "remainingTargetDir": null,
+        "remainingEntries": [],
+        "remainingShortcuts": [],
+        "currentShortcuts": [],
+        "waitedMs": 4530
+      }
+    }
+  },
+  "install": {
+    "label": "custom-temp",
+    "installerPath": "C:\\Users\\Administrator\\Kone-System\\release\\Kone-Intellect-Setup-1.4.38.exe",
+    "args": [
+      "/S",
+      "/D=C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "error": null,
+    "installerDurationMs": 4852,
+    "timeToExecutableMs": 1,
+    "stdout": "",
+    "stderr": "",
+    "newlyCreatedShortcuts": [
+      "C:\\Users\\Administrator\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Kone 智能获客.lnk",
+      "C:\\Users\\Administrator\\Desktop\\Kone 智能获客.lnk"
+    ]
+  },
+  "uninstall": {
+    "attempted": true,
+    "path": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kone-install-layer-1792915552755\\Uninstall KoneAI.exe",
+    "found": true,
+    "candidates": [],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "error": null,
+    "uninstallerDurationMs": 53,
+    "cleanupDurationMs": 4530,
+    "stdout": "",
+    "stderr": "",
+    "resolvedFrom": "uninstall-registry"
+  },
+  "findings": [],
+  "residue": [],
+  "retainedPreExistingDirs": [],
+  "verdict": "PASS",
+  "reason": null,
+  "scriptError": null
+}

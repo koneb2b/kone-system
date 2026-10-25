@@ -94,14 +94,17 @@ try {
   }
 
   # ── 3. 已安装应用 ────────────────────────────────────────────
+  # 默认安装目录由 electron-builder 的 build.executableName 决定（当前为 KoneAI）：
+  #   %LOCALAPPDATA%\Programs\KoneAI（当前用户）或 %ProgramFiles%\KoneAI（全机）。
+  # 旧版原型曾使用 kone-system 目录；1.2.x 之后默认目录由 build.executableName 决定。
   $candidates = @(
-    (Join-Path $env:LOCALAPPDATA 'Programs\kone-system\KoneAI.exe'),
-    (Join-Path $env:ProgramFiles   'kone-system\KoneAI.exe')
+    (Join-Path $env:LOCALAPPDATA 'Programs\KoneAI\KoneAI.exe'),
+    (Join-Path $env:ProgramFiles   'KoneAI\KoneAI.exe')
   )
-  if ($env:ProgramFiles_x86) { $candidates += (Join-Path $env:ProgramFiles_x86 'kone-system\KoneAI.exe') }
+  if ($env:ProgramFiles_x86) { $candidates += (Join-Path $env:ProgramFiles_x86 'KoneAI\KoneAI.exe') }
   # 兼容 32 位视图变量
   $pf86 = ${env:ProgramFiles(x86)}
-  if ($pf86) { $candidates += (Join-Path $pf86 'kone-system\KoneAI.exe') }
+  if ($pf86) { $candidates += (Join-Path $pf86 'KoneAI\KoneAI.exe') }
 
   $appPath = $null
   foreach ($c in $candidates) {
