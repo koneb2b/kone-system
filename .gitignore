@@ -48,6 +48,8 @@ gen_article2.js
 /tests/*-report.json
 /tests/install-layer-report-*.json
 /tests/module-e2e-report.json
+# 审批门禁 live 部署留证（含目标环境元数据，评审确认前不入库）
+/tests/approval-gate-evidence-*.json
 # 例外：安全审计证据与打包冒烟证据同属「交付证据」，须入库
 !/tests/security-audit-report.json
 # 例外：安装层规范报告（小体积、可复现的规范证据）入库；逐场景报告仍忽略（含机器特定临时路径）

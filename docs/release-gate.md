@@ -106,6 +106,8 @@
 
 - 本文件是**工程质量门禁**；`CLOUD-COLLABORATION-DELIVERY.md §0` 的 `NO-GO` 是**产品级**发布判定。
 - **本文件全绿 ≠ 可转 GO**。转 GO 仍需 NO-GO 三项闭环（干净机器验收 / 审批门禁部署开启留证 / 小流量实发）（打包冒烟已于 2026-10-20 闭环；签名按要求见下文渠道区分）。
+- 审批门禁部署留证机械化入口：`npm run verify:approval-gate-live -- --dry-run`（无网络）或 `npm run verify:approval-gate-live -- --allow-write` → `tests/approval-gate-evidence-<ISO8601>.json`；live 主判据为 `409 DRAFT_VERSION_MISMATCH`（审批 N 不得授权 N+1）与 `403 SUPPRESSED`（全局抑制），`APPROVAL_REQUIRED` 默认 `not_applicable`（公有 API 无法构造 approved/queued 且无审批锚的线索，仅由 `kone-cloud/tests/approval-gate.test.ts:155-161` 覆盖），门禁语义见 `CLOUD-COLLABORATION-DELIVERY.md §8`。
+- 该命令会在目标 workspace 创建 fixture 线索/审批/队列行并写入**全局抑制名单**（不可逆）；部署只提供 `POST`/`GET`，无 DELETE 清理路由，请使用 staging workspace，并保留证据 JSON 与退出码（0 PASS / 1 FAIL或INCOMPLETE / 2 配置 / 3 传输）。
 - 反之，本文件任一 HARD 项失败即为发版阻断，与 NO-GO 状态无关。
 
 ## 6. 授权分级判定：AUTOPILOT / CLOUD.CLOUDFLARE_*（2026-10-20）
