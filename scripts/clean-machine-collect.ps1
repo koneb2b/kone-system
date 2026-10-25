@@ -9,7 +9,10 @@
     2. 校核安装包 SHA-256 是否等于发布指纹（不匹配即失败退出）；
     3. 读取已安装应用的 FileVersion / ProductVersion；
     4. 定位卸载登记项（证明是真实安装，而非绿色解压运行）；
-    5. （可选）导出最新日志尾部，供失败定位。
+    5. （可选）导出最新日志尾部，供失败定位；
+    6. 校核环境完整性（v1.2.0 新增）：是否提升上下文 / 安装范围（perUser vs perMachine）/
+       安装包与主程序 Authenticode 状态 / Defender 实时防护与病毒库库龄 /
+       SmartScreen 策略与安装包 MOTW / 目标盘剩余空间。
 
   **只读**：不写注册表、不写应用数据、不启动应用、不需要管理员权限。
   唯一写入 = 输出目录内的证据文件。
@@ -94,7 +97,7 @@ try {
   Write-Host "输出目录（绝对路径）: $OutDir" -ForegroundColor Cyan
 
   $info = [ordered]@{}
-  $info.collectorVersion = '1.1.0'
+  $info.collectorVersion = '1.2.0'
   $info.collectedAt      = (Get-Date).ToString('s')
   $info.expectedAppVersion = $expectedAppVersion
 
@@ -246,7 +249,110 @@ try {
     $info.uninstallError = $_.Exception.Message
   }
 
-  # ── 6. 日志（可选）───────────────────────────────────────────
+  # ── 6. 环境完整性（v1.2.0 新增；只读）──────────────────────
+  # 目的：把 S1 的「非提升上下文 / 安装范围 / 签名 / 安全软件 / 磁盘」从人工观察变成机器事实。
+  $isElevated = $false
+  try {
+    $windowsIdentity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $windowsPrincipal = New-Object Security.Principal.WindowsPrincipal($windowsIdentity)
+    $isElevated = $windowsPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  } catch {
+    $info.elevationError = $_.Exception.Message
+  }
+  $info.isElevated = $isElevated
+
+  $info.installScope = 'not_installed'
+  if ($info.Contains('appPath') -and $info.appInstalled) {
+    $appPathLower      = $info.appPath.ToLowerInvariant()
+    $localAppDataLower = $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA.ToLowerInvariant() } else { '' })
+    $programFilesLower = $(if ($env:ProgramFiles) { $env:ProgramFiles.ToLowerInvariant() } else { '' })
+    $pf86Lower         = $(if (${env:ProgramFiles(x86)}) { ${env:ProgramFiles(x86)}.ToLowerInvariant() } else { '' })
+    if ($localAppDataLower -and $appPathLower.StartsWith($localAppDataLower)) {
+      $info.installScope = 'perUser'
+    } elseif (($programFilesLower -and $appPathLower.StartsWith($programFilesLower)) -or ($pf86Lower -and $appPathLower.StartsWith($pf86Lower))) {
+      $info.installScope = 'perMachine'
+    } else {
+      $info.installScope = 'customPath'
+    }
+  }
+
+  $getSignatureFacts = {
+    param([string]$TargetPath)
+    if ([string]::IsNullOrWhiteSpace($TargetPath) -or -not (Test-Path -LiteralPath $TargetPath)) { return $null }
+    try {
+      $sig              = Get-AuthenticodeSignature -LiteralPath $TargetPath -ErrorAction Stop
+      $signerSubject    = $null
+      $signerThumbprint = $null
+      $timeStamper      = $null
+      if ($sig.SignerCertificate) {
+        $signerSubject    = $sig.SignerCertificate.Subject
+        $signerThumbprint = $sig.SignerCertificate.Thumbprint
+      }
+      if ($sig.TimeStamperCertificate) { $timeStamper = $sig.TimeStamperCertificate.Subject }
+      return [ordered]@{
+        status             = "$($sig.Status)"
+        signerSubject      = $signerSubject
+        signerThumbprint   = $signerThumbprint
+        timeStamperSubject = $timeStamper
+      }
+    } catch {
+      return [ordered]@{ status = 'Error'; error = $_.Exception.Message }
+    }
+  }
+  if ($info.Contains('installerPath') -and $info.installerFound -eq $true) {
+    $info.installerSignature = & $getSignatureFacts $InstallerPath
+  }
+  if ($info.Contains('appPath') -and $info.appInstalled) {
+    $info.appSignature = & $getSignatureFacts $info.appPath
+  }
+
+  $info.defenderAvailable = $false
+  if (Get-Command Get-MpComputerStatus -ErrorAction SilentlyContinue) {
+    try {
+      $mpStatus                               = Get-MpComputerStatus -ErrorAction Stop
+      $info.defenderAvailable                 = $true
+      $info.defenderAntivirusEnabled          = $mpStatus.AntivirusEnabled
+      $info.defenderRealTimeProtectionEnabled = $mpStatus.RealTimeProtectionEnabled
+      $info.defenderAMServiceEnabled          = $mpStatus.AMServiceEnabled
+      $info.defenderSignatureVersion          = $mpStatus.AntivirusSignatureVersion
+      $info.defenderSignatureAgeDays          = $mpStatus.AntivirusSignatureAge
+    } catch {
+      $info.defenderError = $_.Exception.Message
+    }
+  }
+
+  try {
+    $smartScreen = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' `
+      -Name 'SmartScreenEnabled' -ErrorAction SilentlyContinue
+    if ($smartScreen) { $info.smartScreenEnabled = $smartScreen.SmartScreenEnabled } else { $info.smartScreenEnabled = 'not_set' }
+  } catch {
+    $info.smartScreenError = $_.Exception.Message
+  }
+
+  $info.installerMarkOfTheWeb = 'not_checked'
+  if ($info.Contains('installerPath') -and $info.installerFound -eq $true) {
+    try {
+      $zoneLines = Get-Content -LiteralPath $InstallerPath -Stream 'Zone.Identifier' -TotalCount 10 -ErrorAction Stop
+      $info.installerMarkOfTheWeb = ($zoneLines -join '; ')
+    } catch {
+      $info.installerMarkOfTheWeb = 'absent'
+    }
+  }
+
+  $diskDrive = $env:SystemDrive
+  if ($info.Contains('appPath') -and $info.appInstalled) {
+    $diskDrive = ([System.IO.Path]::GetPathRoot($info.appPath)).TrimEnd('\')
+  }
+  try {
+    $disk             = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$diskDrive'" -ErrorAction Stop
+    $info.diskDrive   = $diskDrive
+    $info.diskFreeGB  = [math]::Round($disk.FreeSpace / 1GB, 1)
+    $info.diskTotalGB = [math]::Round($disk.Size / 1GB, 1)
+  } catch {
+    $info.diskError = $_.Exception.Message
+  }
+
+  # ── 7. 日志（可选）───────────────────────────────────────────
   $logDir = Join-Path $env:APPDATA 'kone-system\logs'
   $info.logDir = $logDir
   if (Test-Path -LiteralPath $logDir) {
@@ -274,7 +380,8 @@ try {
 
   # ── 输出 ────────────────────────────────────────────────────
   $jsonPath = Join-Path $OutDir 'machine-info.json'
-  ($info | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+  # 无 BOM 的 UTF-8：BOM 会让 JSON.parse / jq 等严格解析器直接失败（v1.2.0 修正）
+  [System.IO.File]::WriteAllText($jsonPath, ($info | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
 
   $lines = New-Object System.Collections.Generic.List[string]
   $lines.Add('# Kone 干净机器验收 — 机器事实采集')
@@ -347,6 +454,34 @@ try {
     }
   } else {
     $lines.Add('- 未发现 Kone 快捷方式')
+  }
+  $lines.Add('')
+  $lines.Add('## 环境完整性（v1.2.0 新增）')
+  $lines.Add("- isElevated: $($info.isElevated.ToString().ToLowerInvariant())")
+  if ($info.isElevated) {
+    $lines.Add('- ⚠️ 当前会话为提升上下文 —— S1 要求以非提升用户运行验收，请关闭管理员窗口后重跑')
+  } else {
+    $lines.Add('- 非提升上下文：符合 S1 要求')
+  }
+  $lines.Add("- installScope: $($info.installScope)")
+  if ($info.Contains('installerSignature')) {
+    $lines.Add("- 安装包签名: $($info.installerSignature.status)")
+  }
+  if ($info.Contains('appSignature')) {
+    $lines.Add("- 主程序签名: $($info.appSignature.status)")
+  }
+  if ($info.defenderAvailable) {
+    $lines.Add("- Defender: 启用=$($info.defenderAntivirusEnabled) 实时防护=$($info.defenderRealTimeProtectionEnabled) 病毒库=$($info.defenderSignatureVersion) 库龄=$($info.defenderSignatureAgeDays) 天")
+  } else {
+    $lines.Add('- Defender: 未检测到（第三方 AV 或模块不可用，需人工确认安全软件状态）')
+    if ($info.Contains('defenderError')) {
+      $lines.Add("- Defender 探测错误: $($info.defenderError)")
+    }
+  }
+  $lines.Add("- SmartScreen: $($info.smartScreenEnabled)")
+  $lines.Add("- 安装包 MOTW: $($info.installerMarkOfTheWeb)")
+  if ($info.Contains('diskFreeGB')) {
+    $lines.Add("- 目标盘 $($info.diskDrive) 可用 $($info.diskFreeGB) GB / 总计 $($info.diskTotalGB) GB")
   }
   $lines.Add('')
   $lines.Add('## 日志')

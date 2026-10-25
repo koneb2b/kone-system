@@ -328,7 +328,10 @@ git 考古结论：208 个提交、单一根提交 `4b77729`（2026-04-24，版�
 
 ### 7.2 采集器五状态运行时验证（2026-10-25）
 
-> 对象：`scripts/clean-machine-collect.ps1`（采集器 v1.1.0，只读；证据输出全部位于仓库外的 `%TEMP%`）。
+> 对象：`scripts/clean-machine-collect.ps1`（采集器 v1.2.0，只读；证据输出全部位于仓库外的 `%TEMP%`）。
+> v1.2.0 新增环境完整性事实（此前全靠人工观察）：`isElevated` / `installScope`（perUser vs perMachine）/ 安装包与主程序 `Authenticode` 状态 / Defender 实时防护与病毒库库龄 / `SmartScreen` 策略与安装包 MOTW / 目标盘余量；并修正 `machine-info.json` 的 UTF-8 BOM（此前 `JSON.parse` / `jq` 会直接解析失败）。
+> v1.2.0 实跑证据（本机，提升上下文、未安装应用）：无安装包与带 `1.4.38` 安装包两路均 `exit 0`；`installerSha256Match=true`、`installerSignature.status=NotSigned`（内部未签名构建，符合签名渠道区分）、`installerMarkOfTheWeb=absent`、`machine-info.json` 无 BOM。
+> ⚠️ 已交付的 `kone-acceptance-kit-1.4.38.zip` 包内仍为 v1.1.0（无复现构建脚本，故不覆盖已交付产物）：**VM 验收前须用仓库 v1.2.0 覆盖包内同名文件**，否则采不到上述环境完整性事实。
 > 本轮以真实 1.4.38 / 1.4.32 安装器完成 A–E 五状态实验，采集退出码均为 `0`，安装包指纹始终一致。
 
 | 状态 | 场景 | 关键实测结果 |
