@@ -68,8 +68,14 @@ lastVerifiedAt: 2026-10-19
   路径不符即 0 命中，出现 2 个匹配键即失败（fail-closed）。
   **不覆盖**：默认安装路径（本测试用 `/D` 指向临时目录）、非提升安装上下文（本机仅有 High 完整性令牌，
   **未验证**非提升流程）、覆盖升级安装、非 ASCII（中文）安装路径、目标机缺失运行库。
-  **不构成 `CLOUD-COLLABORATION-DELIVERY.md §0` NO-GO ① 的关闭证据**，也不替代本单 S1–S11 人工验收；
-  受影响 SSOT：`docs/evidence/clean-machine-acceptance-1.4.38.md §7`。
+   **不构成 `CLOUD-COLLABORATION-DELIVERY.md §0` NO-GO ① 的关闭证据**，也不替代本单 S1–S11 人工验收；
+   受影响 SSOT：`docs/evidence/clean-machine-acceptance-1.4.38.md §7`。
+- 安装层验收扩展为 6 场景（2026-10-25）：`custom-temp` / `default-path` / `non-ascii` / `reinstall` /
+  `upgrade` / `legacy-migration` 全部 **PASS**（安装 / 卸载 exit 0、`residue: []`、`entryCount: 1`）；
+  实测旧式目录迁移为原地复用（`migration: REUSED`），未产生二次安装。
+  **勘误**：真实默认安装目录为 `%LOCALAPPDATA%\Programs\KoneAI`（由 `build.executableName` 决定），
+  非 `kone-system`；1.3.x / 1.4.x 可原地升级，2026-04 之前原型未考证。证据见 `tests/install-layer-report.json`。
+  受影响 SSOT：`docs/evidence/clean-machine-acceptance-1.4.38.md §7.1`。
 
 ---
 

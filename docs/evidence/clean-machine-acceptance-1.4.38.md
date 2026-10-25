@@ -279,11 +279,37 @@ powershell -ExecutionPolicy Bypass -File .\clean-machine-collect.ps1 `
 
 > **安装层自动化补充（2026-10-23）**：「安装层（静默安装 / 快捷方式 / 卸载登记项 / 卸载清理）」已由
 > `scripts/install-layer-acceptance.cjs` 自动化覆盖（本机可复现，A1–A5 PASS；静默安装至临时目录 → 静默卸载 → `residue: []`）。
-> 据此，**NO-GO ① 的剩余范围收敛为：环境层**（目标机缺运行库 / 纯净机）**+ 安装层残余**（默认路径安装、非提升上下文、升级覆盖、中文路径）。
+> 据此，**NO-GO ① 的剩余范围收敛为：环境层**（目标机缺运行库 / 纯净机）**+ 安装层残余**（非提升上下文；默认路径 / 升级覆盖 / 中文路径已由 §7.1 的 6 场景矩阵覆盖）。
 > ① 仍是唯一真实阻断，签名仍为交付后加固项（判定不变）。
 
 > ③④ 为**环境 / 资源项**，非代码缺陷。本地能力版商用的代码侧与工程质量门禁**已全部就绪**；
 > **唯一剩余的真实阻断 = 本单 S1–S11 人工验收**。
+
+### 7.1 安装层 6 场景自动化验收（2026-10-25）
+
+> 执行入口：`node scripts/install-layer-acceptance.cjs --scenario=<场景名>`（每个场景单独执行，报告写入 `tests/install-layer-report-<场景名>.json`；`custom-temp` 额外产出可入库的规范证据 `tests/install-layer-report.json`）。
+> 本轮 6 场景均为 **PASS**：安装 / 卸载退出码 `0`、卸载残留 `residue: []`、卸载登记项 `entryCount: 1`。
+
+| 场景 | 结论 | 关键实测事实 |
+|---|---|---|
+| `custom-temp` | ✅ PASS | `/D` 指向临时目录，A1–A5 全过；该场景产出规范报告 `tests/install-layer-report.json` |
+| `default-path` | ✅ PASS | 不传 `/D` 时实际落盘 `%LOCALAPPDATA%\Programs\KoneAI`，与推导值一致（`matchedExpectation: true`） |
+| `non-ascii` | ✅ PASS | 中文路径 `...\Temp\kone-安装层-中文-...` 安装 / 卸载正常，注册表 `InstallLocation` 与中文目录一致 |
+| `reinstall` | ✅ PASS | 同版本二次静默安装退出码 `0`，第二遍 A1–A4 全过；**这是同版本重装代理，不是升级** |
+| `upgrade` | ✅ PASS | 1.4.32（`release-v151/Kone-Intellect-Setup-1.4.32.exe`，89,943,061 B，SHA-256 `ABEF3A8605E75BDC343CD4EE00D56D2CA5C62E4E46E13B3724105EAC41F9198C`）→ 1.4.38 原地升级覆盖 |
+| `legacy-migration` | ✅ PASS | **`migration: REUSED`**：旧式命名目录的 1.4.32 → 1.4.38（不传 `/D`）复用注册表 `InstallLocation` 原地升级，全程仅 1 个卸载项，单次卸载清理干净，**未产生第二次安装** |
+
+**默认安装目录勘误**：真实默认目录是 `%LOCALAPPDATA%\Programs\KoneAI`，**不是** `%LOCALAPPDATA%\Programs\kone-system`。
+推导链：`package.json#build.executableName = "KoneAI"` + `nsis.oneClick=false` + 无 `perMachine` → `NsisTarget.js:165` 取 `APP_FILENAME = productFilename` → `appInfo.js:56-57` 对 `executableName` 做 sanitize → `multiUser.nsh:40` 得 `$INSTDIR = "$0\${APP_FILENAME}"`。
+git 考古结论：208 个提交、单一根提交 `4b77729`（2026-04-24，版本 1.2.0）；`executableName` / `productName` / `appId` / `oneClick` **在全部可考历史中从未变更**，根提交即为 `KoneAI` / `Kone AI` / `ai.kone.desktop` / `false`；归档的 1.3.0 与 1.3.15 安装包亦从相同配置构建且内含 `KoneAI.exe`。因此 **1.3.x / 1.4.x 用户可原地升级**；唯一无法考证的是 2026-04-24 之前的原型安装（旧版原型曾使用 `kone-system` 目录）。
+
+**旧式目录迁移实验（`legacy-migration`）**：先以 1.4.32 安装到旧式命名目录（`...\Temp\kone-system`），再运行 1.4.38 且**不传 `/D`**；安装器读取注册表 `InstallLocation` 指向的旧目录并原地覆盖为 1.4.38，升级前后卸载登记项均为 **1**（`entryCountBeforeUpgrade: 1` → `entryCountAfter: 1`），最终单次卸载后 `residue: []`。结论：**REUSED，无第二安装**。
+
+**本轮未覆盖（明确保留）**：非提升 / 中等完整性上下文（本机仅有 High 完整性令牌）；per-machine / Program Files 安装；2026-04 之前的旧版构建；Authenticode / 代码签名验证；AV / SmartScreen；文件占用锁定；磁盘写满；安装时应用正在运行；需要重启的安装。以上均**不因本轮 PASS 而视为已验证**。
+
+**证据位置**：规范证据 `tests/install-layer-report.json`（已入库，约 11,884 B）；逐场景报告 `tests/install-layer-report-<场景名>.json`（含机器相关临时路径，按 `.gitignore` 忽略）。复现：`node scripts/install-layer-acceptance.cjs --scenario=custom-temp|default-path|non-ascii|reinstall|upgrade|legacy-migration`。
+
+> 结论边界：本轮只关闭「安装层」中的默认路径 / 中文路径 / 同版本重装 / 1.4.32→1.4.38 升级 / 旧式目录迁移取证；**NO-GO ① 仍未闭环**，环境层（目标机缺运行库 / 纯净机）与非提升上下文仍为发布阻断项。
 
 ## 8. 证据最低要求与判读规则（防"看图主观"）
 
