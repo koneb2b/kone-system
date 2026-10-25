@@ -26,6 +26,18 @@
 > Get-FileHash .\Kone-Intellect-Setup-1.4.38.exe -Algorithm SHA256
 > ```
 
+### 交付工具包（离线分发单元）
+
+> 安装包随 `kone-acceptance-kit-1.4.38.zip` 离线分发；包内为本执行单、安装包、`.sha256`、`START-HERE.bat`、`clean-machine-collect.ps1` 共 **5** 个根条目（无目录嵌套）。
+
+| 项 | 值 |
+|---|---|
+| 工具包 | `kone-acceptance-kit-1.4.38.zip` |
+| 字节数 | `89977170`（≈ 85.8 MB） |
+| **SHA-256** | `129417A70CD2A9A2D7AF7A4122E3595670086CCB6A07A3CE30EA23F985FC91C7` |
+| 根条目数 | `5` |
+| 内含执行单 | 与本文件**同版本**（构建基线逐字节一致，含 §7.1 六场景矩阵）；本指纹小节为打包后追加 |
+
 ---
 
 ## 0. 已通过（自动化，无需重复执行）
