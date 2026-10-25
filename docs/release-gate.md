@@ -8,7 +8,7 @@
 
 本文件原位于 `.omo/notepads/project-alignment-optimization/release-gate.md`。
 
-**问题**：`.omo/` 被 `.gitignore:35` 忽略 → 21 项发布门禁长期**不在版本控制内**，既不进 PR 评审，也可能随工作区清理丢失，且从未接入 CI。
+**问题**：`.omo/` 被 `.gitignore:35` 忽略 → 23 项发布门禁长期**不在版本控制内**，既不进 PR 评审，也可能随工作区清理丢失，且从未接入 CI。
 
 **处置**：迁移至 `docs/release-gate.md` 纳入版本控制；可机械化子集落成 `scripts/verify-release-gate.cjs` 并接入 `npm test`。
 
@@ -93,7 +93,7 @@
 | `npm run test:security-audit` | `release/win-unpacked/KoneAI.exe` | G5-SEC3 全绿 |
 | `npm run test:smoke` | 重新打包 | 打包态启动冒烟（booted / preload bridge / 授权页或仪表盘） |
 | `npm run test:packaged-premium` | 重新打包 | 打包态 Premium 能力（L4） |
-| `npm run verify:signature`（默认；`--strict` 可选） | 无（默认不依赖证书） | **非阻断**：代码签名经 owner 决策（2026-10-20）推迟为交付后加固项 |
+| `npm run verify:signature`（默认；`--strict` 可选） | 无（默认不依赖证书） | **非阻断（内部分发/顾问交付）**：代码签名经 owner 决策（2026-10-20）推迟为交付后加固项；**公开发行渠道（官网下载/应用商店/公开试用）前 `npm run verify:signature` 必须通过** |
 | 干净机器 20 项人工验收 | 干净 Windows 机器 | NO-GO ① |
 
 > ℹ️ `verify:signature` 默认**退出 0**（证书未接入属预期），仅在 `--strict` 下退出 1。
@@ -105,7 +105,7 @@
 ## 5. 与发布判定的关系
 
 - 本文件是**工程质量门禁**；`CLOUD-COLLABORATION-DELIVERY.md §0` 的 `NO-GO` 是**产品级**发布判定。
-- **本文件全绿 ≠ 可转 GO**。转 GO 仍需 NO-GO 四项闭环（干净机器验收 / 打包冒烟与签名 / 审批门禁部署开启留证 / 小流量实发）。
+- **本文件全绿 ≠ 可转 GO**。转 GO 仍需 NO-GO 三项闭环（干净机器验收 / 审批门禁部署开启留证 / 小流量实发）（打包冒烟已于 2026-10-20 闭环；签名按要求见下文渠道区分）。
 - 反之，本文件任一 HARD 项失败即为发版阻断，与 NO-GO 状态无关。
 
 ## 6. 授权分级判定：AUTOPILOT / CLOUD.CLOUDFLARE_*（2026-10-20）

@@ -15,10 +15,10 @@
    - email verification
    - cloud send / webhook handoff
    - team collision and realtime collaboration paths
-4. V1.3 new IPC families (`accounts:connect/disconnect/get-list`, `agents:list/control`, `dns:health-check`) follow the same Fail-Closed discipline:
-   - `accounts:connect` gating: Basic tier → single email account + WhatsApp Web local session where enabled; Premium/Enterprise → social media + multiple email + official API paths
-   - `agents:list` gating: Trial → upgrade surface only; Paid Basic → Email + low-volume WhatsApp Web when configured, LinkedIn read-only helper only if explicitly enabled; Premium/Enterprise → full authorized panel
-   - `agents:control` gating: `agent:control` requires `local_autopilot` feature at minimum
+4. V1.3 new IPC families (`account:connect`、`account:disconnect`、`account:get-list`、`agent:list`、`agent:control`、`dns:health-check`) follow the same Fail-Closed discipline:
+   - `account:connect` gating: Basic tier → single email account + WhatsApp Web local session where enabled; Premium/Enterprise → social media + multiple email + official API paths
+   - `agent:list` gating: Trial → upgrade surface only; Paid Basic → Email + low-volume WhatsApp Web when configured; Premium/Enterprise → full authorized panel including LinkedIn read-only helper
+   - `agent:control` gating: `agent:control` requires `local_autopilot` feature at minimum
    - `dns:health-check` gating: `cloud_send` feature required (Premium/Enterprise only)
 
 ---

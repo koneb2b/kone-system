@@ -118,7 +118,7 @@ Primary goal:
 Automation responsibilities:
 - email verification
 - compact payload generation
-- webhook handoff to n8n
+- webhook handoff to the cloud delivery backend (Cloudflare Workers + Resend; see `CLOUD-COLLABORATION-DELIVERY.md`)
 - cloud campaign creation
 - team-collaboration and collision workflows
 
@@ -148,7 +148,7 @@ Commercial law:
 1. operator selects high-value leads
 2. Premium gate validates access
 3. payload is compacted and filtered
-4. n8n webhook handoff occurs
+4. payload is handed off to the cloud delivery backend (Cloudflare Workers + Resend); the full closed loop remains target-state and is governed by `CLOUD-COLLABORATION-DELIVERY.md`
 5. remote automation continues independently of local machine uptime
 
 ---
@@ -215,7 +215,7 @@ Therefore:
 
 Contrast rule:
 - Autopilot stops when the local machine stops
-- Premium n8n automation may continue after handoff with no local uptime requirement
+- Premium cloud delivery automation (Cloudflare Workers + Resend) may continue after handoff with no local uptime requirement
 
 ---
 
@@ -226,7 +226,7 @@ Contrast rule:
 4. Trial expiry blocks new privileged work, not historical user assets.
 5. Cloud failure must not poison local Data Center state.
 6. Website fetch failure should prefer blind scoring over immediate total downgrade when snippet/title data is still available.
-7. **HTTP Circuit Breaker (`electron/utils/http-client.ts`)**: Each external API host has an independent circuit breaker. After 3 consecutive failures (4xx status codes), the circuit opens for 60 seconds. While open, requests are rejected immediately with a `CIRCUIT_BREAKER_OPEN` error. A successful request closes the circuit and resets the failure count. This applies at the HTTP client layer and is consumed by `proxy-service.ts` via `safeFetch()`. Provider-level failures are further isolated by `ProviderRegistry.executeAll()` using `Promise.allSettled`.
+7. **HTTP Circuit Breaker (`electron/utils/http-client.ts`)**: Each external API host has an independent circuit breaker. 计入连续失败次数：`429`、`5xx`、网络异常/超时；不计入、直接 fail-fast：`400` / `401` / `403`（口径以 kone-PRD.md §0.3 为准）。After 3 consecutive counted failures the circuit opens for 60 seconds. While open, requests are rejected immediately with a `CIRCUIT_BREAKER_OPEN` error. A successful request closes the circuit and resets the failure count. This applies at the HTTP client layer and is consumed by `proxy-service.ts` via `safeFetch()`. Provider-level failures are further isolated by `ProviderRegistry.executeAll()` using `Promise.allSettled`.
 
 ### 7.1 V1.3 Source Expansion Boundary
 
@@ -266,8 +266,8 @@ Three built-in sales agents run locally under the `/agents` panel:
 
 ### Agent Permission Model
 - Trial: upgrade/promo surface only for Agent panel; no protected metrics exposure
-- Basic: Email 20/day by default; WhatsApp Web 3-5/day when configured; LinkedIn read-only helper only if explicitly enabled
-- Premium/Enterprise: WhatsApp Cloud API, account sandbox expansion, team collaboration, and cloud automation according to licensed features
+- Basic: Email 20/day by default; WhatsApp Web 3-5/day when configured
+- Premium/Enterprise: LinkedIn read-only helper, WhatsApp Cloud API, account sandbox expansion, team collaboration, and cloud automation according to licensed features
 
 ---
 

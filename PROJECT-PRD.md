@@ -935,7 +935,7 @@ const runLimitedConcurrency = async <T>(items: T[], limit: number, worker: (item
 
 - **同步洗舱**：新搜索立即覆写 `currentActiveJobId`，旧回调后续抵达时自动丢弃。
 - **跨行业防护**：解决前一个搜索的慢回调污染后一个搜索结果的问题。
-- **模块级单例**：当前适用于单窗口单用户。未来多窗口并发搜索需升级为 `Map<窗口ID, string>`。
+- **Per-owner 隔离（已落地）**：隔离结构已由模块级单例升级为 `Map<senderId, jobId>`（`senderId` = WebContents id）；`getCurrentActiveJobId()` 保留为全局最新回退，多窗口并发搜索互不误杀。
 
 ### 3.3.1.b ICP 结构化预评分（computeIcpMatchScore）
 
@@ -1583,13 +1583,13 @@ Autopilot 依托以下本地资源：
 |---|---|---|
 | L1 数据源层 | `Provider Plugin` 体系 | 统一 SearchProvider 接口 + registry，支持 `linkedin_search`/`customs_shipment`/`trade_show`/`facebook_search` 等扩展 |
 | L2 搜索评分层 | `search-service.ts` | 执行 4 级弹性搜索协议 + Omni-Search + ICP 评分 + 官网深探，产出含 `decisionMakers[]`/`agentStatus` 的 `SearchExecuteResult` |
-| L3 管道分发层 | `agent-pipeline.ts`（**已落地**） | 监听 `search:stream-complete`，过滤合格线索，生成 `AgentTask` 队列，`withPipelineIsolation()` 时空隔离；stage 暂存待人工确认后触达（非自动外发） |
+| L3 管道分发层 | `agent-pipeline.ts`（**已落地**） | 由 `search-service.ts` 在 stream 完成后同步调用 `withPipelineIsolation()`，过滤合格线索，生成 `AgentTask` 队列；stage 暂存待人工确认后触达（非自动外发） |
 | L4 智能体执行层 | `agent-service.ts` | 消费 `AgentTask`，执行真实触达（WhatsApp/LinkedIn/Email），写回 `agentStatus` |
 
 ### 3.7.2 管道触发与过滤规则（宪法级）
 
 ```
-搜索完成 (`search:stream-complete`)
+搜索完成（`search-service.ts` 同步调用 `withPipelineIsolation`；`search:stream-complete` 仅用于 UI 通知，不驱动 pipeline）
   │
   ▼
 Pipeline-Orchestrator 拾取本次搜索的所有 `SearchExecuteResult`
@@ -1672,6 +1672,7 @@ type AgentState = {
 |---|---|---|---|
 | P0 | AnySearch 垂直 B2B 实体 API | `userConfig.providers[anysearch]` | 全局搜 + 决策人穿透 + 海关/展会/社媒多源融合 |
 | P1 | SerpApi 全家桶（Maps/Organic/LinkedIn/Facebook/海关/展会网页补位） | 复用 `userConfig.providers[google-maps]` 中同一 SerpApi Key | 本地商户/网页/社媒检索与站点限定补位检索 |
+| P1（可选 BYOK） | Serper.dev 网页检索（`serper`） | 用户自备 Serper API Key | 可选 Google 网页结果补位，与 `google_organic` 互斥，不自动回退 |
 
 > ⚠️ **勘误（对齐 PROVIDER-CAPABILITY.md 唯一事实源）**：早期版本此表将海关/展会标为「爬虫（用户自备密钥）」——与代码现状不符。`customs_shipment`/`trade_show` 已落地为 SerpApi 网页近似检索（复用同一 Key，非官方数据库直连）；官方数据库直连属于未来可选增强，当前无任何待接入爬虫。
 
@@ -1685,8 +1686,10 @@ type AgentState = {
 interface SearchProvider {
   id: DataSourceType                          // 'google_maps' | 'google_organic' | 'customs_shipment' | ...
   name: string                                // 人类可读标签
-  execute(query: ProviderQuery): Promise<SearchExecuteResult[]>
-  isAvailable(): boolean                      // 密钥/配置检查
+  readonly requiredConfigKeys: string[]       // 所需配置键
+  supportedLanguages(): string[]
+  execute(query: ProviderQuery): Promise<ProviderExecuteResult>
+  isAvailable(config?: ProviderConfig): boolean  // 密钥/配置检查
 }
 
 type ProviderQuery = {
@@ -1768,10 +1771,10 @@ async function writeBackAgentStatus(
 
 ### 3.7.9 Tier 隔离：Basic vs Premium
 
-| 能力 | Basic | Premium |
+| 能力 | Basic | Premium / Enterprise |
 |---|---|---|
 | 搜索管道（Provider 体系） | `google_maps` + `google_organic` + 用户自带 SerpApi/AnySearch | 全量 Provider + 可配置自定义 Provider |
-| Agent 管道 | Email + WhatsApp Web 低量本地执行；LinkedIn 只读辅助可按授权开放 | WhatsApp Cloud API + LinkedIn Profile 辅助 + Email/Cloudflare Workers 全渠道（目标态） |
+| Agent 管道 | Email + WhatsApp Web 低量本地执行（LinkedIn 仅 Premium/Enterprise 开放） | WhatsApp Cloud API + LinkedIn Profile 辅助 + Email/Cloudflare Workers 全渠道（目标态） |
 | ICP 评分 | 确定性评分 + LLM 评分 | 同 Basic + 自定义评分权重 |
 | Agent 写回 `agentStatus` | ✅（本地执行成功后必须写回） | ✅ |
 ---

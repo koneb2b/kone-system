@@ -46,7 +46,7 @@
 |---|---|
 | 单元测试 | **632 / 632** 通过 |
 | 类型检查 / lint | 0 error / 0 error |
-| 文档与契约一致性 | `verify:docs` EXIT 0（文档链 10 份、交叉引用 221、版本口径 `1.4.38` 六处对齐） |
+| 文档与契约一致性 | `verify:docs` EXIT 0（文档链共 10 份、`ACTIVE_DOCS` 15 份、交叉引用 226 项、版本口径 `1.4.38` 六处对齐；文档链表以 `scripts/verify-doc-consistency.cjs` 的 `ACTIVE_DOCS` 为准） |
 | 发布门禁机械子集 | `verify:release-gate` HARD 全绿 |
 | 打包态启动冒烟 | `booted` / `activationScreenVisible` / `preloadBridgeVisible` 全 `true`（`dashboardNavVisible=false` 属未激活态**合法分支**） |
 | 云端链路安全门禁 | `verify:cloud` 通过 |

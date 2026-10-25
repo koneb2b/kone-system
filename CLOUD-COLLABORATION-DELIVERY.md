@@ -9,7 +9,7 @@
 - 规范版本：v1.0
 - 规范状态：目标态基线
 - 实现状态：除项目现有明确标注为已落地的能力外，本文件新增的审批、云端队列、事件与回写能力均为**待实现目标态**，不得对外宣称已经交付。**2026-10-19 复核**：审批记录与服务端二次门禁（⑤–⑨）的代码与负向测试已落地，但 `APPROVAL_GATE_ENABLED` 默认关闭，部署环境尚未开启留证。
-- 当前发布判定：`NO-GO`（状态更新于 2026-10-20）。**已闭环**：Phase 2 投递闭环 / 2.5–2.6 IMAP 回复检测 / 2.7–2.8e 云端看板全链路（见 §13.1），2026-10-07 全项目审计发现的 5 项 P0 缺陷修复（`CHANGELOG.md` [1.3.14]），以及 **② 打包冒烟 B2（2026-10-20 闭环）**。**仍待闭环**：① 干净机器端到端人工冒烟（20 项；执行单见 `docs/evidence/clean-machine-acceptance-1.4.38.md`，原手册 `KONE-V1.3-干净机器验收手册-2026-09-25.md` 为时点快照）；③ 审批 → 服务端二次门禁：代码与 63 项云端测试已落地（`kone-cloud/src/worker.ts` 入队门禁 ⑤–⑨ + 投递时复核，`kone-cloud/tests/approval-gate.test.ts`；2026-10-20 复核实测 63 项 / 2 文件全通过），但 `APPROVAL_GATE_ENABLED` 仍为 `false`，**尚未在部署环境开启并留证**；④ 小流量实发验证（需真实 Resend + IMAP 环境）。以上三项全部完成并留证后方可转 `GO`。
+- 当前发布判定：`NO-GO`（状态更新于 2026-10-20）。**已闭环**：Phase 2 投递闭环 / 2.5–2.6 IMAP 回复检测 / 2.7–2.8e 云端看板全链路（见 §13.1），2026-10-07 全项目审计发现的 5 项 P0 缺陷修复（`CHANGELOG.md` [1.3.14]），以及 **② 打包冒烟 B2（2026-10-20 闭环）**。**仍待闭环**：① 干净机器验收（执行单 `docs/evidence/clean-machine-acceptance-1.4.38.md` §7.1，S1–S11）；③ 审批 → 服务端二次门禁：代码与 63 项云端测试已落地（`kone-cloud/src/worker.ts` 入队门禁 ⑤–⑨ + 投递时复核，`kone-cloud/tests/approval-gate.test.ts`；2026-10-20 复核实测 63 项 / 2 文件全通过），但 `APPROVAL_GATE_ENABLED` 仍为 `false`，**尚未在部署环境开启并留证**；④ 小流量实发验证（需真实 Resend + IMAP 环境）。以上三项全部完成并留证后方可转 `GO`。
 - **② 打包冒烟 B2 闭环说明（2026-10-20）**：打包态冒烟已在 `1.4.38` 上以 `scripts/packaged-smoke.cjs` 的**显式判定规则**通过（`booted` ∧ `preloadBridgeVisible` ∧ (`activationScreenVisible` ∨ `dashboardNavVisible`)，证据 `tests/packaged-smoke-report.json`）。原文所述 `app.asar` 被系统进程持有属**本机构建环境问题**（重打包时的文件占用），非产品缺陷。故本判定原四项缩为**三项**。
 
 ## 1. 一体化职责边界
@@ -230,12 +230,12 @@ SMTP/DNS 探测是弱信号，不得宣称 100% 真实性。人工例外至少�
 - 密钥出现在普通配置、Renderer、日志或安装包；
 - 云端状态不能可靠回写，用户无法理解失败原因；
 - 构建、契约、E2E、打包冒烟、小流量实发任一验证缺失；
-- 发布制品缺少提交号、依赖锁、哈希、测试结果、签名、灰度阈值或回滚责任人；
+- 发布制品缺少提交号、依赖锁、哈希、测试结果、灰度阈值或回滚责任人；**公开发行渠道另需签名**（内部分发 / 顾问交付渠道不要求签名，见 `docs/release-gate.md` §4 与 `ARCH-STANDARDS.md` §17）；
 - CI 将 `timed_out`、`action_required`、空结果等非成功状态判为通过。
 
 ### 13.1 Phase 2 · Resend 投递闭环门禁（V1.3+）
 
-Phase 2 引入云端 Resend 投递闭环后，`NO-GO` 判定额外叠加以下门禁；Phase 1 的 13 条通用门禁在本阶段同样生效。
+Phase 2 引入云端 Resend 投递闭环后，`NO-GO` 判定额外叠加以下门禁；Phase 1 的 10 条通用门禁在本阶段同样生效。
 
 **1. D1 迁移（`migrations/002_outreach_webhook.sql`）**
 - `webhook_events` 表建齐：`UNIQUE(provider, event_id)` 唯一约束生效，`workspace_id` 可为 NULL（Webhook 是全局回调）；
@@ -260,8 +260,8 @@ Phase 2 引入云端 Resend 投递闭环后，`NO-GO` 判定额外叠加以下�
 - `outreach-sync-service` 每 60s 轮询 `pending` / `sent` / `delivered` / `bounced` 四种状态，映射到本地 `AgentStatus.whatsappStatus` 与 `emailSequenceStage`，经 `AGENT.LEAD_STATUS_UPDATED` 推送至渲染进程。
 
 **4. 端到端验证（Phase 2 强制门禁）**
-- `kone-cloud/tests/worker.test.ts` **29 项全绿**：包含 27 项路由/授权/幂等/签名 + 2 项 E2E 旅程（正常闭环 + 失败退避）；
-- 根工程 `npm run test:unit` **315 项全绿**（`ipc-startup-gate` 已按新增 `automation:queue-outreach` 通道更新为 52）；
+- `kone-cloud/tests/worker.test.ts` **63 项全绿（`worker.test.ts` + `approval-gate.test.ts` 两个文件）**；
+- 根工程 `npm run test:unit` **632 项全绿**；
 - `npm run typecheck` 通过（本地 + worker 两侧）；
 - E2E 旅程断言序列：`createApprovedLead → queue → cron send (mocked Resend) → outreach.sent event → webhook email.bounced (Svix HMAC 签名) → outreach.status='bounced' + webhook_events 审计 → 二次 cron 不再重发`；
 - Webhook 签名专项用例：签名正确→200 / 无签名→401 / 篡改签名→401 / 过期时间戳（重放攻击）→401 / 重复事件→幂等 true。

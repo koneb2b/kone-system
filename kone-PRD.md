@@ -167,7 +167,7 @@
 智能获客模块的核心价值是：**搜索穿透产出线索 → 管道分发 → 智能体执行触达 → 结果写回线索状态**。整个管道由以下 4 层构成：
 
 #### 0.1 数据源层 (Provider Plugin Layer)
-- **Provider 抽象接口**：`SearchProvider` 定义标准契约 `{ execute(query): SearchExecuteResult[], name: string, id: DataSourceType, supportedLanguages(): string[] }`
+- **Provider 抽象接口**：以 **§0.8** 为准；核心签名为 `execute(query): Promise<ProviderExecuteResult>`。
 - **Provider 注册表**：`provider-registry.ts` 集中管理所有已注册 Provider，支持运行时增删。
 - **Provider 清单（以 `PROVIDER-CAPABILITY.md` 为唯一事实源）**：
   - **✅ 真实可用**：SerpApi Maps（`google_maps`）、SerpApi Organic（`google_organic`）、LinkedIn SerpApi（`linkedin_search`）、海关网页补位（`customs_shipment`，基于公开网页的近似检索，非官方提单库直连）、展会网页补位（`trade_show`，同前）、Facebook 限定检索（`facebook_search`）——均已接入 `myJobId` 时空隔离与 retry/timeout
@@ -268,7 +268,7 @@
 |---|---|---|
 | 存储位置 | `SearchExecuteResult.agentStatus` + `LeadItem.agentStatus` | `Map<string, AgentState>` 内存 |
 | 生命周期 | 持久化，跟随线索 | 应用重启后重置 |
-| 写入者 | Agent Pipeline（未来）+ AnySearch 输入（现在） | `agent-service.ts` 模拟函数 |
+| 写入者 | Agent Pipeline（V1.3 已落地，当前写入者）+ AnySearch 输入（另一写入者） | `agent-service.ts` 模拟函数 |
 | 推送方式 | 随 `emitBasicResults`/`emitLeadScored` 发送 | `AGENT.STATUS_CHANGED` IPC |
 | 前端消费 | 线索表格/抽屉中的 Agent 触达状态徽标 | `/agents` 面板卡片进度条 |
 
@@ -423,7 +423,7 @@ Kone 的完整业务闭环统一为：
 
 以下 V1.4 扩展已在代码层面落地，需在相关文档中同步对齐：
 
-- **HTTP 熔断器**（`electron/utils/http-client.ts`）：每个外部 API host 独立熔断状态，3 次连续失败后断开 60 秒，由 `proxy-service.ts` 消费。
+- **HTTP 熔断器**（`electron/utils/http-client.ts`）：每个外部 API host 独立熔断状态，仅有暂时性失败（`429` / `5xx` / 网络异常）计入 3 次连续失败阈值，触发后断开 60 秒；`400/401/403` 属确定性配置错误，fail-fast 且不计入，由 `proxy-service.ts` 消费。
 - **Crash Reporter**（`electron/services/crash-reporter.ts`）：捕获 `uncaughtException`/`unhandledRejection`，本地 dump + source-map + 可选远程上报，`main.ts` 启动入口。
 - **自动备份**（`electron/services/backup-service.ts`）：每日自动备份，MD5 校验 + 7 文件轮换 + 50MB 上限。
 - **Auto-Update**（`electron/services/auto-updater.ts`）：基于 `electron-updater` 的 Windows/Mac 自动更新，`main.ts` 初始化。需在打包环境中安装 `electron-updater` 依赖。

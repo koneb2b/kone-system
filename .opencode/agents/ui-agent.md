@@ -192,7 +192,7 @@ Autopilot is a background companion panel, not the hero surface.
 2. Each card shows: agent label, description, progress bar, daily quota, success/fail counts.
 3. Start button text: `启动智能体` or `启动`; Stop: `停止`; Pause: `暂停`.
 4. Trial users must see only an upgrade/promo surface, not live agent metrics.
-5. Paid Basic users may see Email and low-volume WhatsApp Web cards when configured; LinkedIn must be clearly labeled as read-only Profile辅助 + AI 文案生成, not auto outreach.
+5. Paid Basic users may see Email and low-volume WhatsApp Web cards when configured; LinkedIn is Premium/Enterprise only and must be clearly labeled as read-only Profile辅助 + AI 文案生成, not auto outreach.
 6. Locked or unavailable capabilities show lock icon + upgrade CTA, but must not expose fake progress metrics.
 7. Email agent checks for connected email sandbox before allowing start; shows failure toast if no SMTP/IMAP account connected.
 8. Daily quota badge visible at panel top; WhatsApp Basic low-volume limit and Email Basic 20/day must be displayed clearly.

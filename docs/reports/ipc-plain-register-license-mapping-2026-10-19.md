@@ -207,7 +207,7 @@ registerSecureFeatureIpc(
 | 门 | 命令 | 期望 |
 |---|---|---|
 | 通道账本 | `npm run verify:ipc` | registry-known = 61；plain 计数下降且与文档一致 |
-| 能力集单一源 | `npm run verify:license-gate` | 三处消费方仍引用 `license-features.ts` |
+| 能力集单一源 | `npm run test:gateway` | 三处消费方仍引用 `license-features.ts` |
 | 文档一致性 | `npm run verify:consistency` | EXIT 0 |
 | 负向测试 | `node --test tests/ipc-registry-*-migration.test.ts` | Trial 直连每个新门禁通道 → `403 FEATURE_DENIED` |
 | 激活不回归 | 手动/`ipc-startup-gate` | 未激活用户仍可 LOGIN / 配密钥 / 提交激活码 |
@@ -251,7 +251,7 @@ D1–D6 收口后，§3.2 中仍有通道为 ⚠。复核完成了**渲染层调
 |---|---|---|
 | 误门禁 §3.1 → 未激活用户无法激活（P0 回归） | 高 | §3.1 清单冻结；DoD 增加"激活不回归"项；PR 描述逐条勾对 |
 | Basic 单邮箱通道被 `team_collaboration` 误伤 | 中 | #39 保留 body 例外逻辑，用 `featureName` 函数式表达 |
-| 双重门禁导致 feature 键漂移 | 中 | 迁移时同 commit 删除 body 门禁；`verify:license-gate` 兜底 |
+| 双重门禁导致 feature 键漂移 | 中 | 迁移时同 commit 删除 body 门禁；`test:gateway` 兜底 |
 | 计数文档漂移 | 低 | 同 commit 回写 `ARCH-STANDARDS §3` |
 | 回滚 | — | 按注册文件粒度 revert（每服务一个 commit），无需数据迁移 |
 

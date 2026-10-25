@@ -4,8 +4,7 @@ This repository uses Oh My OpenCode Flow Engineering as a mandatory working mode
 
 ## Scope Guard
 
-- This baseline task only configures AI agent workflow and test scaffolding.
-- Do not modify business code under `electron/` or `src/` unless a later task explicitly requires it.
+- 变更须限定在任务声明的范围内，不得以工作流/配置任务为由扩展修改业务代码；需要修改 `electron/` 或 `src/` 时必须由任务明确授权。
 
 ## Mandatory Document Chain
 
@@ -41,7 +40,7 @@ Skipping any document in this chain is a protocol violation.
 
 ## Anti-Regression Protocol
 
-- Read the full 8-document chain before changing existing logic.
+- Read the full 10-document chain before changing existing logic.
 - Preserve all validated behavior, especially the mandatory `四级弹性搜索协议`.
 - Never fix a new bug by breaking a previously working path.
 - Any change that may affect existing logic must be verified with local test scripts after modification.
@@ -149,7 +148,7 @@ For any change involving approval, cloud handoff, delivery, suppression, webhook
 ### Agent Task Queue Isolation
 - `agent-pipeline.ts` generates `crypto.randomUUID()` per pipeline run via `withPipelineIsolation()` (`currentPipelineRunId`).
 - All Agent task consumption and `writeBackAgentStatus` callbacks must check `taskRunId !== currentPipelineRunId` at entry; stale tasks from previous runs must be silently discarded.
-- Same module-level singleton pattern as Search Temporal Isolation.
+- Agent pipeline isolation uses its own module-level runId guard (`currentPipelineRunId`), separate from the owner-scoped `Map<senderId, jobId>` Search Temporal Isolation.
 
 ### Provider Integration Contract
 > 权威来源: `kone-PRD.md §0.8` — 以下为引用摘要，完整接口定义与实现规范以 kone-PRD.md 为准。
@@ -162,7 +161,7 @@ For any change involving approval, cloud handoff, delivery, suppression, webhook
 - Provider implementations must accept and preserve the query `language`; country-specific local language expansion belongs in intent mutation, not inside individual providers.
 
 ### Agent Pipeline Execution Contract
-- Pipeline triggers on `search:stream-complete`: automatically collects qualified leads (`matchScore >= 60` with reachable assets).
+- Pipeline is invoked **synchronously and directly** by `search-service.ts` after the stream completes (`withPipelineIsolation(...)`), not via an `ipcMain.on('search:stream-complete')` listener; the IPC event is only used to notify the UI. It automatically collects qualified leads (`matchScore >= 60` with reachable assets).
 - `AgentTask` is the minimum work unit; tasks are queued per Agent type.
 - Agent execution updates both `AgentState` (memory Map → `AGENT.STATUS_CHANGED` IPC) and `agentStatus` (persistent → `LeadItem.agentStatus`).
 - The dual-channel write-back is mandatory: runtime state for UI panel, persistent status for lead timeline.
