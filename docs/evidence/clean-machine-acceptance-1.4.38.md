@@ -44,12 +44,12 @@
 
 | 项 | 结果 |
 |---|---|
-| 单元测试 | **632 / 632** 通过 |
+| 单元测试 | **632 / 632** 通过（1.4.38 打包时基线；此后新增 5 项熔断回归，当前以 `npm run test:unit` 实测为准） |
 | 类型检查 / lint | 0 error / 0 error |
 | 文档与契约一致性 | `verify:docs` EXIT 0（文档链共 10 份、`ACTIVE_DOCS` 15 份、交叉引用 226 项、版本口径 `1.4.38` 六处对齐；文档链表以 `scripts/verify-doc-consistency.cjs` 的 `ACTIVE_DOCS` 为准） |
 | 发布门禁机械子集 | `verify:release-gate` HARD 全绿 |
 | 打包态启动冒烟 | `booted` / `activationScreenVisible` / `preloadBridgeVisible` 全 `true`（`dashboardNavVisible=false` 属未激活态**合法分支**） |
-| 云端链路安全门禁 | `verify:cloud` 通过 |
+| 云端链路安全门禁 | `verify:cloud-safety` 通过 |
 
 > 以上均**已在 1.4.38 上实测**，本单不重复。
 
@@ -272,7 +272,7 @@ powershell -ExecutionPolicy Bypass -File .\clean-machine-collect.ps1 `
 
 ## 6. 证据归档
 
-- 建议目录：`docs/evidence/clean-machine-acceptance-1.4.38/`
+- 建议目录：`docs/evidence/clean-machine-acceptance-1.4.38/`（人工验收时创建，存放截图证据）
 - 命名约定：`S<编号>-<短名>.png`（如 `S11a-cloud-basic-upgrade.png`）
 - 一并归档：本文件（填好后）+ `%APPDATA%\kone-system\logs\` 下当日日志
 - 归档后请在本节记录最终结论：**PASS / FAIL** + 日期：__________
@@ -294,8 +294,8 @@ powershell -ExecutionPolicy Bypass -File .\clean-machine-collect.ps1 `
 > 据此，**NO-GO ① 的剩余范围收敛为：环境层**（目标机缺运行库 / 纯净机）**+ 安装层残余**（非提升上下文；默认路径 / 升级覆盖 / 中文路径已由 §7.1 的 6 场景矩阵覆盖）。
 > ① 仍是唯一真实阻断，签名仍为交付后加固项（判定不变）。
 
-> ③④ 为**环境 / 资源项**，非代码缺陷。本地能力版商用的代码侧与工程质量门禁**已全部就绪**；
-> **唯一剩余的真实阻断 = 本单 S1–S11 人工验收**。
+> ③④ 属**环境 / 资源项**（非代码缺陷），但**仍是 `CLOUD-COLLABORATION-DELIVERY.md §0` 与 `docs/release-gate.md §5` 定义的 NO-GO 阻断项**，须闭环后方可转 GO；
+> 本单（S1–S11）仅覆盖 NO-GO ① 的环境层部分，**不构成 ③④ 的替代验收**。
 
 ### 7.1 安装层 6 场景自动化验收（2026-10-25）
 

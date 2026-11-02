@@ -94,7 +94,7 @@
 | `npm run test:smoke` | 重新打包 | 打包态启动冒烟（booted / preload bridge / 授权页或仪表盘） |
 | `npm run test:packaged-premium` | 重新打包 | 打包态 Premium 能力（L4） |
 | `npm run verify:signature`（默认；`--strict` 可选） | 无（默认不依赖证书） | **非阻断（内部分发/顾问交付）**：代码签名经 owner 决策（2026-10-20）推迟为交付后加固项；**公开发行渠道（官网下载/应用商店/公开试用）前 `npm run verify:signature` 必须通过** |
-| 干净机器 20 项人工验收 | 干净 Windows 机器 | NO-GO ① |
+| 干净机器验收 S1–S11（11 步 + §7.1 六场景） | 干净 Windows 机器 | NO-GO ①（明细见 `docs/evidence/clean-machine-acceptance-1.4.38.md`） |
 
 > ℹ️ `verify:signature` 默认**退出 0**（证书未接入属预期），仅在 `--strict` 下退出 1。
 > **owner 决策（2026-10-20）：代码签名不作为交付阻断** —— 依据是权威发布判定 `CLOUD-COLLABORATION-DELIVERY.md §0`
@@ -136,5 +136,5 @@ handler 在 outreach-sync，故 `registerOutreachSyncHandlers` 已补 `licenseGu
 
 **前置条件已落地**：`system-settings.tsx` 的 cloud 面板改为 `canAccess('cloud_send')` 条件挂载，
 非高级版渲染升级引导而非挂载 `CloudSettingsTab`。原因是 `unwrapIpc`（`src/lib/electron-api.ts:117`）
-对非 success **直接 throw**，而 `cloud-settings-tab.tsx:38` 用 `Promise.all` 并发取配置 —— 门禁先行
+对非 success **直接 throw**，而 `src/components/settings/cloud-settings-tab.tsx:38` 用 `Promise.all` 并发取配置 —— 门禁先行
 会让非高级版停在"未配置"空态（误导性降级，P0-2 同类）。该前置条件已被测试反向锁定。

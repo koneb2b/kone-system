@@ -205,20 +205,22 @@ Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> �
 - `plan: 'trial'`
 - `tier: 'basic'`
 
-这表示 Trial 仅是 Basic 能力集的 7 天时效性试用，而不是永久免费层级。
+这表示 Trial 与 Basic 共用 `tier:'basic'` 的本地计算通道，但**能力集是 Basic 的子集**：仅 `search_basic` + `lead_export`（`src/shared/license-features.ts` 的 `TRIAL_FEATURES`），7 天后到期，不是永久免费层级。
 
 #### 1.4.2 基础版（Paid Basic）
 
 基础版是 Kone 的单兵作战收费版本，核心价值是“本地闭环获客 + AI 深度分析 + 伴随式后台巡航”。
 
-基于 `src/lib/feature-gate.ts` 与 `electron/security/license-guard.ts`，Basic 真实能力边界已统一为：
+能力集以唯一事实源 `src/shared/license-features.ts` 的 `BASIC_FEATURES` 为准（主进程与渲染层共用；`feature-gate.ts` / `license-guard.ts` 均为消费方，不得自建副本）。Basic 真实能力边界为：
 
 - `search_basic`
 - `search_deep`
 - `analysis_basic`
 - `analysis_advanced`
 - `lead_export`
-- `export_full`
+- `local_autopilot`（低量本地 Agent）
+
+**不含** `export_full`（完整导出自 Premium 起）、`cloud_send`、`team_collaboration`。
 
 对应产品价值：
 
@@ -241,7 +243,7 @@ Kone V1.2 的商业模式已经校准为明确的三级结构：`7天试用 -> �
 
 高级版是 Kone 的团队资产与自动化引擎版本，严格承载“云端自动化 + 团队协同”价值。
 
-基于 `src/lib/feature-gate.ts`、`electron/security/license-guard.ts`、`electron/services/automation-service.ts`、`electron/services/supabase-service.ts`、`electron/services/agent-service.ts`，Premium/Enterprise 独占能力已经校准为：
+能力集以 `src/shared/license-features.ts` 的 `PREMIUM_FEATURES` 为唯一事实源；以下文件均为消费方：`src/lib/feature-gate.ts`、`electron/security/license-guard.ts`、`electron/services/automation-service.ts`、`electron/services/supabase-service.ts`、`electron/services/agent-service.ts`。Premium/Enterprise 独占能力为：
 
 - `cloud_send`
 - `team_collaboration`
@@ -1672,7 +1674,7 @@ type AgentState = {
 |---|---|---|---|
 | P0 | AnySearch 垂直 B2B 实体 API | `userConfig.providers[anysearch]` | 全局搜 + 决策人穿透 + 海关/展会/社媒多源融合 |
 | P1 | SerpApi 全家桶（Maps/Organic/LinkedIn/Facebook/海关/展会网页补位） | 复用 `userConfig.providers[google-maps]` 中同一 SerpApi Key | 本地商户/网页/社媒检索与站点限定补位检索 |
-| P1（可选 BYOK） | Serper.dev 网页检索（`serper`） | 用户自备 Serper API Key | 可选 Google 网页结果补位，与 `google_organic` 互斥，不自动回退 |
+| P1（可选 BYOK） | Serper.dev 网页检索（`serper`） | 用户自备 Serper API Key | 可选 Google 网页结果**并行补充**（与 `google_organic` 并列、不替代），失败自动隔离；按 Serper 条款不缓存、不自动重试 |
 
 > ⚠️ **勘误（对齐 PROVIDER-CAPABILITY.md 唯一事实源）**：早期版本此表将海关/展会标为「爬虫（用户自备密钥）」——与代码现状不符。`customs_shipment`/`trade_show` 已落地为 SerpApi 网页近似检索（复用同一 Key，非官方数据库直连）；官方数据库直连属于未来可选增强，当前无任何待接入爬虫。
 
@@ -2118,9 +2120,9 @@ export type CampaignStartRequest = {
 
 以下是"代码现状"，不是建议：
 
-- `FEATURE_ALIASES.basic` 已正确限定为本地能力集合：`search_basic`、`search_deep`、`analysis_basic`、`analysis_advanced`、`lead_export`、`export_full`，不包含任何云端能力
+- `FEATURE_ALIASES.basic` 已正确限定为本地能力集合：`search_basic`、`search_deep`、`analysis_basic`、`analysis_advanced`、`lead_export`、`local_autopilot`；不包含任何云端能力，也不含 `export_full`（该能力自 Premium 起）
 - `cloud_send` 与 `team_collaboration` 严格限定在 `premium` / `enterprise` 别名中
-- Trial plan 映射到 Basic 别名（获得 Basic 完整能力集的 7 天体验），与 PRD 描述一致
+- Trial 计划使用 `tier:'basic'` 通道，但能力集为 `TRIAL_FEATURES = [search_basic, lead_export]` 子集（7 天），**不得据此授予 Basic 完整能力集**
 
 ---
 

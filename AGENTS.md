@@ -110,7 +110,7 @@ Agent 执行管道 (agent-pipeline.ts)
 - **产品词必须清洗**：进入变体生成的产品词须为**可检索的英文商品词**；含控制词（`请搜索`/`帮我找`/`要求…`）、中文原文或超长自然语言的条目**必须剔除**，不得直接作为查询派发（实测曾出现整句中文被当作关键词打给上游，纯属浪费配额）。
 - 所有 Provider 必须通过统一 `ProviderQuery` 消费 `keyword`, `language`, `country`, `city`, `intentProducts`, `b2bAttributes`, `myJobId`。
 - Provider 只负责采集与归一化，不得写 Zustand、不得发送 IPC、不得保存线索。
-- `google_maps`、`google_organic`、AnySearch、`linkedin_search`、`customs_shipment`、`trade_show`、`yellow_pages`、`facebook_search` 的失败必须互相隔离，任何单源失败不得中断整轮搜索。
+- `google_maps`、`google_organic`、AnySearch、`linkedin_search`、`customs_shipment`、`trade_show`、`facebook_search` 的失败必须互相隔离，任何单源失败不得中断整轮搜索。（`yellow_pages` 已弃用：`execute()` 直接返回 `DEPRECATED`、不发起采集，故不参与隔离断言；状态以 `PROVIDER-CAPABILITY.md` §已弃用为准。）
 
 ## Local-Cloud Collaboration Change Protocol
 
