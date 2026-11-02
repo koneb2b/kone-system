@@ -357,7 +357,7 @@ const mobile = ranked.find(r => r.kind === 'mobile')         // 取第一个 mob
 |---|---|---|
 | `PROVIDER-CAPABILITY.md`（能力 SSOT） | **否**——全文**零** Prospeo/Apollo 提及（本轮计数 = 0） | D-6 仍未闭环 |
 | `kone-PRD.md` | 仅提及 Apollo 预算常量（`ENRICH_LOOKUP_BUDGET=20`，§常量表），**无授权/留存条款** | `kone-PRD.md:44` |
-| `docs/plans/KONE-DATA-PIPELINE-AUDIT.md §7.3` | 将三家供应商条款列为 **`[待验证]`**，明确「在确认前不得宣称获得商业使用授权」 | 该文 §7.3 |
+| `docs/archive/plans/KONE-DATA-PIPELINE-AUDIT.md §7.3` | 将三家供应商条款列为 **`[待验证]`**，明确「在确认前不得宣称获得商业使用授权」 | 该文 §7.3 |
 | 其它 docs | 未发现 API 授权 / ToS / DPA / 数据留存专项记录 | 本轮全库 grep 无命中 |
 
 ### 3.2 结论（口径纪律）
@@ -438,5 +438,5 @@ const mobile = ranked.find(r => r.kind === 'mobile')         // 取第一个 mob
 | Agent 管道门禁（仅判 linkedinUrl） | `electron/services/agent-pipeline.ts` | `129-152` |
 | 导出显示 0/100 | `electron/services/export-service.ts` | `347` |
 | 能力 SSOT（未含 Prospeo/Apollo） | `PROVIDER-CAPABILITY.md` | 全文（计数 0） |
-| 供应商条款待核实 | `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` | §7.3 |
+| 供应商条款待核实 | `docs/archive/plans/KONE-DATA-PIPELINE-AUDIT.md` | §7.3 |
 | Apollo 手机契约 | `docs.apollo.io/reference/people-enrichment`、`retrieve-mobile-phone-numbers`、`poll-webhook-result` | — |

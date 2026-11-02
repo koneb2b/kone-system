@@ -57,19 +57,20 @@
 | 34 | `docs/reports/system-consolidation-2026-10-19.md` | 2026-10-19 | EXECUTED | CHANGELOG [1.4.37]"文档治理归零" + 报告自述两处修复单独提交 | §1.2 结论"H1–H5 取证表"（防同类误判复发） |
 | 35 | `.omo/plans/packaged-first-run-automation.md` | 2026-10-20 | EXECUTED | CHANGELOG [1.4.38]（commit `39c4318`，`test:first-run` + `scripts/packaged-first-run.cjs`） | §1 本机自动化边界表（CHANGELOG 仅概述） |
 
-## 2. 保留清单（6 份，ACTIVE-OPEN）
+## 2. 保留清单（6 份 ACTIVE-OPEN + 1 份暂留）
 
-1. `docs/plans/README.md`（索引件，归档后先更新本清单）
+1. `docs/plans/README.md`（索引件，归档后已重写为活跃清单）
 2. `docs/plans/KONE-DATA-QUALITY-APPROVAL-PACK.md`（负责人 A/B/C/D 待办 = **用户本人决策项**）
 3. `docs/plans/KONE-DATA-QUALITY-PILOT.md`（与 2 配对的设计件）
 4. `docs/plans/KONE-ENRICHMENT-REVIEW-1436.md`（R3–R5 未闭环）
 5. `docs/plans/kone-v1.4-production-hardening.md`（3 项未勾 + SQLite/auto-updater 待立项）
 6. `docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`（D7 待裁决 + 免门禁负面清单）
+7. `docs/plans/KONE-DATA-PIPELINE-AUDIT.md`（**暂留**：判定 SUPERSEDED，但其 Prospeo/Apollo 证据表未被取代者复刻；按 §4.1 协议，待证据表迁入 PILOT/REVIEW 后再归档）
 
-## 3. 归档候选（29 份 → `docs/archive/plans/`）
+## 3. 归档候选（28 份 → `docs/archive/plans/`）
 
 - **EXECUTED（19）**：e2e-test-plan、full-ipc-automation-barrage、gap-fix-execution、intelligent-acquisition-interaction-fix、ipc-boundary-crash-hardening、kone-business-logic-evals、kone-env-isolation、p0-precision-differentiation-closure、p1-precision-enhancement、p2-p3-experience-coverage、perf-concurrency-fix、project-alignment-optimization、trial-expiry-fix、ui-router-spider-smoke-plan、ui-ux-de-ai-optimization、v1-2-blocking-issues-fix、dev-env-ultimate-privilege-bypass、dev-license-bypass-fix、KONE-ENRICHMENT-PHASE1-FIX
-- **SUPERSEDED（6）**：KONE-DATA-PIPELINE-AUDIT、intelligent-acquisition-deep-audit、kone-v1.4-architectural-improvements、n8n-interface-align、p0-commercial-honesty-hardening、payload-audit-report
+- **SUPERSEDED（5）**：intelligent-acquisition-deep-audit、kone-v1.4-architectural-improvements、n8n-interface-align、p0-commercial-honesty-hardening、payload-audit-report
 - **终态报告（2）**：KONE-DATA-QUALITY-GATE-REPORT（BLOCKED·No-Go 终态）、system-consolidation-2026-10-19
 - **UNVERIFIABLE（1）**：compliance-audit-report（建议归档 + 标题行标注"无 CHANGELOG 回写记录"）
 - **EXECUTED（1，`.omo/plans/`）**：packaged-first-run-automation（唯一被跟踪的 .omo 文件，迁入后 `.omo/` 恢复纯运行时目录，与 `.gitignore` 语义一致）

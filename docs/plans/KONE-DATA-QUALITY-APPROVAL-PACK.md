@@ -35,7 +35,7 @@
 | 工作区 | 8 modified + 6 untracked（均为 Phase 1 已完成、随工作区带入的改动） | `git status` |
 | 技术栈 | Electron + React + TypeScript（本地优先，数据默认不出本机） | `README.md` |
 
-> 组成：6 个未跟踪 = 4 篇文档（`KONE-DATA-QUALITY-APPROVAL-PACK.md`(本文) / `KONE-DATA-QUALITY-PILOT.md` / `KONE-ENRICHMENT-PHASE1-FIX.md` / `KONE-ENRICHMENT-REVIEW-1436.md`）+ `src/shared/email-availability.ts` + `tests/business-logic/contact-cache-isolation.business.test.js`；8 个修改为 Phase 1 代码/测试改动。**Phase 2A/2A.1/2A.2 未新增业务改动。**
+> 组成：6 个未跟踪 = 4 篇文档（`KONE-DATA-QUALITY-APPROVAL-PACK.md`(本文) / `KONE-DATA-QUALITY-PILOT.md` / `docs/archive/plans/KONE-ENRICHMENT-PHASE1-FIX.md` / `KONE-ENRICHMENT-REVIEW-1436.md`）+ `src/shared/email-availability.ts` + `tests/business-logic/contact-cache-isolation.business.test.js`；8 个修改为 Phase 1 代码/测试改动。**Phase 2A/2A.1/2A.2 未新增业务改动。**
 
 ### 1.2 引用文档（按权威层级）
 | 文档 | 角色 | 本文引用方式 |

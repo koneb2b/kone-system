@@ -262,4 +262,4 @@ D1–D6 收口后，§3.2 中仍有通道为 ⚠。复核完成了**渲染层调
 - 本文所有金额/计数/门禁均来自**代码与命令实测**，不引用文档自述。
 - "现状门禁"列的 ✅ 仅表示**已存在门禁**，不代表键选取正确；⚠ 表示**未检出**，不排除间接路径。
 - 本文为**决策文档**，不替代 `kone-PRD.md`（产品真值）、`ARCH-STANDARDS.md`（架构真值）、`src/shared/license-features.ts`（能力集真值）。
-- 与本文并列的近期治理产出：`docs/reports/system-consolidation-2026-10-19.md`（全项目系统梳理）。
+- 与本文并列的近期治理产出：`docs/archive/plans/system-consolidation-2026-10-19.md`（全项目系统梳理）。
