@@ -308,7 +308,7 @@ powershell -ExecutionPolicy Bypass -File .\clean-machine-collect.ps1 `
 | `default-path` | ✅ PASS | 不传 `/D` 时实际落盘 `%LOCALAPPDATA%\Programs\KoneAI`，与推导值一致（`matchedExpectation: true`） |
 | `non-ascii` | ✅ PASS | 中文路径 `...\Temp\kone-安装层-中文-...` 安装 / 卸载正常，注册表 `InstallLocation` 与中文目录一致 |
 | `reinstall` | ✅ PASS | 同版本二次静默安装退出码 `0`，第二遍 A1–A4 全过；**这是同版本重装代理，不是升级** |
-| `upgrade` | ✅ PASS | 1.4.32（`release-v151/Kone-Intellect-Setup-1.4.32.exe`，89,943,061 B，SHA-256 `ABEF3A8605E75BDC343CD4EE00D56D2CA5C62E4E46E13B3724105EAC41F9198C`）→ 1.4.38 原地升级覆盖 |
+| `upgrade` | ✅ PASS | 1.4.32（`release-v151/Kone-Intellect-Setup-1.4.32.exe`，**成文时实测产物**，89,943,061 B，SHA-256 `ABEF3A8605E75BDC343CD4EE00D56D2CA5C62E4E46E13B3724105EAC41F9198C`）→ 1.4.38 原地升级覆盖 |
 | `legacy-migration` | ✅ PASS | **`migration: REUSED`**：旧式命名目录的 1.4.32 → 1.4.38（不传 `/D`）复用注册表 `InstallLocation` 原地升级，全程仅 1 个卸载项，单次卸载清理干净，**未产生第二次安装** |
 
 **默认安装目录勘误**：真实默认目录是 `%LOCALAPPDATA%\Programs\KoneAI`，**不是** `%LOCALAPPDATA%\Programs\kone-system`。
