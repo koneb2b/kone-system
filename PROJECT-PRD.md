@@ -1680,38 +1680,7 @@ type AgentState = {
 
 ### 3.7.6 Provider 注册表规范（已落地 · 接口以 kone-PRD §0.8 为准）
 
-> ⚠️ 契约以 `kone-PRD.md §0.8` 与 `electron/services/provider-registry.ts` 现状为准：实际 `execute()` 返回 `ProviderExecuteResult { results, error }`、`executeAll()` 返回 `Map<DataSourceType, ProviderExecuteResult>`，并含 `isAvailable(config)` 与 `ProviderConfig`。以下 TS 为早期草案示意，签名细节均以 §0.8 为准，请勿据此草案实现。
-
-`electron/services/provider-registry.ts` 负责统一管理 SearchProvider 枚举与调度：
-
-```typescript
-interface SearchProvider {
-  id: DataSourceType                          // 'google_maps' | 'google_organic' | 'customs_shipment' | ...
-  name: string                                // 人类可读标签
-  readonly requiredConfigKeys: string[]       // 所需配置键
-  supportedLanguages(): string[]
-  execute(query: ProviderQuery): Promise<ProviderExecuteResult>
-  isAvailable(config?: ProviderConfig): boolean  // 密钥/配置检查
-}
-
-type ProviderQuery = {
-  keyword: string
-  language: string
-  country?: string
-  city?: string
-  intentProducts?: string[]                   // 来自 LLM 意图提取
-  b2bAttributes?: string[]
-  myJobId: string
-}
-
-class ProviderRegistry {
-  register(provider: SearchProvider): void
-  get(id: DataSourceType): SearchProvider | undefined
-  getAll(): SearchProvider[]
-  getAvailable(): SearchProvider[]
-  executeAll(query: ProviderQuery): Promise<{ providerId: DataSourceType; results: SearchExecuteResult[] }[]>
-}
-```
+> ⚠️ 契约以 `kone-PRD.md §0.8`（Provider 注册表宪法）与 `electron/services/provider-registry.ts` 现状为准。本节**不复述接口签名**——`SearchProvider` / `ProviderQuery` / `ProviderRegistry` 的完整定义只存在于 §0.8 一处。
 
 **每个 Provider 实现以下行为契约**：
 - 文件位置：`electron/services/providers/<id>-provider.ts`

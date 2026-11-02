@@ -1,4 +1,4 @@
-﻿# 全站无头 UI 蜘蛛巡航测试搭建计划
+# 全站无头 UI 蜘蛛巡航测试搭建计划
 
 ## TL;DR
 > **Summary**: 在 `tests/e2e-ui/` 下建立一套无头 UI 蜘蛛巡航烟雾测试，核心文件为 `router-spider.spec.ts`。测试将启动 Electron 应用，按左侧导航顺序巡航 7 大核心模块，并在每次跳转后执行“白屏猎手”断言：**无 ErrorBoundary 崩溃 UI，且成功渲染模块骨架锚点**。

@@ -39,6 +39,9 @@ const ACTIVE_DOCS = [
   '.opencode/agents/ipc-agent.md',
   '.opencode/agents/system-blueprint.md',
   '.opencode/agents/build-agent.md',
+  // 发布门禁 SSOT（2026-11-02 补入）：门禁规格自身此前不在一致性门禁内，
+  // 其死链/过时表述无机械检测（审计发现的治理缺口）。
+  'docs/release-gate.md',
 ]
 
 /** 时点快照：允许保留历史函数名，不参与裁决 */

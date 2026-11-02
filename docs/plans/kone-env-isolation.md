@@ -1,4 +1,4 @@
-﻿# Kone 生产与开发环境绝对隔离计划
+# Kone 生产与开发环境绝对隔离计划
 
 ## TODOs
 - [x] T1: 在 `electron/security/license-guard.ts` 的最底层入口增加开发环境全量 Mock Claims 豁免，仅在 `!app.isPackaged` 生效，生产环境保持原有 Fail-Closed 行为不变。

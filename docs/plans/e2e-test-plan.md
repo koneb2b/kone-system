@@ -1,4 +1,4 @@
-﻿# Kone V1.2 E2E 测试执行计划
+# Kone V1.2 E2E 测试执行计划
 
 ## TL;DR
 

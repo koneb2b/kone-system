@@ -1,4 +1,4 @@
-﻿# Trial Expiry 拦截失效 Bug 修复计划
+# Trial Expiry 拦截失效 Bug 修复计划
 
 ## TL;DR
 

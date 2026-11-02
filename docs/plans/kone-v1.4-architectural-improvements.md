@@ -1,4 +1,4 @@
-﻿# Kone V1.4 架构优化执行计划
+# Kone V1.4 架构优化执行计划
 
 ## ⛓️ P0 — IPC 强制合约与运行时校验
 - [x] T1: 在 `electron/ipc/` 下创建 contracts/ 目录，为每个核心 channel 定义 zod/valibot 合约

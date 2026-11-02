@@ -105,7 +105,7 @@ lastVerifiedAt: 2026-10-19
   未覆盖专项单测计数（6 → 7，补 `serper`）与干净机器验收手册旧安装包名；
   `verify-doc-consistency` 新增第 11 项「现行文档旧版本残留」校验（17 份现行文档）。
 - 云端门禁真相校正（2026-10-19）：`CLOUD-COLLABORATION-DELIVERY.md` 原写「服务端二次门禁云端尚无实现」，
-  与代码不符；已核实 `kone-cloud/src/worker.ts` ⑤–⑨ 与 `tests/approval-gate.test.ts`（云端测试全通过；**2026-10-20 复核实测 `kone-cloud` 共 63 项 / 2 文件**，原文"59 项"计数有误且与本节的"+4 项负向测试"自相矛盾，已订正），
+  与代码不符；已核实 `kone-cloud/src/worker.ts` ⑤–⑨ 与 `kone-cloud/tests/approval-gate.test.ts`（云端测试全通过；**2026-10-20 复核实测 `kone-cloud` 共 63 项 / 2 文件**，原文"59 项"计数有误且与本节的"+4 项负向测试"自相矛盾，已订正），
   改为「已实现、`APPROVAL_GATE_ENABLED=false`、待部署环境开启并留证」。
 - 云端投递门禁加固（2026-10-19）：`kone-cloud/src/worker.ts` `/cron/send` 新增**投递时复核**（Fail-Closed，与入队门禁 ⑤–⑨
   共用 `APPROVAL_GATE_ENABLED`，默认关闭时零行为变化）——入队仅校验一次，历史 `queued` 行/入队后审批撤销/草稿变更/收件人被加入
@@ -2431,9 +2431,9 @@ typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 
 
 ### 云端（`kone-cloud/`）
 - **P2.5-a · D1 迁移**（`migrations/003_reply_detection.sql`）：`CREATE TABLE outreach_new` 允许 `status IN ('pending', 'sent', 'delivered', 'bounced', 'complained', 'failed', 'replied')`（SQLite 不支持修改 CHECK，需建表→复制→DROP→RENAME→重建索引）；新增 `email_opened_at` / `email_clicked_at` 列；新增 `email_replies` 表（`UNIQUE(outreach_id, message_id)` 幂等键 + 3 个索引）；新增 `idx_outreach_sent_at` 供 IMAP poller 的 `since` 窗口扫描。
-- **P2.5-b · Webhook 事件扩展**（`src/worker.ts`）：`handleResendWebhook` 的 switch 补 `email.opened`（落 `email_opened_at`，保持 `delivered`）/ `email.clicked`（落 `email_clicked_at`，保持 `delivered`）/ `email.replied`（落 `replied_at`，置 `replied` 终态）。签名验证、时间窗、常时比较、事件级去重复用 P2-13 的 Svix HMAC 实现。
-- **P2.5-c · 新路由** `POST /v1/outreach/reply`（`src/worker.ts` `handleReportReply`）：入参 `outreachId` / `messageId` / `sender`（必填）+ `inReplyTo` / `subject` / `replyBody` / `receivedAt`（选填）；先按 `(id, workspace_id)` 校验 tenant 隔离，再按 `UNIQUE(outreach_id, message_id)` 幂等短路；命中则写入 `email_replies` 存档 + `events type='outreach.replied' actor='imap_poller'` 审计 + bump `sync_tokens`，并将 outreach 置为 `replied`。响应体携带 `idempotent: true|false` 让本地 poller 决定是否重复推送本地状态。
-- **P2.5-d · Cron 收件人修复**（`src/worker.ts`）：`handleCronSend` 原先直接用 `outreach.lead_id` 当收件人（错误），改为 JOIN `leads` + `contacts` 取 `normalized_email`（Phase 2 E2E 测试暴露）。
+- **P2.5-b · Webhook 事件扩展**（`kone-cloud/src/worker.ts`）：`handleResendWebhook` 的 switch 补 `email.opened`（落 `email_opened_at`，保持 `delivered`）/ `email.clicked`（落 `email_clicked_at`，保持 `delivered`）/ `email.replied`（落 `replied_at`，置 `replied` 终态）。签名验证、时间窗、常时比较、事件级去重复用 P2-13 的 Svix HMAC 实现。
+- **P2.5-c · 新路由** `POST /v1/outreach/reply`（`kone-cloud/src/worker.ts` `handleReportReply`）：入参 `outreachId` / `messageId` / `sender`（必填）+ `inReplyTo` / `subject` / `replyBody` / `receivedAt`（选填）；先按 `(id, workspace_id)` 校验 tenant 隔离，再按 `UNIQUE(outreach_id, message_id)` 幂等短路；命中则写入 `email_replies` 存档 + `events type='outreach.replied' actor='imap_poller'` 审计 + bump `sync_tokens`，并将 outreach 置为 `replied`。响应体携带 `idempotent: true|false` 让本地 poller 决定是否重复推送本地状态。
+- **P2.5-d · Cron 收件人修复**（`kone-cloud/src/worker.ts`）：`handleCronSend` 原先直接用 `outreach.lead_id` 当收件人（错误），改为 JOIN `leads` + `contacts` 取 `normalized_email`（Phase 2 E2E 测试暴露）。
 
 ### 本地（`electron/`）
 - **P2.5-e · 新服务**（`services/imap-reply-service.ts`）：`imapflow` 连接 INBOX → 搜索 `since = now - lookbackDays` → 拉 `envelope + headers:['In-Reply-To','References','Message-Id']` → 归一化（小写、去 `< >`、去空白）后与云端 `outreach.provider_message_id` map 匹配 → 命中调 `reportOutreachReply` → 上报成功且非幂等短路时推送 `AGENT.LEAD_STATUS_UPDATED`（`whatsappStatus='replied'`）。返回体 `{ polled, matched, reported, idempotent, skipped?, errors, since, at }` 供 UI 与日志消费。
@@ -2469,10 +2469,10 @@ typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 
 
 ### 云端（`kone-cloud/`）
 - **P2-1 · D1 迁移**（`migrations/002_outreach_webhook.sql`）：新增 `webhook_events` 表（`UNIQUE(provider, event_id)` 幂等键 + `workspace_id NULL` 支持全局回调）+ outreach 扩展列 `resend_id` / `send_attempts` / `next_retry_at` + 3 个新索引。
-- **P2-2/3/4/5 · Worker 路由**（`src/worker.ts`）：新增 `/v1/outreach/queue`（幂等 + 状态守卫 `LEAD_NOT_APPROVED`）、`/v1/outreach/status`（分页 + 过滤）、`/v1/cron/send`（`X-Cron-Secret` 独立鉴权 + JOIN `leads/contacts` 解析收件人 + 指数退避 60/300/900/3600s）、`/v1/webhooks/resend`（**Svix HMAC-SHA256 签名验证 + ±300s 时间窗 + 常时比较 + `webhook_events.UNIQUE` 去重 + `email.delivered/bounced/complained` 三态落库**）。**Webhook 与 Cron 路由置于 Bearer 认证之前**，走自身鉴权通道。
-- **P2-13 · Resend Webhook 真实签名验证**（`src/worker.ts`）：按 https://docs.svix.com/receiving/verifying-payloads/how-manual 实现——`signedContent = ${svix-id}.${svix-timestamp}.${rawBody}`，`key = base64Decode(secret 剥离 whsec_ 前缀)`，`signature = base64(HMAC-SHA256(key, signedContent))`。签名头支持多值空格分隔（Svix 可发 1–3 个）；缺失/伪造/过期签名均返回 `UNAUTHORIZED (401)`，无降级路径。原 `x-resend-signature` 存在性检查已移除，避免 Fail-Closed 旁路。
-- **Resend 客户端**（`src/resend.ts`）：从 worker 主流程抽出为独立模块，附带 `setTestSendResult()` 测试钩子——Cloudflare Workers 跨请求上下文禁止复用 I/O 流，因此 E2E 用模块钩子而非 `stubGlobal(fetch)` 注入 mock。
-- **P2-9 · Worker 测试**（`tests/worker.test.ts`）：**29 条全绿**（27 路由/授权/幂等/签名 + 2 E2E 旅程）。签名专项 4 用例：签名正确 / 无签名 / 篡改签名 / 过期时间戳（重放）。
+- **P2-2/3/4/5 · Worker 路由**（`kone-cloud/src/worker.ts`）：新增 `/v1/outreach/queue`（幂等 + 状态守卫 `LEAD_NOT_APPROVED`）、`/v1/outreach/status`（分页 + 过滤）、`/v1/cron/send`（`X-Cron-Secret` 独立鉴权 + JOIN `leads/contacts` 解析收件人 + 指数退避 60/300/900/3600s）、`/v1/webhooks/resend`（**Svix HMAC-SHA256 签名验证 + ±300s 时间窗 + 常时比较 + `webhook_events.UNIQUE` 去重 + `email.delivered/bounced/complained` 三态落库**）。**Webhook 与 Cron 路由置于 Bearer 认证之前**，走自身鉴权通道。
+- **P2-13 · Resend Webhook 真实签名验证**（`kone-cloud/src/worker.ts`）：按 https://docs.svix.com/receiving/verifying-payloads/how-manual 实现——`signedContent = ${svix-id}.${svix-timestamp}.${rawBody}`，`key = base64Decode(secret 剥离 whsec_ 前缀)`，`signature = base64(HMAC-SHA256(key, signedContent))`。签名头支持多值空格分隔（Svix 可发 1–3 个）；缺失/伪造/过期签名均返回 `UNAUTHORIZED (401)`，无降级路径。原 `x-resend-signature` 存在性检查已移除，避免 Fail-Closed 旁路。
+- **Resend 客户端**（`kone-cloud/src/resend.ts`）：从 worker 主流程抽出为独立模块，附带 `setTestSendResult()` 测试钩子——Cloudflare Workers 跨请求上下文禁止复用 I/O 流，因此 E2E 用模块钩子而非 `stubGlobal(fetch)` 注入 mock。
+- **P2-9 · Worker 测试**（`kone-cloud/tests/worker.test.ts`）：**29 条全绿**（27 路由/授权/幂等/签名 + 2 E2E 旅程）。签名专项 4 用例：签名正确 / 无签名 / 篡改签名 / 过期时间戳（重放）。
 
 ### 本地（`electron/`）
 - **P2-6 · 云端 API**（`services/cloudflare-service.ts`）：新增 `queueOutreach()` / `pollOutreachStatus()` + 对应 payload / response 类型。
@@ -2519,9 +2519,9 @@ typecheck(src + electron) 0 error；单测 **319/319**（315 → 319，新增 4 
 
 ### kone-cloud/ Monorepo
 - **D1 Schema**（`migrations/001_init.sql`）：workspaces / companies / contacts / leads / outreach / events / suppressions / sync_tokens，8 表 + 索引。PRAGMA 已移除（D1 不支持）。
-- **Worker 核心**（`src/worker.ts`）：5 个路由（POST/GET /leads, GET /events, POST /suppressions/unsubscribe, GET /dashboard/stats）。Bearer token auth + SHA-256 hash、Idempotency-Key 去重、Workspace 隔离、全局抑制（跨租户）、企业防撞单。
-- **工具函数**（`src/utils.js` / `src/auth.js`）：hashToken / jsonResponse / errorResponse / generateId / nowUTC / normalizeEmail / normalizeDomain / parseJson / authenticate。
-- **测试套件**（`tests/worker.test.ts`）：15 条测试（vitest-plugin + D1 migration setup），全部通过。
+- **Worker 核心**（`kone-cloud/src/worker.ts`）：5 个路由（POST/GET /leads, GET /events, POST /suppressions/unsubscribe, GET /dashboard/stats）。Bearer token auth + SHA-256 hash、Idempotency-Key 去重、Workspace 隔离、全局抑制（跨租户）、企业防撞单。
+- **工具函数**（`kone-cloud/src/utils.ts` / `kone-cloud/src/auth.ts`）：hashToken / jsonResponse / errorResponse / generateId / nowUTC / normalizeEmail / normalizeDomain / parseJson（utils.ts）+ authenticate（auth.ts）。
+- **测试套件**（`kone-cloud/tests/worker.test.ts`）：15 条测试（vitest-plugin + D1 migration setup），全部通过。
 - **Pages 仪表盘**（`pages/`）：React 18 + Vite + Tailwind，Auth 面板 + Dashboard（StatsCards / LeadTable / EventStream），30s 自动刷新。构建体积 158KB（gzip 50KB）。
 
 ### 本地集成（electron/services/cloudflare-service.ts）
