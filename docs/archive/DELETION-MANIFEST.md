@@ -21,7 +21,7 @@
 
 | # | 文件 | 时代 | 判定 | 取代者 / 证据 | 归档前必须保留的独有内容 |
 |---|---|---|---|---|---|
-| 1 | `docs/plans/KONE-DATA-PIPELINE-AUDIT.md` | 2026-10-16 | SUPERSEDED | `KONE-DATA-QUALITY-PILOT.md` §二（2026-10-17 承接其审计结论） | Prospeo/Apollo 字段丢弃的 file:line 证据表（PILOT 仅引用未复刻） |
+| 1 | `docs/plans/KONE-DATA-PIPELINE-AUDIT.md`（**归档执行时移回活跃区暂留**，见 §2.7） | 2026-10-16 | SUPERSEDED | `KONE-DATA-QUALITY-PILOT.md` §二（2026-10-17 承接其审计结论） | Prospeo/Apollo 字段丢弃的 file:line 证据表（PILOT 仅引用未复刻） |
 | 2 | `docs/plans/KONE-DATA-QUALITY-APPROVAL-PACK.md` | 2026-10-17 | **ACTIVE-OPEN** | — 负责人 A/B/C/D 四组待办未决（默认 No-Go） | **保留**：ICP 待确认项 + 供应商授权/计费问题清单 |
 | 3 | `docs/plans/KONE-DATA-QUALITY-GATE-REPORT.md` | 2026-10-17 | 终态报告（BLOCKED·No-Go），无 CHANGELOG 回写 | 无后续放行记录 | §B 四项 BLOCKED 判定依据（防止误判已放行） |
 | 4 | `docs/plans/KONE-DATA-QUALITY-PILOT.md` | 2026-10-17 | **ACTIVE-OPEN** | — 试验设计待批准（状态: 草稿） | **保留**：§二 Step1 数据链审计（Q1–Q7） |
@@ -65,9 +65,11 @@
 4. `docs/plans/KONE-ENRICHMENT-REVIEW-1436.md`（R3–R5 未闭环）
 5. `docs/plans/kone-v1.4-production-hardening.md`（3 项未勾 + SQLite/auto-updater 待立项）
 6. `docs/reports/ipc-plain-register-license-mapping-2026-10-19.md`（D7 待裁决 + 免门禁负面清单）
-7. `docs/plans/KONE-DATA-PIPELINE-AUDIT.md`（**暂留**：判定 SUPERSEDED，但其 Prospeo/Apollo 证据表未被取代者复刻；按 §4.1 协议，待证据表迁入 PILOT/REVIEW 后再归档）
+7. `docs/plans/KONE-DATA-PIPELINE-AUDIT.md`（**暂留活跃区**：判定 SUPERSEDED，但其 Prospeo/Apollo 证据表未被取代者复刻；按 §4.1 协议，待证据表迁入 PILOT/REVIEW 后再归档。曾于执行中误迁至 archive，同日移回）
 
-## 3. 归档候选（28 份 → `docs/archive/plans/`）
+> **审批时点注记（2026-11-02）**：本文 §1 表格中的 `docs/plans/…` 路径为**审批时点快照**，其中 28 份已于同日迁至 `docs/archive/plans/`（PIPELINE-AUDIT 暂留移回）；§3 清单同理。现行位置以 `docs/plans/README.md` 与 `git log --follow` 为准。
+
+## 3. 归档候选（27 份 → `docs/archive/plans/`）——实际执行 27 份（PIPELINE-AUDIT 按 §2.7 暂留，移回活跃区）
 
 - **EXECUTED（19）**：e2e-test-plan、full-ipc-automation-barrage、gap-fix-execution、intelligent-acquisition-interaction-fix、ipc-boundary-crash-hardening、kone-business-logic-evals、kone-env-isolation、p0-precision-differentiation-closure、p1-precision-enhancement、p2-p3-experience-coverage、perf-concurrency-fix、project-alignment-optimization、trial-expiry-fix、ui-router-spider-smoke-plan、ui-ux-de-ai-optimization、v1-2-blocking-issues-fix、dev-env-ultimate-privilege-bypass、dev-license-bypass-fix、KONE-ENRICHMENT-PHASE1-FIX
 - **SUPERSEDED（5）**：intelligent-acquisition-deep-audit、kone-v1.4-architectural-improvements、n8n-interface-align、p0-commercial-honesty-hardening、payload-audit-report

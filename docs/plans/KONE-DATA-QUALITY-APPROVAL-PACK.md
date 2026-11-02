@@ -44,7 +44,7 @@
 | `PROVIDER-CAPABILITY.md` | **采集 Provider** 真实能力唯一事实源 | 直接引用；**对 Prospeo/Apollo 零覆盖**（见 §1.3） |
 | `CLOUD-COLLABORATION-DELIVERY.md` | 云端协同/投递/审批领域唯一事实源（当前发布判定 `NO-GO`） | 本文不涉投递 |
 | `docs/plans/KONE-ENRICHMENT-REVIEW-1436.md` | Phase 1 前审计（R1–R5 / D-1..D-6） | 引用 |
-| `docs/plans/KONE-ENRICHMENT-PHASE1-FIX.md` | Phase 1 修复报告（已验收） | 引用 |
+| `docs/archive/plans/KONE-ENRICHMENT-PHASE1-FIX.md` | Phase 1 修复报告（已验收） | 引用 |
 | `docs/plans/KONE-DATA-QUALITY-PILOT.md` | 本试验设计详版 | 引用 |
 
 ### 1.3 关键结构性结论：**两类 Provider 必须分开讨论**

@@ -199,7 +199,7 @@ lastVerifiedAt: 2026-10-19
 ## [1.4.36] — 2026-10-16 · 分级 B2B 联系人补全（Step 1–5 最小完整链路）
 
 ### 触发
-基于 `docs/archive/plans/KONE-DATA-PIPELINE-AUDIT.md` 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
+基于 `docs/plans/KONE-DATA-PIPELINE-AUDIT.md`（暂留活跃区） 的只读审计结论：决策人姓名/职位被丢弃（D-2）、
 Apollo 邮箱未校验却标 `verified`（D-3）、Prospeo 注释与实现不一致（D-4）、成本完全不可追踪（D-5）、
 手机补全未受用户授权控制。
 

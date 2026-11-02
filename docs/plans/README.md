@@ -14,7 +14,7 @@
 | `KONE-DATA-QUALITY-PILOT.md` | 数据质量试点 | ACTIVE-OPEN（试验设计待批准，与上配对） |
 | `KONE-ENRICHMENT-REVIEW-1436.md` | 1.4.36 富化评审 | ACTIVE-OPEN（R3–R5 未闭环，部分被试点承接） |
 | `kone-v1.4-production-hardening.md` | V1.4 生产环境加固 | ACTIVE-OPEN（3 项未勾；SQLite/auto-updater 待立项） |
-| `KONE-DATA-PIPELINE-AUDIT.md` | 数据管道审计 | SUPERSEDED（暂留：Prospeo/Apollo 证据表未被取代者复刻，见 manifest §1.1） |
+| `KONE-DATA-PIPELINE-AUDIT.md` | 数据管道审计 | SUPERSEDED（暂留：Prospeo/Apollo 证据表未被取代者复刻，见 manifest §2.7；**2026-11-02 曾误归档、同日移回**） |
 
 > 注：manifest §2 原列 6 份保留（含索引件 README 本身）；归档执行后 README
 > 重写为活跃清单，实际保留计划 **5 份**。
