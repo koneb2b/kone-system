@@ -78,6 +78,8 @@
 | `docs/evidence/clean-machine-acceptance-1.4.38.md` | ✅ | 本执行单（打印或本地打开） |
 
 > ⚠️ `release/` 被 `.gitignore` 排除（既定策略），**安装包与 `.sha256` 不在 GitHub 仓库内**，必须随 exe 走离线渠道分发。
+>
+> ⚠️ **kit 重建记录（2026-11-03）**：原 `kone-acceptance-kit-1.4.38.zip`（SHA-256 `7BD5EA43…0BAEB7AE`，89,980,304 B）随 `release/` 清空事件丢失；已从 `%TEMP%\opencode\kone-kit-check\` 找回指纹吻合安装包副本，并按本节 5 条目结构重建（执行单与采集器均升级为仓库现行版：md 378 行含 v1.2.0 说明段；采集器 v1.2.0——符合本文 :331-334 的既定覆盖指令）。**重建包 SHA-256：`CF6C43761F0AEDCA0A5060282EEA909C351D71F601A2734E32313F7B4B488CD5`（89,982,935 B）**；安装包本体指纹不变（`6EF8459A…41D4B`）。旧容器指纹 `7BD5EA43…` 作废，以本条为准。
 
 ### 1.2 目标机开机第一件事：双击 `START-HERE.bat`（约 10 秒）
 
