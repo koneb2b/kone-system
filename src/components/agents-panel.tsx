@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   agentGetList,
@@ -557,41 +558,45 @@ export function AgentsPanel() {
         </SheetContent>
       </Sheet>
 
-      {/* 风控提示：WhatsApp / LinkedIn 平台风险告知 */}
-      {riskWarningAgent ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          onClick={() => setRiskWarningAgent(null)}
+      {/* 风控提示：WhatsApp / LinkedIn 平台风险告知。
+          P1-1 修复（2026-11-03）：改用 Radix Dialog —— 自带焦点陷阱 / Escape 关闭 /
+          aria-modal，替换原手写 fixed div（可 Tab 逃逸、无障碍破绽）。 */}
+      <Dialog
+        open={riskWarningAgent !== null}
+        onOpenChange={(open) => {
+          if (!open) setRiskWarningAgent(null)
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          aria-describedby={undefined}
+          className="mx-4 max-w-md rounded-2xl border-amber-200"
+          onInteractOutside={(e) => e.preventDefault()}
         >
-          <div
-            className="mx-4 w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
-                <AlertTriangle className="size-5 text-amber-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-base font-semibold text-slate-900">平台风控提示</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  {riskWarningAgent.agentType === 'whatsapp'
-                    ? 'WhatsApp 拓客猎手使用浏览器自动化技术通过 WhatsApp Web 发送消息。WhatsApp 可能检测到自动化行为并触发安全限制，包括但不限于：验证码验证、临时封禁、账号限制。建议低频合规使用，每日默认 3-5 条。'
-                    : 'LinkedIn 商务猎手使用浏览器自动化读取公开 Profile 信息。LinkedIn 有严格的反爬机制，高频访问可能导致账号受限。本功能仅辅助浏览公开资料和生成破冰文案，所有触达操作需人工确认后执行。'}
-                </p>
-                <p className="mt-2 text-xs text-amber-700 font-medium">继续使用即表示您已知晓并接受上述平台风险。</p>
-              </div>
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="size-5 text-amber-600" />
             </div>
-            <div className="mt-5 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setRiskWarningAgent(null)}>
-                取消
-              </Button>
-              <Button className="bg-amber-600 text-white hover:bg-amber-700" onClick={handleConfirmRiskWarning}>
-                已知晓，继续启动
-              </Button>
+            <div className="flex-1">
+              <DialogTitle className="text-base font-semibold text-slate-900">平台风控提示</DialogTitle>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                {riskWarningAgent?.agentType === 'whatsapp'
+                  ? 'WhatsApp 拓客猎手使用浏览器自动化技术通过 WhatsApp Web 发送消息。WhatsApp 可能检测到自动化行为并触发安全限制，包括但不限于：验证码验证、临时封禁、账号限制。建议低频合规使用，每日默认 3-5 条。'
+                  : 'LinkedIn 商务猎手使用浏览器自动化读取公开 Profile 信息。LinkedIn 有严格的反爬机制，高频访问可能导致账号受限。本功能仅辅助浏览公开资料和生成破冰文案，所有触达操作需人工确认后执行。'}
+              </p>
+              <p className="mt-2 text-xs text-amber-700 font-medium">继续使用即表示您已知晓并接受上述平台风险。</p>
             </div>
           </div>
-        </div>
-      ) : null}
+          <div className="mt-5 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setRiskWarningAgent(null)}>
+              取消
+            </Button>
+            <Button className="bg-amber-600 text-white hover:bg-amber-700" onClick={handleConfirmRiskWarning}>
+              已知晓，继续启动
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <UpgradeModal open={upgradeModalOpen} intent="premium" onOpenChange={setUpgradeModalOpen} />
     </div>

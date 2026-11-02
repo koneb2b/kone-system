@@ -189,9 +189,10 @@ export class WhatsAppAgent {
       const deliveryStatus = await this.detectDeliveryStatus(page)
 
       this.state.dailyUsed += 1
-      if (deliveryStatus === 'delivered') {
-        this.state.completedCount += 1
-      }
+      /* N-1 修复（2026-11-03）：不再在此递增 completedCount —— 编排层
+         （agent-service executeWhatsAppAgent）是唯一计数点，避免与共享 state
+         对象双重递增（delivered 曾 +2 / pending +1 不一致，进度可超 100%）。
+         投递语义由返回值 deliveryStatus 承载，不污染计数。 */
       this.state.lastActivity = new Date().toISOString()
       this.addLog('message_sent', `To=${phoneNumber} Company=${task.company} Delivery=${deliveryStatus}`)
 

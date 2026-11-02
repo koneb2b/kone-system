@@ -163,7 +163,8 @@ export class LinkedinAgent {
       this.addLog('icebreaker_source', `Company=${task.company} Source=${icebreakerSource}`)
 
       this.state.dailyUsed += 1
-      this.state.completedCount += 1
+      /* N-1 修复（2026-11-03）：completedCount 统一由编排层单点计数，
+         此处不递增（state 为共享对象引用，曾致双计）。 */
       this.state.lastActivity = new Date().toISOString()
       this.addLog('profile_read', `Company=${task.company} Profile=${task.linkedinUrl}`)
 

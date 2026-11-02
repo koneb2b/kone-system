@@ -752,6 +752,24 @@ const executeWhatsAppAgent = async (
       writeBackAgentStatus(target.leadKey || target.company, 'whatsapp', { whatsappSent: true, whatsappStatus })
     } else {
       agent.failedCount += 1
+      /* N-2 修复（2026-11-03）：限流必须中止批次且不得继续重连发送 —— 原实现仅
+         记录 sessionState='rate_limited'，下一目标仍会自动 reconnect 继续发送
+         （违反宪法“限流时必须进入 paused 或 error”）。此处选 'error' 而非
+         'paused'：执行循环已 break 退出（非 waitWhilePaused 挂起），若置 paused，
+         startAgent 的 paused 分支只会翻转状态而不会重启循环，用户点“继续”将
+         无人执行；置 error 后语义为“本轮会话不可用”，用户冷却后重新点击
+         「开始触达」走全新循环，语义自洽。其余失败仍逐目标计 failed 不中止。 */
+      if (instance.getSessionState() === 'rate_limited') {
+        agent.status = 'error'
+        agent.errorMessage = 'WhatsApp rate limited — batch stopped to protect the account; restart after cooldown'
+        addLogEntry(
+          agent.agentId,
+          'rate_limited_stop',
+          `Rate limited on ${target.company} — stopping batch (${targets.length - agent.completedCount - agent.failedCount} targets remaining)`,
+        )
+        emitAgentStatus(agent)
+        break
+      }
     }
     agent.progress = Math.round(((agent.completedCount + agent.failedCount) / agent.totalTargets) * 100)
     agent.lastActivity = new Date().toISOString()
