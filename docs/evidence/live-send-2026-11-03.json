@@ -1,0 +1,49 @@
+{
+  "startedAt": "2026-11-03T15:03:52.221Z",
+  "base": "https://kone-cloud.aigctohuman.com",
+  "recipient": "delivered@resend.dev",
+  "steps": {
+    "createLead": {
+      "status": 200,
+      "code": null,
+      "leadId": "id_1a1a1f01340_69af01bc32563498"
+    },
+    "approval": {
+      "status": 200,
+      "code": null,
+      "leadStatus": "approved"
+    },
+    "queue": {
+      "status": 200,
+      "code": null,
+      "outreachId": "id_1a1a1f01816_28330c408bcf0072"
+    }
+  },
+  "elapsedMs": 752579,
+  "outreach": {
+    "id": "id_1a1a1f01816_28330c408bcf0072",
+    "workspace_id": "ws_kone_1791469852",
+    "lead_id": "id_1a1a1f01340_69af01bc32563498",
+    "campaign_id": "default",
+    "sequence_stage": 0,
+    "scheduled_at": "2026-11-03T15:03:49.014Z",
+    "sent_at": "2026-11-03T15:15:59.532Z",
+    "delivered_at": null,
+    "bounced_at": null,
+    "complained_at": null,
+    "replied_at": null,
+    "provider": "resend",
+    "resend_id": "01a1a1fb-3ef4-743b-ab15-bc6feaf5cc95",
+    "provider_message_id": "01a1a1fb-3ef4-743b-ab15-bc6feaf5cc95",
+    "subject": "Kone NO-GO ④ live send verification",
+    "status": "sent",
+    "bounce_type": null,
+    "error": null,
+    "send_attempts": 1,
+    "next_retry_at": null,
+    "created_at": "2026-11-03T15:03:49.078Z",
+    "updated_at": "2026-11-03T15:15:59.532Z"
+  },
+  "verdict": "PASS_SENT",
+  "finishedAt": "2026-11-03T15:16:27.577Z"
+}

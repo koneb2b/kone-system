@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest'
 import { env } from 'cloudflare:workers'
 import { SELF } from 'cloudflare:test'
+import worker from '../src/worker.js'
 import { setTestSendResult } from '../src/resend.js'
 
 // ── Helper: seed a workspace into D1 ──
@@ -529,6 +530,47 @@ describe('Kone Cloud Worker', () => {
       expect(response.status).toBe(401)
       const body = (await response.json()) as { code: string }
       expect(body.code).toBe('UNAUTHORIZED')
+    })
+  })
+
+  /* 回归（2026-11-03）：worker 此前**没有 scheduled() 处理器**，
+     `wrangler.toml` 的 cron 触发器也被注释 → pending 的 outreach 永不自动发送，
+     只能靠持有 CRON_SECRET 的一方手工 POST /cron/send。
+     本用例锁定「Cron 事件 → 真实投递 → 状态置 sent」这条链路。 */
+  describe('scheduled() — Cron 自动投递', () => {
+    it('sends pending outreach when invoked by the platform cron', async () => {
+      const { leadId } = await createApprovedLead()
+
+      const headers = bearerHeader(token)
+      headers.set('Content-Type', 'application/json')
+      const queued = await fetchWorker('/v1/outreach/queue', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ leadId, subject: 'Cron Scheduled Test', body: '<p>hello from cron</p>' }),
+      })
+      expect(queued.status).toBe(200)
+
+      const mockId = `cron-scheduled-${Date.now()}`
+      setTestSendResult(async () => ({ id: mockId }))
+      const pending: Array<Promise<unknown>> = []
+      await worker.scheduled(
+        { scheduledTime: Date.now(), cron: '*/15 * * * *' },
+        env,
+        { waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext,
+      )
+      await Promise.all(pending)
+      setTestSendResult(null)
+
+      const statusRes = await fetchWorker(`/v1/outreach/status?leadId=${leadId}`, {
+        headers: bearerHeader(token),
+      })
+      const body = (await statusRes.json()) as {
+        data: { outreach: Array<{ id: string; status: string; resend_id?: string }> }
+      }
+      const row = body.data.outreach.find((o) => o.id)
+      expect(row).toBeTruthy()
+      expect(row?.status).toBe('sent')
+      expect(row?.resend_id).toBe(mockId)
     })
   })
 

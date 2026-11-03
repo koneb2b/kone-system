@@ -258,6 +258,24 @@ export default {
       return errorResponse('INTERNAL_ERROR', message, requestId)
     }
   },
+
+  /* Cron 定时投递（Cloudflare Triggers）。
+     与 `POST /cron/send` 共用同一批次执行体；Cron 事件不携带 HTTP 头，
+     因此不经 CRON_SECRET 校验（由 Cloudflare 平台保证触发来源）。
+     失败必须抛出，让 Cloudflare 记录该次 cron 执行失败，便于告警。 */
+  async scheduled(
+    controller: { scheduledTime: number; cron: string },
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    const requestId = `cron_${controller.scheduledTime}`
+    ctx.waitUntil(
+      runScheduledSendBatch(env, requestId).catch((error: unknown) => {
+        console.error(`[${requestId}] scheduled send batch failed:`, error instanceof Error ? error.message : error)
+        throw error
+      }),
+    )
+  },
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -1198,7 +1216,7 @@ async function applySendGateFailure(
   ).bind(reason, retryAt, now, outreach.id, outreach.workspace_id).run()
 }
 
-// ── POST /cron/send — Cron 定时投递 ──
+// ── POST /cron/send — 手动触发投递（HTTP 入口）──
 async function handleCronSend(request: Request, env: Env, requestId: string): Promise<Response> {
   // Verify cron secret
   const cronSecret = request.headers.get('X-Cron-Secret')
@@ -1211,6 +1229,19 @@ async function handleCronSend(request: Request, env: Env, requestId: string): Pr
     return errorResponse('UNAUTHORIZED', 'Invalid cron secret', requestId)
   }
 
+  return runScheduledSendBatch(env, requestId)
+}
+
+/**
+ * 投递批次执行体（HTTP 手动触发与 Cron 定时触发共用）。
+ *
+ * 缺陷背景（2026-11-03）：此前只有 `POST /cron/send` 一个 HTTP 入口，
+ * worker **没有 `scheduled()` 处理器**，`wrangler.toml` 的 `[triggers] crons`
+ * 也处于注释状态 → 进入 `pending` 的 outreach **永远不会被自动发送**，
+ * 只能由持有 `CRON_SECRET` 的一方手工调用。这使「审批 → 入队 → 投递」
+ * 链路在无人值守场景下断裂（NO-GO ④ 的前置缺陷）。
+ */
+async function runScheduledSendBatch(env: Env, requestId: string) {
   const now = nowUTC()
   const BATCH_SIZE = 50
   // 与入队门禁共用同一开关：关闭时行为完全不变（向后兼容）。

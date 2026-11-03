@@ -107,6 +107,22 @@ lastVerifiedAt: 2026-10-19
     `approval-gate.test.ts` 显式注入 `gatedEnv`/`openEnv` 覆盖。
   - 受影响 SSOT：`CLOUD-COLLABORATION-DELIVERY.md §0`、`docs/release-gate.md §5`、
     `kone-cloud/wrangler.toml`、`kone-cloud/src/worker.ts`、`CHANGELOG.md`。
+- 自动投递调度补齐 + NO-GO ④ 发送链路闭环（2026-11-03）：
+  - **缺陷**：worker 只有 `POST /cron/send` 一个 HTTP 入口，**没有 `scheduled()` 处理器**，
+    `wrangler.toml` 的 `[triggers] crons` 亦为注释 → 进入 `pending` 的 outreach
+    **永远不会自动发送**，只能由持有 `CRON_SECRET` 的一方手工触发。
+  - 修复：抽出 `runScheduledSendBatch()` 供 HTTP 与 Cron 共用；新增 `scheduled()` 处理器
+    （`ctx.waitUntil` + 失败抛出以触发平台告警）；启用 `[triggers] crons = ["*/15 * * * *"]`。
+    部署版本 `5fcbcf87-07de-468d-ae81-eae91007a19c`（含 `schedule: */15 * * * *`）。
+  - 真实验证：建线索 → 审批 → 入队 → **Cron 于 15:15:59Z 自动投递**，Resend 受理
+    `resend_id=01a1a1fb-3ef4-743b-ab15-bc6feaf5cc95`，`status=sent`、`send_attempts=1`、无错误；
+    收件人使用 Resend 官方测试地址 `delivered@resend.dev`（不投递真实用户）。
+    证据 `docs/evidence/live-send-2026-11-03.json`。
+  - **未闭环**：`delivered_at` 仍为空（Resend Webhook 未配置）；IMAP 回复检测未实测。
+    故 NO-GO ④ 仅「发送链路」闭环，回复检测待补。
+  - 回归：`kone-cloud/tests/worker.test.ts` 新增 scheduled() 用例，云端测试 64 → **65**。
+  - 受影响 SSOT：`kone-cloud/src/worker.ts`、`kone-cloud/wrangler.toml`、
+    `CLOUD-COLLABORATION-DELIVERY.md §0`、`CHANGELOG.md`。
 
 ---
 

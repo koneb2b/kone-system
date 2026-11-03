@@ -45,8 +45,11 @@ database_id = "fab350bd-1772-40ea-8095-7886bdee5024"
 # queue = "kone-outreach"
 
 # ── Cron Trigger (Phase 2: sweep pending outreach) ──
-# [triggers]
-# crons = ["*/15 * * * *"]
+# 2026-11-03 启用：此前 `[triggers]` 与 `crons` 均为注释，worker 也没有 scheduled()
+# 处理器 → 进入 pending 的 outreach 永远不会自动发送（只能手工 POST /cron/send）。
+# 现由 Cloudflare Cron 每 15 分钟调用 scheduled()，与 HTTP 入口共用同一批次执行体。
+[triggers]
+crons = ["*/15 * * * *"]
 
 # ── Secrets (use `wrangler secret put <name>`) ──
 # RESEND_API_KEY = "re_xxx"
