@@ -123,6 +123,18 @@ lastVerifiedAt: 2026-10-19
   - 回归：`kone-cloud/tests/worker.test.ts` 新增 scheduled() 用例，云端测试 64 → **65**。
   - 受影响 SSOT：`kone-cloud/src/worker.ts`、`kone-cloud/wrangler.toml`、
     `CLOUD-COLLABORATION-DELIVERY.md §0`、`CHANGELOG.md`。
+- 离线授权签发脚本能力集 SSOT 化（2026-11-03，商业泄漏修复）：
+  - **缺陷**：`scripts/generate-offline-license.cjs` 内置手写 `featureMap`（能力集第 N 份副本），
+    且**没有 `basic` 项**，取值表达式 `featureMap[plan] || featureMap.enterprise` 导致
+    **给客户签 `basic` 会签出 enterprise 能力集**（`cloud_send` / `team_collaboration` /
+    `export_full` 全部放行）。`premium` 项漏 `local_autopilot` / `team_collaboration`、
+    `trial` 项漏 `lead_export`（此前靠客户端按 plan 展开才侥幸补上）。
+  - 修复：改为直接读取 `src/shared/license-features.ts` 的编译产物（SSOT）的
+    `getFeaturesForPlan()`；找不到编译产物时**明确失败**（提示先 `npm run build:electron:dev`），
+    绝不回落到本地副本；未知套餐 Fail-Closed，不再静默回落 enterprise。
+  - 回归：`tests/license-generator.business.test.js`（7 项：四套餐能力集 == SSOT、真实 RSA 验签、
+    basic 不含 Premium/Enterprise 专属能力、未知套餐与缺参拒绝签发）；`test:unit` 653 → **660**。
+  - 受影响 SSOT：`src/shared/license-features.ts`（唯一能力集来源）、`CHANGELOG.md`。
 
 ---
 
