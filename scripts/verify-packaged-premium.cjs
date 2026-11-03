@@ -8,19 +8,51 @@ const path = require('path')
 const fs = require('fs')
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const exe = path.join(__dirname, '..', 'release', 'win-unpacked', 'KoneAI.exe')
-const REPORT = { startedAt: new Date().toISOString(), modules: {}, errors: [] }
+/* 默认验证已验收产物 release/win-unpacked；KONE_PACKAGED_DIR 可指向
+   备用构建（如 release-build/win-unpacked），避免为了验证而覆盖 release/。 */
+const packagedDir = process.env.KONE_PACKAGED_DIR
+  ? path.resolve(process.env.KONE_PACKAGED_DIR)
+  : path.join(__dirname, '..', 'release', 'win-unpacked')
+const exe = path.join(packagedDir, 'KoneAI.exe')
+const REPORT = { startedAt: new Date().toISOString(), packagedDir, modules: {}, errors: [] }
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a)
+
+/* 端口冲突防护：9222 可能被其它调试浏览器（如用户的 Chrome 会话）占用。
+   若直接 connect，puppeteer 会连到**别人的页面**并产生假结果（曾实测连到
+   Cloudflare 控制台，导致全部断言错判）。因此默认 9222，可用
+   KONE_REMOTE_DEBUGGING_PORT 指定独立端口（main.ts 已支持同名环境变量）。 */
+const DEBUG_PORT = String(process.env.KONE_REMOTE_DEBUGGING_PORT || '9222').trim()
+
+async function assertPortFree(port) {
+  const http = require('node:http')
+  const occupied = await new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/json/version', timeout: 1500 }, (res) => {
+      res.resume()
+      resolve(true)
+    })
+    req.on('error', () => resolve(false))
+    req.on('timeout', () => { req.destroy(); resolve(false) })
+  })
+  if (occupied) {
+    console.error(`端口 ${port} 已被占用（可能是其它调试浏览器）。请设置 KONE_REMOTE_DEBUGGING_PORT 指定空闲端口后重试。`)
+    process.exit(2)
+  }
+}
 
 async function main() {
   if (!fs.existsSync(exe)) { console.error('未找到打包产物'); process.exit(1) }
+  await assertPortFree(DEBUG_PORT)
   try { execSync('taskkill /f /im KoneAI.exe /t', { stdio: 'ignore' }) } catch {}
   await wait(1000)
-  const proc = spawn(exe, [], { cwd: path.dirname(exe), env: { ...process.env, KONE_SMOKE_TEST: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const proc = spawn(exe, [], {
+    cwd: path.dirname(exe),
+    env: { ...process.env, KONE_SMOKE_TEST: '1', KONE_REMOTE_DEBUGGING_PORT: DEBUG_PORT },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
   let stderr = ''
   proc.stderr.on('data', (c) => (stderr += c.toString()))
   await wait(4500)
-  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', protocolTimeout: 120000 })
+  const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${DEBUG_PORT}`, protocolTimeout: 120000 })
   const target = (await browser.targets()).find((t) => t.type() === 'page' && !t.url().startsWith('devtools://'))
   if (!target) throw new Error('未检测到应用页')
   const session = await target.createCDPSession()
@@ -148,6 +180,8 @@ async function main() {
   console.log(JSON.stringify(REPORT, null, 2))
   await wait(5000)
   try { execSync('taskkill /f /im KoneAI.exe /t', { stdio: 'ignore' }) } catch {}
+  // 显式退出：spawn 的 stdio 管道会保持事件循环，导致外层命令挂起（曾实测 15 分钟不返回）。
+  process.exit(process.exitCode || 0)
 }
 
 main().catch((e) => { console.error('FATAL', e.message); try { execSync('taskkill /f /im KoneAI.exe /t', { stdio: 'ignore' }) } catch {}; process.exit(1) })
