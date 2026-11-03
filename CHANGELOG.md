@@ -76,6 +76,21 @@ lastVerifiedAt: 2026-10-19
   **勘误**：真实默认安装目录为 `%LOCALAPPDATA%\Programs\KoneAI`（由 `build.executableName` 决定），
   非 `kone-system`；1.3.x / 1.4.x 可原地升级，2026-04 之前原型未考证。证据见 `tests/install-layer-report.json`。
   受影响 SSOT：`docs/evidence/clean-machine-acceptance-1.4.38.md §7.1`。
+- 授权状态一致性修复（2026-11-03，打包版实测确认的 P0 缺陷）：
+  - **D-1 静默降级**：试用锚点密文密钥由 `sha256("kone-anchor|machineId|app.name|vN")` 派生，
+    构建间 `app.name` / `ANCHOR_VERSION` 一旦变化，旧锚点即**永久不可解密**；而解密失败被静默
+    当作"无锚点"，导致仍在有效期内的合法试用被判为「未激活」，且无任何日志可查。
+  - **D-2 状态分裂脑**：`LICENSE.CHECK_STATUS` 只认锚点，`LICENSE.GET_INFO` 却读 secrets 中的
+    claims → 同一进程内一个返回"剩余 6 天"、另一个返回"未激活"（实测 `expiresAt: 0` vs
+    `2026-11-09`），UI 取前者后搜索/开发信/保存线索全部被授权 Gate 拦截（0/0 结果）。
+  - 修复：新增 `claimsToTrialAnchor()` / `reconcileTrialAnchor()`，把有效 trial claims 作为
+    **只增不减**的兜底证据参与锚点对账（到期时间取最大、首次试用取最小、`time_rollback` 锁定不可被解除、
+    machineId 不匹配则丢弃）；锚点密文存在但不可解密时输出 WARN；claims 读取异常降级为 null，
+    不将授权检查升级为硬失败。
+  - 回归：`tests/license-anchor-claims-reconcile.test.ts`（9 项）；`test:unit` 644 → **653**。
+  - 受影响 SSOT：`electron/services/license-service.ts`、`src/shared/license-features.ts`（能力集不变）、
+    `CHANGELOG.md`。**本修复不改动付费能力边界**：trial 仍仅 `search_basic` + `lead_export`，
+    Premium/Enterprise 仍需有效离线授权。
 
 ---
 

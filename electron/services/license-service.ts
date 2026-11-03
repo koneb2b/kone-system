@@ -313,10 +313,86 @@ const mergeAnchors = (machineId: string, anchors: AnchorPayload[]): AnchorPayloa
   }
 }
 
+/**
+ * 把已持久化的试用 claims 折算成 anchor 记录。
+ *
+ * 缺陷背景（D-1，2026-11-03 实测）：anchor 密文密钥由
+ * `sha256("kone-anchor|machineId|app.name|v2")` 派生。一旦 app.name 或
+ * ANCHOR_VERSION 发生变化，旧构建写入的 anchor 就**永久无法解密**，
+ * 而解密失败此前被静默当作"无 anchor"，于是合法的、仍在有效期内的
+ * 试用授权被静默降级为「未激活」（用户侧表现为：提交激活成功、重启后变未激活）。
+ *
+ * 这里把 claims 作为**只增不减**的兜底证据：仅接受 trial 计划、active 状态、
+ * 且 machineId 匹配（缺省视为匹配，兼容历史记录）的记录。
+ */
+export const claimsToTrialAnchor = (
+  claims: StoredLicenseClaims | null,
+  machineId: string,
+  trialDurationMs: number,
+): AnchorPayload | null => {
+  if (!claims) return null
+  if (claims.plan !== 'trial') return null
+  if (claims.status !== 'active') return null
+  if (!claims.expiresAt || claims.expiresAt <= 0) return null
+  if (claims.machineId && claims.machineId !== machineId) return null
+  return {
+    version: ANCHOR_VERSION,
+    machineId,
+    firstTrialAt: Math.max(0, claims.expiresAt - trialDurationMs),
+    expiresAt: claims.expiresAt,
+    lastCheckDate: 0,
+    trialConsumed: true,
+    updatedAt: 0,
+  }
+}
+
+/**
+ * 对账 anchor 与 claims：到期时间取最大值（授权只增不减），
+ * 首次试用时间取最小值，任一来源标记 time_rollback 即整体锁定。
+ * 纯函数，便于单测；不读写任何 IO。
+ */
+export const reconcileTrialAnchor = (
+  anchors: Array<AnchorPayload | null>,
+  claims: StoredLicenseClaims | null,
+  machineId: string,
+  trialDurationMs: number,
+): AnchorPayload | null => {
+  const list = anchors.filter(Boolean) as AnchorPayload[]
+  const claimsAnchor = claimsToTrialAnchor(claims, machineId, trialDurationMs)
+  if (claimsAnchor) list.push(claimsAnchor)
+  return mergeAnchors(machineId, list)
+}
+
+/**
+ * 读取已持久化 claims 的**容错**入口。
+ *
+ * 历史：claims 经 safeStorage 加密落盘；在 safeStorage 不可用（无密钥库、
+ * 部分无头/测试环境）时 `getSecret` 会抛错。readAnchor 原先完全不依赖密钥库，
+ * 若在此处让异常冒泡，会把「读不到 claims」升级成「整个授权检查失败」，
+ * 使本可降级放行的路径变成硬失败。故此处一律降级为 null。
+ */
+const readStoredClaimsSafely = (): StoredLicenseClaims | null => {
+  try {
+    return getStoredLicenseClaims()
+  } catch {
+    return null
+  }
+}
+
 const readAnchor = (machineId: string): AnchorPayload | null => {
-  const fileAnchor = decryptAnchor(readFileAnchorBlob(), machineId)
-  const registryAnchor = decryptAnchor(readRegistryAnchorBlob(), machineId)
-  return mergeAnchors(machineId, [fileAnchor, registryAnchor].filter(Boolean) as AnchorPayload[])
+  const fileBlob = readFileAnchorBlob()
+  const registryBlob = readRegistryAnchorBlob()
+  const fileAnchor = decryptAnchor(fileBlob, machineId)
+  const registryAnchor = decryptAnchor(registryBlob, machineId)
+
+  // D-1：密文存在却无法解密 = 密钥材料漂移。必须留痕，否则静默降级无从排查。
+  if ((fileBlob || registryBlob) && !fileAnchor && !registryAnchor) {
+    console.warn(
+      '[License] 检测到试用锚点密文但无法解密（密钥材料漂移），回落到已持久化授权记录；如授权仍异常请重新激活',
+    )
+  }
+
+  return reconcileTrialAnchor([fileAnchor, registryAnchor], readStoredClaimsSafely(), machineId, TRIAL_DURATION_MS)
 }
 
 const persistAnchor = (anchor: AnchorPayload) => {
