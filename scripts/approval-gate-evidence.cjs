@@ -740,7 +740,9 @@ async function runLive(cfg, outPath) {
       const unsubscribe = await httpCall(ctx, {
         method: ROUTE.unsubscribe.method,
         path: ROUTE.unsubscribe.path,
-        body: { email: fixture.email, source: 'approval-gate-evidence' },
+        // source 必须是服务端允许的枚举（manual/webhook/system）。
+        // 曾用 'approval-gate-evidence'，触发 suppressions.source 的 CHECK 约束 → 500。
+        body: { email: fixture.email, source: 'system' },
       })
       const unsubscribeData = dataOf(unsubscribe)
       const unsubscribeCode = codeOf(unsubscribe)

@@ -457,6 +457,22 @@ async function handleUnsubscribe(request: Request, env: Env, workspace: { id: st
     return errorResponse('VALIDATION_ERROR', 'Missing required field: email', requestId)
   }
 
+  /* 入参校验必须在落库前完成。
+     缺陷背景（2026-11-03 线上取证 A3）：`source` 此前未校验，直接写入
+     `suppressions.source`；而该列有 CHECK (source IN ('manual','webhook','system'))。
+     调用方传入任意值（例如 'approval-gate-evidence'）会触发 SQLite 约束错误，
+     被兜底成 500 INTERNAL_ERROR —— 把「调用方参数错误」误报为「服务端故障」，
+     且退订链路整体失败（合规风险）。现改为显式 400。 */
+  const allowedSources = ['manual', 'webhook', 'system'] as const
+  const source = body.source ?? 'webhook'
+  if (!(allowedSources as readonly string[]).includes(source)) {
+    return errorResponse(
+      'VALIDATION_ERROR',
+      `Invalid field: source must be one of ${allowedSources.join(', ')}`,
+      requestId,
+    )
+  }
+
   const normalizedEmail = normalizeEmail(body.email)
   const suppressionId = generateId()
   const now = nowUTC()
@@ -474,7 +490,7 @@ async function handleUnsubscribe(request: Request, env: Env, workspace: { id: st
   await env.DB.prepare(
     `INSERT INTO suppressions (id, workspace_id, normalized_email, reason, source, added_at)
      VALUES (?, NULL, ?, 'one_click_unsubscribe', ?, ?)`
-  ).bind(suppressionId, normalizedEmail, body.source ?? 'webhook', now).run()
+  ).bind(suppressionId, normalizedEmail, source, now).run()
 
   // Cancel pending outreach **for this email only**.
   //

@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 2,
+  "kind": "approval-gate-deployment-evidence",
+  "generatedAt": "2026-11-03T14:56:14.313Z",
+  "baseUrl": "https://kone-cloud.aigctohuman.com",
+  "expectedGateState": "on",
+  "workerVersionIdentifier": "1.0.0",
+  "allowWrite": true,
+  "legacyLead": null,
+  "fixtures": {
+    "leadId": "id_1a1a1e91810_020c89056aee8623",
+    "emailMasked": "g***@example.invalid",
+    "domain": "gate-evidence-0e5fad33-c748-4145-9a0b-3ac511db4825.invalid",
+    "localRefId": "gate-evidence-0e5fad33-c748-4145-9a0b-3ac511db4825"
+  },
+  "cleanup": {
+    "supported": false,
+    "note": "No DELETE route; fixture rows remain in the workspace — use a staging workspace."
+  },
+  "assertions": [
+    {
+      "id": "A1",
+      "name": "Reachability and version identifier",
+      "expected": {
+        "httpStatus": 200,
+        "status": "ok"
+      },
+      "actual": {
+        "httpStatus": 200,
+        "status": "ok",
+        "schemaVersion": "1.0.0"
+      },
+      "verdict": "pass",
+      "reason": "worker /healthz reports ok; schemaVersion=1.0.0",
+      "evidence": {
+        "gateOffWouldReturn": "n/a (read-only)",
+        "source": "worker.ts:167-172"
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/healthz",
+          "requestId": "id_1a1a1e914de_08daf29168643f4f",
+          "httpStatus": 200,
+          "errorCode": null,
+          "responseBody": "{\"success\":true,\"data\":{\"status\":\"ok\",\"schemaVersion\":\"1.0.0\",\"timestamp\":\"2026-11-03T14:56:09.438Z\"},\"requestId\":\"id_1a1a1e914de_08daf29168643f4f\"}",
+          "timestamp": "2026-11-03T14:56:14.316Z"
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "name": "Deployed gate rejects a stale draft version (discriminator)",
+      "expected": {
+        "createLead": {
+          "httpStatus": 200,
+          "status": "scored"
+        },
+        "approval": {
+          "httpStatus": 200,
+          "status": "approved",
+          "draftVersion": 1
+        },
+        "queue": {
+          "httpStatus": 409,
+          "errorCode": "DRAFT_VERSION_MISMATCH"
+        }
+      },
+      "actual": {
+        "leadId": "id_1a1a1e91810_020c89056aee8623",
+        "emailMasked": "g***@example.invalid",
+        "createHttpStatus": 200,
+        "createLeadStatus": "scored",
+        "approvalHttpStatus": 200,
+        "approvalErrorCode": null,
+        "approvalStatus": "approved",
+        "approvedDraftVersion": 1,
+        "submittedDraftVersion": 2,
+        "queueHttpStatus": 409,
+        "queueErrorCode": "DRAFT_VERSION_MISMATCH",
+        "queued": false,
+        "idempotent": false,
+        "outreachId": null
+      },
+      "verdict": "pass",
+      "reason": "approval at draftVersion N did not authorize a send at N+1",
+      "evidence": {
+        "gateOffWouldReturn": "200 queued (gate ⑦ is skipped when APPROVAL_GATE_ENABLED is not \"true\")",
+        "source": "worker.ts:860-889; kone-cloud/tests/approval-gate.test.ts:177-185"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/leads",
+          "requestId": "id_1a1a1e91790_b1ef65b826eb4f68",
+          "httpStatus": 200,
+          "errorCode": null,
+          "responseBody": "{\"success\":true,\"data\":{\"id\":\"id_1a1a1e91810_020c89056aee8623\",\"status\":\"scored\",\"approvalRequired\":true,\"collision\":false},\"requestId\":\"id_1a1a1e91790_b1ef65b826eb4f68\"}",
+          "timestamp": "2026-11-03T14:56:14.977Z"
+        },
+        {
+          "method": "POST",
+          "path": "/approvals",
+          "requestId": "id_1a1a1e91c1f_6f4b9fce73219246",
+          "httpStatus": 200,
+          "errorCode": null,
+          "responseBody": "{\"success\":true,\"data\":{\"approvalId\":\"id_1a1a1e91c4b_b5fdbf588807e104\",\"leadId\":\"id_1a1a1e91810_020c89056aee8623\",\"decision\":\"approved\",\"draftVersion\":1,\"status\":\"approved\"},\"requestId\":\"id_1a1a1e91c1f_6f4b9fce73219246\"}",
+          "timestamp": "2026-11-03T14:56:16.071Z"
+        },
+        {
+          "method": "POST",
+          "path": "/outreach/queue",
+          "requestId": "id_1a1a1e924c9_89609266ff8f55e5",
+          "httpStatus": 409,
+          "errorCode": "DRAFT_VERSION_MISMATCH",
+          "responseBody": "{\"success\":false,\"code\":\"DRAFT_VERSION_MISMATCH\",\"message\":\"Approved draft version 1 does not match submitted 2; re-approval required\",\"requestId\":\"id_1a1a1e924c9_89609266ff8f55e5\"}",
+          "timestamp": "2026-11-03T14:56:18.374Z"
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "name": "Deployed gate rejects a globally suppressed recipient",
+      "expected": {
+        "unsubscribe": {
+          "httpStatus": 200,
+          "suppressedOrAlready": true
+        },
+        "queue": {
+          "httpStatus": 403,
+          "errorCode": "SUPPRESSED"
+        }
+      },
+      "actual": {
+        "leadId": "id_1a1a1e91810_020c89056aee8623",
+        "emailMasked": "g***@example.invalid",
+        "unsubscribeHttpStatus": 200,
+        "unsubscribeErrorCode": null,
+        "suppressed": true,
+        "alreadySuppressed": false,
+        "submittedDraftVersion": 1,
+        "queueHttpStatus": 403,
+        "queueErrorCode": "SUPPRESSED",
+        "queued": false,
+        "idempotent": false,
+        "outreachId": null
+      },
+      "verdict": "pass",
+      "reason": "deployed worker rejected the suppressed recipient with SUPPRESSED",
+      "evidence": {
+        "gateOffWouldReturn": "200 (accepted, or idempotent replay of the A2 row after unsubscribe marks it failed)",
+        "source": "worker.ts:844-858; kone-cloud/tests/approval-gate.test.ts:140-153"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/suppressions/unsubscribe",
+          "requestId": "id_1a1a1e92c73_7bd6835ccc23868a",
+          "httpStatus": 200,
+          "errorCode": null,
+          "responseBody": "{\"success\":true,\"data\":{\"email\":\"g***@example.invalid\",\"suppressed\":true},\"requestId\":\"id_1a1a1e92c73_7bd6835ccc23868a\"}",
+          "timestamp": "2026-11-03T14:56:20.305Z"
+        },
+        {
+          "method": "POST",
+          "path": "/outreach/queue",
+          "requestId": "id_1a1a1e930f0_56760ab187c0f610",
+          "httpStatus": 403,
+          "errorCode": "SUPPRESSED",
+          "responseBody": "{\"success\":false,\"code\":\"SUPPRESSED\",\"message\":\"Email g***@example.invalid is in global suppression list\",\"requestId\":\"id_1a1a1e930f0_56760ab187c0f610\"}",
+          "timestamp": "2026-11-03T14:56:21.512Z"
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "name": "Deployed gate rejects a lead without an approval anchor (legacy leads only)",
+      "expected": {
+        "executed": false,
+        "reason": "no legacy lead supplied"
+      },
+      "actual": {
+        "executed": false,
+        "legacyLeadId": null
+      },
+      "verdict": "not_applicable",
+      "reason": "APPROVAL_REQUIRED requires a lead in status approved/queued with a NULL approval anchor; the only public API path to approved sets the anchor, so this state is legacy/DB-only. Covered in-process by kone-cloud/tests/approval-gate.test.ts:155-161.",
+      "evidence": {
+        "gateOffWouldReturn": "200 (gate ⑦ skipped when APPROVAL_GATE_ENABLED is not \"true\")",
+        "source": "worker.ts:860-879; kone-cloud/tests/approval-gate.test.ts:155-161"
+      },
+      "requests": []
+    },
+    {
+      "id": "A5",
+      "name": "Rejected attempts leave lead status fail-closed",
+      "expected": {
+        "finalStatus": "approved",
+        "notQueued": true,
+        "notSentOrDelivered": true
+      },
+      "actual": {
+        "leadId": "id_1a1a1e91810_020c89056aee8623",
+        "readHttpStatus": 200,
+        "readErrorCode": null,
+        "notFound": false,
+        "workspaceMatches": true,
+        "finalStatus": "approved"
+      },
+      "verdict": "pass",
+      "reason": "lead stayed at \"approved\" after both rejected attempts; no queued/sent/delivered transition.",
+      "evidence": {
+        "gateOffWouldReturn": "n/a (gate expected on)",
+        "source": "worker.ts:205-207, 396-420"
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/leads?limit=200&offset=0",
+          "requestId": "id_1a1a1e9341a_0e0f96b9d03317db",
+          "httpStatus": 200,
+          "errorCode": null,
+          "responseBody": "{\"success\":true,\"data\":{\"leads\":[{\"id\":\"id_1a1a1e91810_020c89056aee8623\",\"workspace_id\":\"ws_kone_1791469852\",\"company_id\":\"id_1a1a1e91841_cbb24974f3983b4b\",\"contact_id\":\"id_1a1a1e91810_c4a260c1da668618\",\"score\":60,\"status\":\"approved\",\"draft_version\":1,\"local_ref_id\":\"gate-evidence-0e5fad33-c748-4145-9a0b-3ac511db4825\",\"created_at\":\"2026-11-03T14:56:10.371Z\",\"updated_at\":\"2026-11-03T14:56:11.339Z\"},{\"id\":\"id_1a1a1e56111_97e11e7d2362e12c\",\"workspace_id\":\"ws_kone_1791469852\",\"company_id\":\"id_1a1a1e",
+          "timestamp": "2026-11-03T14:56:22.345Z"
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "name": "Rejected attempts create no outreach row (no double-send)",
+      "expected": {
+        "rowCount": 0,
+        "sentOrDelivered": 0
+      },
+      "actual": {
+        "rowCount": 0,
+        "pendingCount": 0,
+        "sentOrDelivered": 0,
+        "statuses": []
+      },
+      "verdict": "pass",
+      "reason": "both rejected attempts created no outreach row (no double-send).",
+      "evidence": {
+        "gateOffWouldReturn": "n/a (gate expected on)",
+        "source": "worker.ts:243-246, 983-1016"
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/outreach/status?leadId=id_1a1a1e91810_020c89056aee8623&limit=200",
+          "requestId": "id_1a1a1e936b9_e044cfd440f6e946",
+          "httpStatus": 200,
+          "errorCode": null,
+          "responseBody": "{\"success\":true,\"data\":{\"outreach\":[],\"limit\":200,\"offset\":0},\"requestId\":\"id_1a1a1e936b9_e044cfd440f6e946\"}",
+          "timestamp": "2026-11-03T14:56:23.036Z"
+        }
+      ]
+    }
+  ],
+  "verdict": "PASS",
+  "notes": [
+    "workerVersionIdentifier is the /healthz schemaVersion; worker.ts exposes no build/commit identifier.",
+    "A3 added a GLOBAL, irreversible suppression entry for the generated fixture email.",
+    "The fixture lead, its approval/company/contact rows, and the global suppression entry are not deleted: the deployed API has no DELETE route. Use a staging workspace.",
+    "KONE_CLOUD_WORKSPACE_ID is cross-checked against lead.workspace_id from GET /leads; the worker also scopes requests by the bearer token (auth.ts:22-38).",
+    "Evidence redacts the bearer token, masks email local parts, and never records request headers or the Idempotency-Key."
+  ]
+}

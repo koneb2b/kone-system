@@ -26,7 +26,9 @@ SCHEMA_VERSION = "1.0.0"
 #   COMPANY_CONFLICT（撞单保护期）/ SUPPRESSED（全局抑制）
 #   EMAIL_GRADE_INSUFFICIENT（邮箱等级不足）/ QUOTA_EXCEEDED / CIRCUIT_OPEN
 # 建议先在干净环境端到端验证一次（批准 → 发送至云端）再开生产。
-APPROVAL_GATE_ENABLED = "false"
+# 2026-11-03：owner 授权开启，并已用 scripts/approval-gate-evidence.cjs --allow-write
+# 对**已部署环境**完成 A1–A6 取证（证据见 tests/approval-gate-evidence-*.json）。
+APPROVAL_GATE_ENABLED = "true"
 
 # ── D1 Binding ──
 [[d1_databases]]

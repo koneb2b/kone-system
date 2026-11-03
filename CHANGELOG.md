@@ -91,6 +91,22 @@ lastVerifiedAt: 2026-10-19
   - 受影响 SSOT：`electron/services/license-service.ts`、`src/shared/license-features.ts`（能力集不变）、
     `CHANGELOG.md`。**本修复不改动付费能力边界**：trial 仍仅 `search_basic` + `lead_export`，
     Premium/Enterprise 仍需有效离线授权。
+- 云端审批门禁上线并留证（2026-11-03，NO-GO ③ 闭环）：
+  - `kone-cloud/wrangler.toml` 的 `APPROVAL_GATE_ENABLED` 由 `false` 改为 `true` 并部署
+    （worker version `0e5a2315-b13b-42a8-a4f0-405100064688`，custom domain `kone-cloud.aigctohuman.com`）。
+  - 以 `scripts/approval-gate-evidence.cjs --allow-write` 对**已部署环境**完成 A1–A6 取证，verdict PASS：
+    A2 `409 DRAFT_VERSION_MISMATCH`、A3 `403 SUPPRESSED`、A5 线索状态 fail-closed、A6 无 outreach 行；
+    A4 按设计 `not_applicable`（由 `kone-cloud/tests/approval-gate.test.ts` 覆盖）。
+    证据：`docs/evidence/approval-gate-live-2026-11-03.json`。
+  - 取证中发现并修复真实缺陷：`POST /suppressions/unsubscribe` 未校验 `source`，非法枚举值违反
+    `suppressions.source` 的 CHECK 约束被兜底成 **500 INTERNAL_ERROR**（把调用方参数错误误报为服务端故障，
+    且退订链路失败）。现改为落库前校验并返回 **400 `VALIDATION_ERROR`**；补 vitest 回归
+    （`kone-cloud/tests/worker.test.ts`），云端测试 63 → **64**。
+  - 测试与部署开关解耦：`kone-cloud/vitest.config.ts` 固定测试默认 `APPROVAL_GATE_ENABLED='false'`，
+    避免生产开关变更导致既有 HTTP 用例误报（曾 8 项 403 失败）；门禁行为仍由
+    `approval-gate.test.ts` 显式注入 `gatedEnv`/`openEnv` 覆盖。
+  - 受影响 SSOT：`CLOUD-COLLABORATION-DELIVERY.md §0`、`docs/release-gate.md §5`、
+    `kone-cloud/wrangler.toml`、`kone-cloud/src/worker.ts`、`CHANGELOG.md`。
 
 ---
 

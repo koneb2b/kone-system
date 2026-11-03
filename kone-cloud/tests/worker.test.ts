@@ -316,6 +316,24 @@ describe('Kone Cloud Worker', () => {
       const body = (await response.json()) as { code: string }
       expect(body.code).toBe('VALIDATION_ERROR')
     })
+
+    /* 回归（2026-11-03 线上取证 A3 失败）：
+       未校验的 source 会违反 suppressions.source 的 CHECK 约束，被兜底成
+       500 INTERNAL_ERROR —— 把调用方参数错误误报为服务端故障，并使退订失败。
+       正确语义是 400 VALIDATION_ERROR。 */
+    it('rejects unknown source with 400 instead of a DB-constraint 500', async () => {
+      const headers = bearerHeader(token)
+      headers.set('Content-Type', 'application/json')
+
+      const response = await fetchWorker('/v1/suppressions/unsubscribe', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ email: 'bad-source@example.com', source: 'approval-gate-evidence' }),
+      })
+      expect(response.status).toBe(400)
+      const body = (await response.json()) as { code: string; error?: string }
+      expect(body.code).toBe('VALIDATION_ERROR')
+    })
   })
 
   // ── GET /dashboard/stats ──
